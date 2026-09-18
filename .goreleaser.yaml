@@ -1,0 +1,31 @@
+version: 2
+
+project_name: twc-approval-go-bridge
+
+builds:
+  - id: server
+    main: ./cmd/server
+    binary: twc-approval-go-bridge
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version={{ .Version }}
+
+archives:
+  - formats:
+      - tar.gz
+    files:
+      - README.md
+      - configs/config.example.env
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  prerelease: auto
