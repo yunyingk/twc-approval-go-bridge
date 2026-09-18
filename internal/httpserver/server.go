@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 )
 
 // Server exposes only infrastructure endpoints. Domain routes can be registered
@@ -33,7 +34,7 @@ func New(addr string, logger *slog.Logger, version string) *Server {
 	s.httpServer = &http.Server{
 		Addr:              addr,
 		Handler:           requestLog(logger, mux),
-		ReadHeaderTimeout: 5 * 1000 * 1000 * 1000,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s
 }
