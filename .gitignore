@@ -1,0 +1,19 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Build output
+/bin/
+/dist/
+*.log
+coverage.out
+
+# Local runtime data
+/data/
+/tmp/
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
