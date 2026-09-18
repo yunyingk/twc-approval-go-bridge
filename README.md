@@ -2,7 +2,7 @@
 
 一个不绑定具体业务系统的 Go 服务基础框架。
 
-当前版本只提供服务运行骨架：配置加载、结构化日志、HTTP 生命周期、健康检查、Docker 构建和原生二进制构建。飞书、多维表格、审批系统、AI 服务以及具体业务字段暂未实现。
+当前版本提供服务运行骨架和一个可选的 Feishu 长连接传输适配器：配置加载、结构化日志、HTTP 生命周期、健康检查、Docker 构建和原生二进制构建已经具备；多维表格字段、审批系统、AI 服务以及具体业务规则暂未实现。
 
 ## 快速开始
 
@@ -46,12 +46,28 @@ docker build --file deploy/Dockerfile --tag twc-approval-go-bridge:local .
 
 镜像使用多阶段构建，运行时只包含静态 Go 二进制。
 
+## Feishu 长连接适配器
+
+项目已加入 `github.com/larksuite/oapi-sdk-go/v3 v3.12.0`，并提供可选的长连接监听器。只有同时配置 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET` 时才会启动；未配置时服务仍可作为普通 HTTP 服务运行。
+
+```bash
+FEISHU_APP_ID=cli_xxx \
+FEISHU_APP_SECRET=xxx \
+FEISHU_EVENT_TYPE=drive.file.bitable_record_changed_v1 \
+go run ./cmd/server
+```
+
+当前监听器只负责建立连接、注册事件类型并接收原始事件。默认日志记录事件 ID、事件类型和载荷大小，不解析具体字段，也不执行附件判断、队列处理或业务回写。调试原始载荷时可以临时设置 `FEISHU_LOG_RAW_EVENTS=true`。
+
+事件类型和事件载荷需要结合真实测试应用继续验证。豆包资料中提到的字段结构不会在验证前固化为业务规则。
+
 ## 目录结构
 
 ```text
 cmd/server/             服务入口
 internal/config/        环境变量配置
 internal/httpserver/    HTTP 服务壳和基础端点
+internal/feishuws/      Feishu 长连接适配器
 internal/version/       构建版本变量
 configs/                配置示例
 deploy/                 Docker 和 Compose 文件

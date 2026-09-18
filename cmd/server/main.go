@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishuws"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/httpserver"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/version"
 )
@@ -24,6 +25,23 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	server := httpserver.New(cfg.HTTPAddr, logger, version.Version)
 
+	var feishuListener *feishuws.Listener
+	if cfg.FeishuEnabled() {
+		feishuListener, err = feishuws.New(
+			cfg.FeishuAppID,
+			cfg.FeishuAppSecret,
+			cfg.FeishuEventType,
+			feishuws.LoggingSink(logger, cfg.FeishuLogRawEvents),
+			logger,
+		)
+		if err != nil {
+			logger.Error("create Feishu listener", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		logger.Info("Feishu long connection disabled", "reason", "credentials not configured")
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -33,19 +51,45 @@ func main() {
 		serverErr <- server.ListenAndServe()
 	}()
 
-	select {
-	case err := <-serverErr:
-		if err != nil {
-			logger.Error("http server stopped unexpectedly", "error", err)
-			os.Exit(1)
-		}
-	case <-ctx.Done():
+	var feishuErr <-chan error
+	if feishuListener != nil {
+		listenerErr := make(chan error, 1)
+		feishuErr = listenerErr
+		go func() {
+			logger.Info("starting Feishu long connection", "event_type", cfg.FeishuEventType)
+			listenerErr <- feishuListener.Start(ctx)
+		}()
+	}
+
+	shutdown := func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Error("graceful shutdown failed", "error", err)
+		}
+		if feishuListener != nil {
+			if err := feishuListener.CloseAndWait(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {
+				logger.Error("Feishu listener shutdown failed", "error", err)
+			}
+		}
+	}
+
+	select {
+	case err := <-serverErr:
+		if err != nil {
+			logger.Error("http server stopped unexpectedly", "error", err)
+			shutdown()
 			os.Exit(1)
 		}
-		logger.Info("http server stopped")
+	case err := <-feishuErr:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("Feishu long connection stopped unexpectedly", "error", err)
+			shutdown()
+			os.Exit(1)
+		}
+		shutdown()
+	case <-ctx.Done():
+		shutdown()
 	}
+	logger.Info("service stopped")
 }
