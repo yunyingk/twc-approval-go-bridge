@@ -6,7 +6,7 @@
 
 ## 快速开始
 
-需要 Go 1.24 或更高版本。
+需要 Go 1.24.13。项目通过 `go.mod` 的 `toolchain` 指令、CI 和 Docker 构建镜像统一固定到该版本。
 
 ```bash
 make test
