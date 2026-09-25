@@ -1,5 +1,5 @@
-// Package anthropic reserves the direct Messages API integration for receipt OCR.
-// Mapping attachments and model output into receipt.Recognition is a later step.
+// Package anthropic exposes the standard Messages API as an independent AI boundary.
+// Receipt recognition may use it later, without defining its prompt or output here.
 package anthropic
 
 import (
@@ -11,8 +11,8 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
-// Client exposes the standard Messages API without binding the receipt workflow
-// to a model name, prompt, or image transport that has not been chosen yet.
+// Client exposes the standard Messages API without binding callers to a model
+// name, prompt, or image transport that has not been chosen yet.
 type Client struct {
 	sdk sdk.Client
 }

@@ -73,9 +73,9 @@ go run ./cmd/server
 | `internal/seal/` | 提交内部数据并处理 Seal 回调 | 接口已定义，协议及鉴权待定 |
 | `internal/receipt/` | 票据识别的可替换接口 | 已定义 |
 | `internal/receipt/anyreceipt/` | 直接调用已有字段捷径使用的 Anyreceipt OCR 接口 | 已实现，待真实凭证联调 |
-| `internal/receipt/anthropic/` | 备用的 Anthropic Messages API 入口 | SDK 已接入，识别映射待定 |
+| `internal/anthropic/` | 独立的 Anthropic Messages API 入口 | SDK 已接入，具体业务调用待定 |
 
-Anyreceipt 适配器沿用同项目现有字段捷径中的 `/api/ocr/summary` 请求格式，使用独立 API Key。Anthropic 适配器目前只封装标准 Messages API，不设定模型、提示词或图片传输方式，因此还没有接入 `receipt.Recognizer`。两者不依赖飞书插件运行时。
+Anyreceipt 适配器沿用同项目现有字段捷径中的 `/api/ocr/summary` 请求格式，使用独立 API Key。Anthropic 与 Seal 同级，是独立 AI 能力；票据识别将来可以调用它，但目前只封装标准 Messages API，不设定模型、提示词或图片传输方式，也没有接入 `receipt.Recognizer`。两者不依赖飞书插件运行时。
 
 当前服务入口只启动飞书监听和基础 HTTP 端点。各业务接口尚未接入主流程，调用关系如下：
 
@@ -83,7 +83,7 @@ Anyreceipt 适配器沿用同项目现有字段捷径中的 `/api/ocr/summary` �
 cmd/server ──> config, httpserver, feishu/events, version
 feishu/events ──> Feishu Go SDK
 receipt/anyreceipt ──> receipt.Recognizer
-receipt/anthropic ──> Anthropic Go SDK (Messages)
+anthropic ──> Anthropic Go SDK (Messages)
 core/dedupe, feishu/{records,approvals,permissions}, seal ──> 待业务编排接入
 ```
 
@@ -94,6 +94,7 @@ Go 固定为 `1.24.13`；直接依赖固定为 Feishu SDK `v3.12.0` 和 Anthropi
 ```text
 cmd/server/                 服务入口
 internal/config/            环境变量配置
+internal/anthropic/         独立的 Anthropic Messages API 入口
 internal/core/dedupe/       变化查重边界
 internal/feishu/            记录、审批和权限边界
 internal/feishu/events/     飞书长连接适配器
