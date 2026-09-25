@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/feishuws"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/events"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/httpserver"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/version"
 )
@@ -25,13 +25,13 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	server := httpserver.New(cfg.HTTPAddr, logger, version.Version)
 
-	var feishuListener *feishuws.Listener
+	var feishuListener *events.Listener
 	if cfg.FeishuEnabled() {
-		feishuListener, err = feishuws.New(
+		feishuListener, err = events.New(
 			cfg.FeishuAppID,
 			cfg.FeishuAppSecret,
 			cfg.FeishuEventType,
-			feishuws.LoggingSink(logger, cfg.FeishuLogRawEvents),
+			events.LoggingSink(logger, cfg.FeishuLogRawEvents),
 			logger,
 		)
 		if err != nil {

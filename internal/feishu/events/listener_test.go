@@ -1,4 +1,4 @@
-package feishuws
+package events
 
 import (
 	"context"

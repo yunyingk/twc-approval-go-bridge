@@ -1,5 +1,5 @@
-// Package feishuws contains the optional Feishu persistent-connection adapter.
-package feishuws
+// Package events contains the optional Feishu persistent-connection adapter.
+package events
 
 import (
 	"context"
