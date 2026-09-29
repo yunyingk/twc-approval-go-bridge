@@ -8,14 +8,13 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/yunyingk/twc-approval-go-bridge/internal/anyreceipt/flow"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/anyreceipt/ledger"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/events"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/httpserver"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/flow"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/ledger"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/model"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/version"
 )
@@ -49,12 +48,12 @@ func main() {
 	if cfg.FeishuEnabled() {
 		sink := events.LoggingSink(logger, cfg.FeishuLogRawEvents)
 		if cfg.ReceiptProvider != "" {
-			var recognizer receipt.Recognizer
+			var recognizer invoice.Recognizer
 			switch cfg.ReceiptProvider {
 			case "anyreceipt":
 				recognizer, err = newAnyreceipt(cfg.AnyreceiptAPIKey)
 			case "model":
-				recognizer, err = model.New(cfg.ReceiptModelAPIKey, cfg.ReceiptModelBaseURL, cfg.ReceiptModelName)
+				recognizer, err = newModel(cfg.ReceiptModelAPIKey, cfg.ReceiptModelBaseURL, cfg.ReceiptModelName)
 			default:
 				err = errors.New("unsupported RECEIPT_PROVIDER")
 			}

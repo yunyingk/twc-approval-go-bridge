@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/flow"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/anyreceipt/flow"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 )
 
 type fakeStore struct {
@@ -42,7 +42,7 @@ func TestHandleMapsRecognitionAndKeepsRawJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw := json.RawMessage(`{"traceId":"TRACE-7","outputs":{"title":"Dinner receipt","Number":"INV-7","type":"invoice","TypeofBill":"meals","Seller":"Example Ltd","Buyer":"Employee","currency":"usd","amountwithouttax":"1,200.50","tax":"120","taxrate":"10%","total":"1,320.50","DateofInssuance":"2026-09-29","country":"US","unknown_vendor_field":"kept"},"summary":"receipt"}`)
-	result := flow.Result{BaseToken: "base", TableID: "detail", RecordID: "rec", FileToken: "file", Recognition: receipt.Recognition{Raw: raw, Outputs: map[string]json.RawMessage{
+	result := flow.Result{BaseToken: "base", TableID: "detail", RecordID: "rec", FileToken: "file", Recognition: invoice.Recognition{Raw: raw, Outputs: map[string]json.RawMessage{
 		"title": json.RawMessage(`"Dinner receipt"`), "Number": json.RawMessage(`"INV-7"`), "type": json.RawMessage(`"invoice"`), "TypeofBill": json.RawMessage(`"meals"`), "Seller": json.RawMessage(`"Example Ltd"`), "Buyer": json.RawMessage(`"Employee"`), "currency": json.RawMessage(`"usd"`), "amountwithouttax": json.RawMessage(`"1,200.50"`), "tax": json.RawMessage(`"120"`), "taxrate": json.RawMessage(`"10%"`), "total": json.RawMessage(`"1,320.50"`), "DateofInssuance": json.RawMessage(`"2026-09-29"`), "country": json.RawMessage(`"US"`),
 	}, Summary: "receipt"}}
 	if err := h.Handle(context.Background(), result); err != nil {
@@ -72,7 +72,7 @@ func TestHandleUsesStableUniqueKeyWhenTraceIDAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := flow.Result{BaseToken: "base", TableID: "detail", RecordID: "rec", FileToken: "file", Recognition: receipt.Recognition{
+	result := flow.Result{BaseToken: "base", TableID: "detail", RecordID: "rec", FileToken: "file", Recognition: invoice.Recognition{
 		Raw: json.RawMessage(`{"outputs":{},"summary":"model receipt"}`), Summary: "model receipt",
 	}}
 	if err := h.Handle(context.Background(), result); err != nil {

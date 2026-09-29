@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/dupcheck"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
 )
 
@@ -18,8 +18,8 @@ type fakeSource struct {
 
 func (s fakeSource) ReadDetail(context.Context, string) (Detail, error) {
 	return Detail{DocumentID: "detail-1", DocumentSN: "SN-1", RecordID: "rec1", StartTime: time.Unix(100, 0),
-		Files: []File{{Token: "b", Attachment: receipt.Attachment{Name: "b.jpg", ContentType: "image/jpeg", Data: []byte("b")}},
-			{Token: "a", Attachment: receipt.Attachment{Name: "a.jpg", ContentType: "image/jpeg", Data: []byte("a")}}}}, nil
+		Files: []File{{Token: "b", Attachment: invoice.Attachment{Name: "b.jpg", ContentType: "image/jpeg", Data: []byte("b")}},
+			{Token: "a", Attachment: invoice.Attachment{Name: "a.jpg", ContentType: "image/jpeg", Data: []byte("a")}}}}, nil
 }
 
 func (s fakeSource) ReadLedgerEntry(_ context.Context, key string) (LedgerEntry, error) {
@@ -27,7 +27,7 @@ func (s fakeSource) ReadLedgerEntry(_ context.Context, key string) (LedgerEntry,
 		return LedgerEntry{}, errors.New("missing OCR")
 	}
 	return LedgerEntry{RecordID: "ledger-" + key,
-		Recognition: receipt.Recognition{Raw: json.RawMessage(`{"outputs":{"Number":"N-1"}}`),
+		Recognition: invoice.Recognition{Raw: json.RawMessage(`{"outputs":{"Number":"N-1"}}`),
 			Outputs: map[string]json.RawMessage{"Number": json.RawMessage(`"N-1"`),
 				"currency": json.RawMessage(`"USD"`), "total": json.RawMessage(`"10"`),
 				"Seller": json.RawMessage(`"Shop"`), "Buyer": json.RawMessage(`"Buyer"`)}},

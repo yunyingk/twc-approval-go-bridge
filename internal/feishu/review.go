@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/dupcheck"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/review"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/seal/review"
 )
 
 // ReviewSource reads only the configured detail and invoice-ledger tables.
@@ -115,7 +115,7 @@ func (s *ReviewSource) ReadLedgerEntry(ctx context.Context, sourceKey string) (r
 		return review.LedgerEntry{}, fmt.Errorf("ledger OCR JSON has no outputs")
 	}
 	return review.LedgerEntry{RecordID: row.ID,
-		Recognition: receipt.Recognition{Outputs: outputs, Summary: result.Summary, Raw: json.RawMessage(rawJSON)},
+		Recognition: invoice.Recognition{Outputs: outputs, Summary: result.Summary, Raw: json.RawMessage(rawJSON)},
 		Facts:       s.invoiceFacts(row, names)}, nil
 }
 

@@ -7,8 +7,8 @@ import (
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/review"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/seal/review"
 )
 
 // runSealSubmit is an explicit one-record trigger while approval timing and

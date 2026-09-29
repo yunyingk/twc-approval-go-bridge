@@ -9,15 +9,15 @@ import (
 	"time"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/dupcheck"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/aggregate"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/sealmapper"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice/aggregate"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/seal/mapper"
 )
 
 type File struct {
 	Token      string
-	Attachment receipt.Attachment
+	Attachment invoice.Attachment
 }
 
 type Detail struct {
@@ -30,7 +30,7 @@ type Detail struct {
 
 type LedgerEntry struct {
 	RecordID    string
-	Recognition receipt.Recognition
+	Recognition invoice.Recognition
 	Facts       dupcheck.Invoice
 }
 
@@ -110,7 +110,7 @@ func (s *Service) Submit(ctx context.Context, recordID string) (Result, error) {
 		}
 		uploads[invoice.FileToken] = upload
 	}
-	payload, err := sealmapper.MapBatch(batch, uploads)
+	payload, err := mapper.MapBatch(batch, uploads)
 	if err != nil {
 		return Result{}, err
 	}

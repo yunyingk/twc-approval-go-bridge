@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/dupcheck"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 )
 
 type Invoice struct {
 	FileToken      string
 	LedgerRecordID string
-	Attachment     receipt.Attachment
-	Recognition    receipt.Recognition
+	Attachment     invoice.Attachment
+	Recognition    invoice.Recognition
 	Facts          dupcheck.Invoice
 	Candidates     []dupcheck.Invoice
 }

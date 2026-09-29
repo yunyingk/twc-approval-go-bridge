@@ -1,3 +1,5 @@
+//go:build !no_anthropic
+
 // Package anthropic exposes the standard Messages API as an independent AI boundary.
 // Receipt recognition may use it later, without defining its prompt or output here.
 package anthropic

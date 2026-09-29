@@ -1,6 +1,6 @@
-// Package sealmapper turns recognized receipts into Seal AI document requests.
+// Package mapper turns recognized receipts into Seal AI document requests.
 // It is deliberately separate from both the Feishu adapter and the generic Seal client.
-package sealmapper
+package mapper
 
 import (
 	"encoding/json"
@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/aggregate"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice/aggregate"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
 )
 
@@ -24,7 +24,7 @@ type Input struct {
 	RecordID    string
 	FileToken   string
 	FileName    string
-	Recognition receipt.Recognition
+	Recognition invoice.Recognition
 	Upload      seal.UploadResponse
 	StartTime   time.Time
 }
@@ -160,7 +160,7 @@ func mapInvoice(input Input, sourceID string) (seal.ExternalInvoice, bool) {
 	return invoice, true
 }
 
-func text(recognition receipt.Recognition, key, fallback string) string {
+func text(recognition invoice.Recognition, key, fallback string) string {
 	if raw := recognition.Outputs[key]; len(raw) != 0 {
 		var value string
 		if json.Unmarshal(raw, &value) == nil {

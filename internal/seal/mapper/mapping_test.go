@@ -1,11 +1,11 @@
-package sealmapper
+package mapper
 
 import (
 	"encoding/json"
 	"testing"
 	"time"
 
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
 )
 
@@ -24,7 +24,7 @@ func TestMapCompleteReceipt(t *testing.T) {
 				OSSPath: "path", OSSSignedURL: "https://example.com/signed", OSSFileSize: 50,
 			},
 		},
-		Recognition: receipt.Recognition{
+		Recognition: invoice.Recognition{
 			Summary: "team dinner",
 			Outputs: map[string]json.RawMessage{
 				"Number":           json.RawMessage(`"INV-9"`),
@@ -83,7 +83,7 @@ func TestMapIncompleteReceiptStillMakesDocument(t *testing.T) {
 			Attachment: seal.AttachmentInfo{Name: "receipt.jpg", MimeType: "image/jpeg", URL: "https://example.com/file",
 				OSSPath: "path", OSSSignedURL: "https://example.com/signed", OSSFileSize: 50},
 		},
-		Recognition: receipt.Recognition{
+		Recognition: invoice.Recognition{
 			Number: "INV-9", Total: "100",
 			Outputs: map[string]json.RawMessage{
 				"Seller": json.RawMessage(`"Merchant"`),

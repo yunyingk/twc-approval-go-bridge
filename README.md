@@ -85,9 +85,9 @@ go run ./cmd/server submit-seal <个人报销明细记录ID>
 
 首次测试单据只含文本附件 ID，SealAI 对同一 `documentId` 的后续成功响应没有更新该审核记录。用新的测试单据编号 `OCR-TEST-20260929-175848-ATTACHMENT-PROOF` 验证后，审核页明确显示「发票附件：1 个文件」和原文件下载按钮，审核过程显示解析 1 个附件。该样本 OCR 缺币种，因此结构化发票数为 0。浏览器插件阻止了跳转到 OSS 下载域，故没有把浏览器端成功打开图片作为验证结论。
 
-聚合位于独立的 `internal/receipt/aggregate/aggregate.go`，结构不依赖 SealAI；`internal/receipt/sealmapper/` 才负责 Seal 协议转换。自有模型以后可复用同一聚合结果另写适配器。当前没有公网回调，通道的回调地址指向本地 mock；SealAI 服务器不能连接到开发者电脑的 `127.0.0.1`。自动提交触发、后续追加附件的版本语义、回调鉴权及审批结果回写尚未实现。
+聚合位于独立的 `internal/core/invoice/aggregate/aggregate.go`，结构不依赖 Anyreceipt 或 SealAI；`internal/seal/mapper/` 负责 Seal 协议转换。自有模型可复用 `internal/core/invoice` 的识别接口与聚合结构。当前没有公网回调，通道的回调地址指向本地 mock；SealAI 服务器不能连接到开发者电脑的 `127.0.0.1`。自动提交触发、后续追加附件的版本语义、回调鉴权及审批结果回写尚未实现。
 
-Anyreceipt 需要 `ANYRECEIPT_API_KEY`，可识别图片和 PDF。模型模式使用 Anthropic Go SDK，配置 `RECEIPT_MODEL_API_KEY`、`RECEIPT_MODEL_BASE_URL`、`RECEIPT_MODEL_NAME`；当前只接受图片，PDF/DOCX 转换留给后续独立模块。DeepSeek 测试模型实际返回过 Markdown 围栏 JSON，当前模型适配器只接受纯 JSON，此可选切换项仍需兼容性修复。默认构建包含 Anyreceipt；`go build -tags no_anyreceipt ./cmd/server` 可在编译时排除它。附件下载还要求飞书应用身份具备 `docs:document.media:download` 或等价权限，并有目标 Base 的资源授权。当前重复附件只在进程内按记录 ID 和附件 token 去重；持久化去重与跨重启补偿属于后续阶段。
+Anyreceipt 始终编入，启用识别时使用 `RECEIPT_PROVIDER=anyreceipt` 和 `ANYRECEIPT_API_KEY`，可识别图片和 PDF。自有模型是可选能力：默认构建包含 Anthropic Go SDK；`go build -tags no_anthropic ./cmd/server` 可在编译时排除模型适配器及 SDK。模型模式配置 `RECEIPT_PROVIDER=model`、`RECEIPT_MODEL_API_KEY`、`RECEIPT_MODEL_BASE_URL`、`RECEIPT_MODEL_NAME`；当前只接受图片，PDF/DOCX 转换留给后续独立模块。DeepSeek 测试模型实际返回过 Markdown 围栏 JSON，当前模型适配器只接受纯 JSON，此可选切换项仍需兼容性修复。附件下载还要求飞书应用身份具备 `docs:document.media:download` 或等价权限，并有目标 Base 的资源授权。当前重复附件只在进程内按记录 ID 和附件 token 去重；持久化去重与跨重启补偿属于后续阶段。
 
 事件载荷仍需要结合真实测试应用联调。测试 Base 已用项目应用身份订阅云文档事件；开放平台已添加「多维表格记录变更」事件并选用长连接。2026-09-29 在独立测试行 `reczz28HJVvAm8NM`（`明细ID=OCR-TEST-20260929-175848`）修改记录后，开发者后台事件日志暂无投递记录；应用发布新版本后再次通过 API 修改并恢复测试行，长连接已就绪但监听器仍未收到事件，仍需排查投递链路。该测试行保留了一张样本 JPEG 附件；同日已用真实 Anyreceipt 识别 21 个输出字段，并通过正式服务的轮询入口完成台账回写与双向关联验证。Anyreceipt 的完整输出键及接口见[业务资料](../doc/Anyreceipt-API与完整返回结构.md)。
 
@@ -102,14 +102,13 @@ Anyreceipt 需要 `ANYRECEIPT_API_KEY`，可识别图片和 PDF。模型模式�
 | `internal/feishu/permissions.go` | 记录权限分类与锁定 | 接口已定义，飞书能力待验证 |
 | `internal/seal/` | Seal Webhook 附件上传、单据提交和本地 mock 回调 | 已通过测试通道提交，公网回调待实现 |
 | `internal/core/dupcheck/` | 从发票台账事实产生查重候选证据 | 首版按票号、开票方、票据类型比对 |
-| `internal/receipt/` | 票据识别的可替换接口 | 已定义 |
-| `internal/receipt/flow/` | 监听附件事件、读取附件并交付识别结果 | 已实现，待真实事件联调 |
-| `internal/receipt/anyreceipt/` | 直接调用已有字段捷径使用的 Anyreceipt OCR 接口 | 已通过真实附件联调 |
-| `internal/receipt/model/` | 通过 Anthropic 兼容模型识别图片 | 已实现，DeepSeek 返回格式兼容待修复 |
-| `internal/receipt/ledger/` | 映射识别结果并写入发票台账 | 已通过真实 OCR 结果端到端验证 |
-| `internal/receipt/aggregate/` | 一条报销明细的多票中立聚合 | 已实现，不依赖 SealAI |
-| `internal/receipt/sealmapper/` | 中立票据结构到 SealAI 协议的转换 | 已实现 |
-| `internal/receipt/review/` | 核对台账、上传原件、提交一份审核单据 | 显式命令可运行 |
+| `internal/core/invoice/` | 识别接口、结果结构和多票聚合 | 已实现，不依赖外部服务 |
+| `internal/anyreceipt/` | 必编的 Anyreceipt OCR 客户端及标准识别流程 | 已通过真实附件联调 |
+| `internal/anyreceipt/flow/` | 监听附件事件、读取附件并交付识别结果 | 已实现，待真实事件联调 |
+| `internal/anyreceipt/ledger/` | 映射识别结果并写入发票台账 | 已通过真实 OCR 结果端到端验证 |
+| `internal/anthropic/model/` | 可选的 Anthropic 兼容模型识别图片 | 已实现，DeepSeek 返回格式兼容待修复 |
+| `internal/seal/mapper/` | 中立票据结构到 SealAI 协议的转换 | 已实现 |
+| `internal/seal/review/` | 核对台账、上传原件、提交一份审核单据 | 显式命令可运行 |
 | `internal/anthropic/` | 独立的 Anthropic Messages API 入口 | SDK 已接入，供模型识别适配器使用 |
 
 Anyreceipt 适配器沿用同项目现有字段捷径中的 `/api/ocr/summary` 请求格式，使用独立 API Key。Anthropic 与 Seal 同级，是独立 AI 能力；模型识别适配器通过它调用 Anthropic 兼容接口。两者不依赖飞书插件运行时。
@@ -117,13 +116,13 @@ Anyreceipt 适配器沿用同项目现有字段捷径中的 `/api/ocr/summary` �
 当前服务入口启动基础 HTTP 端点；配置飞书凭证后启动事件监听，配置识别提供方后接入附件识别。调用关系如下：
 
 ```text
-cmd/server ──> config, httpserver, feishu/events, receipt/flow, version
-receipt/flow ──> feishu/attachments ──> receipt/{anyreceipt,model} ──> receipt/ledger ──> feishu/ledger
+cmd/server ──> config, httpserver, feishu/events, anyreceipt/flow, version
+anyreceipt/flow ──> feishu/attachments ──> {anyreceipt,model} ──> anyreceipt/ledger ──> feishu/ledger
 feishu/events ──> Feishu Go SDK
-receipt/model ──> anthropic ──> Anthropic Go SDK (Messages)
-cmd/server submit-seal ──> receipt/review ──> feishu/review (只读明细与台账)
-receipt/review ──> receipt/aggregate ──> core/dupcheck
-receipt/review ──> receipt/sealmapper ──> seal (上传原件、提交单据)
+anthropic/model ──> anthropic ──> Anthropic Go SDK (Messages，可编译排除)
+cmd/server submit-seal ──> seal/review ──> feishu/review (只读明细与台账)
+seal/review ──> core/invoice/aggregate ──> core/dupcheck
+seal/review ──> seal/mapper ──> seal (上传原件、提交单据)
 core/dedupe, feishu/{records,approvals,permissions} ──> 待后续业务编排接入
 ```
 
@@ -132,19 +131,33 @@ Go 固定为 `1.24.13`；直接依赖固定为 Feishu SDK `v3.12.0` 和 Anthropi
 ## 目录结构
 
 ```text
-cmd/server/                 服务入口
-internal/config/            环境变量配置
-internal/anthropic/         独立的 Anthropic Messages API 入口
-internal/core/dedupe/       变化查重边界
-internal/feishu/            记录、审批和权限边界
-internal/feishu/events/     飞书长连接适配器
-internal/httpserver/        HTTP 服务壳和基础端点
-internal/receipt/           票据识别接口与提供方适配器
-internal/seal/              Seal 提交与回调边界
-internal/version/           构建版本变量
-configs/                    配置示例
-deploy/                     Docker 和 Compose 文件
-.github/workflows/          CI 与发布流程
+cmd/server/                      服务入口和编译开关
+├── main.go                     启动事件、轮询和基础 HTTP 服务
+├── anyreceipt.go               始终编入的标准识别器
+├── model_enabled.go            默认编入 Anthropic 模型
+├── model_disabled.go           no_anthropic 构建时排除模型
+└── submit_seal.go              显式提交一条报销明细
+internal/
+├── core/                      不调用外部服务的业务核心
+│   ├── invoice/                识别接口、结果结构及多票聚合
+│   ├── dupcheck/               台账查重证据
+│   └── dedupe/                 变化去重边界
+├── anyreceipt/                必编的 Anyreceipt 客户端
+│   ├── flow/                   事件与轮询共用的附件处理流程
+│   └── ledger/                 识别结果回写发票台账
+├── anthropic/                 可选的 Messages SDK 适配层
+│   └── model/                  自有多模态识别器
+├── feishu/                    飞书读写与资源边界
+│   └── events/                 飞书长连接适配器
+├── seal/                      SealAI HTTP 客户端与 mock 回调
+│   ├── mapper/                 聚合结果转 SealAI 单据格式
+│   └── review/                 上传原件、提交审核单据
+├── config/                    环境变量配置
+├── httpserver/                基础 HTTP 服务
+└── version/                   构建版本变量
+configs/                       配置示例
+deploy/                        Docker 和 Compose 文件
+.github/workflows/             CI 与发布流程
 ```
 
 ## 后续扩展边界

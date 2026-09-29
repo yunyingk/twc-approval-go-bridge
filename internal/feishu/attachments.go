@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 )
 
 const feishuAPI = "https://open.feishu.cn/open-apis"
@@ -27,7 +27,7 @@ func NewAttachmentClient(appID, appSecret string) *AttachmentClient {
 	return &AttachmentClient{appID: appID, appSecret: appSecret, httpClient: &http.Client{Timeout: 45 * time.Second}}
 }
 
-func (c *AttachmentClient) ReadAttachments(ctx context.Context, base, table, record, fieldID string, selected map[string]bool) ([]receipt.Attachment, []string, error) {
+func (c *AttachmentClient) ReadAttachments(ctx context.Context, base, table, record, fieldID string, selected map[string]bool) ([]invoice.Attachment, []string, error) {
 	var auth struct {
 		Code              int    `json:"code"`
 		TenantAccessToken string `json:"tenant_access_token"`
@@ -79,7 +79,7 @@ func (c *AttachmentClient) ReadAttachments(ctx context.Context, base, table, rec
 			return nil, nil, fmt.Errorf("decode attachment cell: %w", err)
 		}
 	}
-	attachments, tokens := make([]receipt.Attachment, 0, len(files)), make([]string, 0, len(files))
+	attachments, tokens := make([]invoice.Attachment, 0, len(files)), make([]string, 0, len(files))
 	for _, file := range files {
 		if selected != nil && !selected[file.Token] {
 			continue
@@ -117,7 +117,7 @@ func (c *AttachmentClient) ReadAttachments(ctx context.Context, base, table, rec
 		if err != nil {
 			return nil, nil, err
 		}
-		attachments = append(attachments, receipt.Attachment{Name: file.Name, ContentType: mediaType, URL: link, Data: data})
+		attachments = append(attachments, invoice.Attachment{Name: file.Name, ContentType: mediaType, URL: link, Data: data})
 		tokens = append(tokens, file.Token)
 	}
 	return attachments, tokens, nil

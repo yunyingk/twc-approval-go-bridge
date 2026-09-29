@@ -6,20 +6,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/events"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
 )
 
 type testReader struct{}
 
-func (testReader) ReadAttachments(context.Context, string, string, string, string, map[string]bool) ([]receipt.Attachment, []string, error) {
-	return []receipt.Attachment{{Name: "new.png", ContentType: "image/png"}, {Name: "old.png", ContentType: "image/png"}}, []string{"new", "old"}, nil
+func (testReader) ReadAttachments(context.Context, string, string, string, string, map[string]bool) ([]invoice.Attachment, []string, error) {
+	return []invoice.Attachment{{Name: "new.png", ContentType: "image/png"}, {Name: "old.png", ContentType: "image/png"}}, []string{"new", "old"}, nil
 }
 
 type testRecognizer struct{}
 
-func (testRecognizer) Recognize(context.Context, receipt.Attachment) (receipt.Recognition, error) {
-	return receipt.Recognition{Outputs: map[string]json.RawMessage{"currency": json.RawMessage(`"USD"`)}}, nil
+func (testRecognizer) Recognize(context.Context, invoice.Attachment) (invoice.Recognition, error) {
+	return invoice.Recognition{Outputs: map[string]json.RawMessage{"currency": json.RawMessage(`"USD"`)}}, nil
 }
 
 type testScanner struct {

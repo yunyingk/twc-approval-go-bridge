@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/flow"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/anyreceipt/flow"
 )
 
 // Field IDs are stable even when a user renames a Bitable column.

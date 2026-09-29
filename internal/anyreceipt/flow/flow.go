@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/events"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
 )
 
 type Config struct {
@@ -29,13 +29,13 @@ type Result struct {
 	RecordID    string
 	FileToken   string
 	FileName    string
-	Recognition receipt.Recognition
+	Recognition invoice.Recognition
 }
 
 type ResultHandler func(context.Context, Result) error
 
 type AttachmentReader interface {
-	ReadAttachments(context.Context, string, string, string, string, map[string]bool) ([]receipt.Attachment, []string, error)
+	ReadAttachments(context.Context, string, string, string, string, map[string]bool) ([]invoice.Attachment, []string, error)
 }
 
 type job struct {
@@ -48,13 +48,13 @@ type job struct {
 type Processor struct {
 	config     Config
 	reader     AttachmentReader
-	recognizer receipt.Recognizer
+	recognizer invoice.Recognizer
 	handler    ResultHandler
 	logger     *slog.Logger
 	jobs       chan job
 }
 
-func New(config Config, reader AttachmentReader, recognizer receipt.Recognizer, handler ResultHandler, logger *slog.Logger) (*Processor, error) {
+func New(config Config, reader AttachmentReader, recognizer invoice.Recognizer, handler ResultHandler, logger *slog.Logger) (*Processor, error) {
 	if config.BaseToken == "" || config.TableID == "" || config.FieldID == "" || reader == nil || recognizer == nil || handler == nil {
 		return nil, fmt.Errorf("receipt flow requires Base, Table, field, reader, recognizer and result handler")
 	}
@@ -185,7 +185,7 @@ func (p *Processor) Run(ctx context.Context) {
 				continue
 			}
 			workCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-			var attachments []receipt.Attachment
+			var attachments []invoice.Attachment
 			var tokens []string
 			var err error
 			for attempt := 0; attempt < 3; attempt++ {

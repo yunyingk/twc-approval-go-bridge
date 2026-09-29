@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -40,7 +40,7 @@ func TestRecognizeUsesExistingAnyreceiptContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := client.Recognize(context.Background(), receipt.Attachment{
+	got, err := client.Recognize(context.Background(), invoice.Attachment{
 		Name: "receipt.pdf", ContentType: "application/pdf", URL: "https://example.com/receipt.pdf",
 	})
 	if err != nil {
@@ -63,7 +63,7 @@ func TestRecognizeRejectsBusinessError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Recognize(context.Background(), receipt.Attachment{URL: "https://example.com/receipt.pdf"}); err == nil {
+	if _, err := client.Recognize(context.Background(), invoice.Attachment{URL: "https://example.com/receipt.pdf"}); err == nil {
 		t.Fatal("Recognize() error = nil, want business error")
 	}
 }

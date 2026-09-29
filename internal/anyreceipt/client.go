@@ -1,4 +1,4 @@
-// Package anyreceipt adapts the existing Anyreceipt OCR endpoint to receipt.Recognizer.
+// Package anyreceipt adapts the existing Anyreceipt OCR endpoint to invoice.Recognizer.
 package anyreceipt
 
 import (
@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 )
 
 const summaryURL = "https://pi.anyreceipt.cn/api/ocr/summary"
@@ -22,7 +22,7 @@ type Client struct {
 	httpClient *http.Client
 }
 
-var _ receipt.Recognizer = (*Client)(nil)
+var _ invoice.Recognizer = (*Client)(nil)
 
 func New(apiKey string, httpClient *http.Client) (*Client, error) {
 	apiKey = strings.TrimSpace(apiKey)
@@ -35,12 +35,12 @@ func New(apiKey string, httpClient *http.Client) (*Client, error) {
 	return &Client{apiKey: apiKey, httpClient: httpClient}, nil
 }
 
-func (c *Client) Recognize(ctx context.Context, attachment receipt.Attachment) (receipt.Recognition, error) {
+func (c *Client) Recognize(ctx context.Context, attachment invoice.Attachment) (invoice.Recognition, error) {
 	if c == nil {
-		return receipt.Recognition{}, fmt.Errorf("Anyreceipt client is not initialized")
+		return invoice.Recognition{}, fmt.Errorf("Anyreceipt client is not initialized")
 	}
 	if strings.TrimSpace(attachment.URL) == "" {
-		return receipt.Recognition{}, fmt.Errorf("receipt attachment URL is required")
+		return invoice.Recognition{}, fmt.Errorf("receipt attachment URL is required")
 	}
 
 	name := attachment.Name
@@ -53,11 +53,11 @@ func (c *Client) Recognize(ctx context.Context, attachment receipt.Attachment) (
 	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
-		return receipt.Recognition{}, fmt.Errorf("encode Anyreceipt request: %w", err)
+		return invoice.Recognition{}, fmt.Errorf("encode Anyreceipt request: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, summaryURL, bytes.NewReader(encoded))
 	if err != nil {
-		return receipt.Recognition{}, fmt.Errorf("create Anyreceipt request: %w", err)
+		return invoice.Recognition{}, fmt.Errorf("create Anyreceipt request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
@@ -65,11 +65,11 @@ func (c *Client) Recognize(ctx context.Context, attachment receipt.Attachment) (
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return receipt.Recognition{}, fmt.Errorf("call Anyreceipt: %w", err)
+		return invoice.Recognition{}, fmt.Errorf("call Anyreceipt: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return receipt.Recognition{}, fmt.Errorf("Anyreceipt returned HTTP %d", resp.StatusCode)
+		return invoice.Recognition{}, fmt.Errorf("Anyreceipt returned HTTP %d", resp.StatusCode)
 	}
 
 	var result struct {
@@ -83,23 +83,23 @@ func (c *Client) Recognize(ctx context.Context, attachment receipt.Attachment) (
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return receipt.Recognition{}, fmt.Errorf("read Anyreceipt response: %w", err)
+		return invoice.Recognition{}, fmt.Errorf("read Anyreceipt response: %w", err)
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return receipt.Recognition{}, fmt.Errorf("decode Anyreceipt response: %w", err)
+		return invoice.Recognition{}, fmt.Errorf("decode Anyreceipt response: %w", err)
 	}
 	if result.ErrorCode != nil || result.ErrorMessage != "" {
-		return receipt.Recognition{}, fmt.Errorf("Anyreceipt reported an API error")
+		return invoice.Recognition{}, fmt.Errorf("Anyreceipt reported an API error")
 	}
 	outputs := result.Outputs
 	if result.Data.Outputs != nil {
 		outputs = result.Data.Outputs
 	}
 	if outputs == nil {
-		return receipt.Recognition{}, fmt.Errorf("Anyreceipt response has no outputs")
+		return invoice.Recognition{}, fmt.Errorf("Anyreceipt response has no outputs")
 	}
 
-	return receipt.Recognition{
+	return invoice.Recognition{
 		Title:   textValue(outputs["title"]),
 		Country: textValue(outputs["country"]),
 		Type:    textValue(outputs["type"]),

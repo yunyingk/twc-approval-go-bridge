@@ -1,3 +1,5 @@
+//go:build !no_anthropic
+
 package model
 
 import (
@@ -7,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 )
 
 func TestAnthropicCompatibleImageRecognition(t *testing.T) {
@@ -35,14 +37,14 @@ func TestAnthropicCompatibleImageRecognition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := client.Recognize(context.Background(), receipt.Attachment{ContentType: "image/png", Data: []byte("image bytes")})
+	result, err := client.Recognize(context.Background(), invoice.Attachment{ContentType: "image/png", Data: []byte("image bytes")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.Summary != "ok" || string(result.Outputs["extra"]) != `"kept"` {
 		t.Fatalf("result = %+v", result)
 	}
-	if _, err := client.Recognize(context.Background(), receipt.Attachment{ContentType: "application/pdf", Data: []byte("%PDF")}); err == nil {
+	if _, err := client.Recognize(context.Background(), invoice.Attachment{ContentType: "application/pdf", Data: []byte("%PDF")}); err == nil {
 		t.Fatal("PDF unexpectedly accepted")
 	}
 }

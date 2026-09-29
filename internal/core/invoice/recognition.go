@@ -1,5 +1,5 @@
-// Package receipt defines the provider-independent receipt recognition boundary.
-package receipt
+// Package invoice defines the provider-independent invoice recognition boundary.
+package invoice
 
 import (
 	"context"
@@ -14,8 +14,8 @@ type Attachment struct {
 	Data        []byte
 }
 
-// Recognition uses only fields already returned by the existing Anyreceipt
-// field shortcut. Mapping these fields into Bitable remains a separate step.
+// Recognition retains provider fields and the original response.
+// Mapping these fields into Bitable remains a separate step.
 type Recognition struct {
 	Title   string
 	Country string

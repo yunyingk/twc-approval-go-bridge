@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/dupcheck"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 )
 
 func TestBuildOrdersMultipleInvoicesAndFindsCandidates(t *testing.T) {
 	makeInvoice := func(token string) Invoice {
 		return Invoice{FileToken: token, LedgerRecordID: "ledger-" + token,
-			Recognition: receipt.Recognition{Raw: json.RawMessage(`{"outputs":{}}`)},
+			Recognition: invoice.Recognition{Raw: json.RawMessage(`{"outputs":{}}`)},
 			Facts:       dupcheck.Invoice{SourceKey: "detail:" + token, Number: "N-1", Seller: "Seller", Type: "invoice"}}
 	}
 	second, first := makeInvoice("b"), makeInvoice("a")

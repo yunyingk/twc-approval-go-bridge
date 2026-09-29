@@ -17,7 +17,7 @@ func TestAttachmentAllowlistUsesContentNotExtension(t *testing.T) {
 	c.httpClient.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("a fake PDF file")), Header: make(http.Header)}, nil
 	})
-	if _, _, err := c.downloadAndCheck(context.Background(), "https://example.com/invoice.pdf"); err == nil {
+	if _, _, err := c.downloadAndCheck(context.Background(), "https://example.com/receipt.pdf"); err == nil {
 		t.Fatal("renamed fake PDF was accepted")
 	}
 }
