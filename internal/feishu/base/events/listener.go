@@ -1,4 +1,4 @@
-// Package events contains the optional Feishu persistent-connection adapter.
+// Package events contains the optional Feishu Bitable persistent-connection adapter.
 package events
 
 import (

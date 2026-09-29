@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/events"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/events"
 )
 
 type Config struct {

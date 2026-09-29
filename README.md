@@ -96,10 +96,10 @@ Anyreceipt 始终编入，启用识别时使用 `RECEIPT_PROVIDER=anyreceipt` �
 | 目录 | 职责 | 当前状态 |
 | --- | --- | --- |
 | `internal/core/dedupe/` | 判断变化是否重复；由持久化实现提供原子领取 | 接口已定义，键规则和存储待定 |
-| `internal/feishu/events/` | 接收多维表格变更事件 | 长连接已实现，事件内容待验证 |
-| `internal/feishu/records.go`、`ledger.go` | 记录边界与发票台账新增/更新 | 台账写入已实现，其他记录操作仍待业务映射 |
-| `internal/feishu/approvals.go` | 按日期、项目、特性分组生成审批并读取结果 | 接口已定义，审批模板待定 |
-| `internal/feishu/permissions.go` | 记录权限分类与锁定 | 接口已定义，飞书能力待验证 |
+| `internal/feishu/base/events/` | 接收多维表格变更事件 | 长连接已实现，事件内容待验证 |
+| `internal/feishu/base/records.go`、`ledger.go` | 多维表格记录边界与发票台账新增/更新 | 台账写入已实现，其他记录操作仍待业务映射 |
+| `internal/feishu/approval/` | 飞书原生审批单据的创建与结果读取 | 仅接口草稿，审批模板待定 |
+| `internal/feishu/base/permissions.go` | 多维表格记录权限分类与锁定 | 接口已定义，飞书能力待验证 |
 | `internal/seal/` | Seal Webhook 附件上传、单据提交和本地 mock 回调 | 已通过测试通道提交，公网回调待实现 |
 | `internal/core/dupcheck/` | 从发票台账事实产生查重候选证据 | 首版按票号、开票方、票据类型比对 |
 | `internal/core/invoice/` | 识别接口、结果结构和多票聚合 | 已实现，不依赖外部服务 |
@@ -116,14 +116,14 @@ Anyreceipt 适配器沿用同项目现有字段捷径中的 `/api/ocr/summary` �
 当前服务入口启动基础 HTTP 端点；配置飞书凭证后启动事件监听，配置识别提供方后接入附件识别。调用关系如下：
 
 ```text
-cmd/server ──> config, httpserver, feishu/events, anyreceipt/flow, version
-anyreceipt/flow ──> feishu/attachments ──> {anyreceipt,model} ──> anyreceipt/ledger ──> feishu/ledger
-feishu/events ──> Feishu Go SDK
+cmd/server ──> config, httpserver, feishu/base/events, anyreceipt/flow, version
+anyreceipt/flow ──> feishu/base/attachments ──> {anyreceipt,model} ──> anyreceipt/ledger ──> feishu/base/ledger
+feishu/base/events ──> Feishu Go SDK
 anthropic/model ──> anthropic ──> Anthropic Go SDK (Messages，可编译排除)
-cmd/server submit-seal ──> seal/review ──> feishu/review (只读明细与台账)
+cmd/server submit-seal ──> seal/review ──> feishu/base/review (只读明细与台账)
 seal/review ──> core/invoice/aggregate ──> core/dupcheck
 seal/review ──> seal/mapper ──> seal (上传原件、提交单据)
-core/dedupe, feishu/{records,approvals,permissions} ──> 待后续业务编排接入
+core/dedupe, feishu/base/{records,permissions}, feishu/approval ──> 待后续业务编排接入
 ```
 
 Go 固定为 `1.24.13`；直接依赖固定为 Feishu SDK `v3.12.0` 和 Anthropic SDK `v1.46.0`。传递依赖由 `go.mod` 和 `go.sum` 锁定，构建工具及容器镜像也使用明确版本。
@@ -147,8 +147,10 @@ internal/
 │   └── ledger/                 识别结果回写发票台账
 ├── anthropic/                 可选的 Messages SDK 适配层
 │   └── model/                  自有多模态识别器
-├── feishu/                    飞书读写与资源边界
-│   └── events/                 飞书长连接适配器
+├── feishu/                    飞书产品边界
+│   ├── base/                   多维表格记录、附件和台账
+│   │   └── events/             多维表格变更长连接
+│   └── approval/               飞书原生审批单据接口草稿
 ├── seal/                      SealAI HTTP 客户端与 mock 回调
 │   ├── mapper/                 聚合结果转 SealAI 单据格式
 │   └── review/                 上传原件、提交审核单据

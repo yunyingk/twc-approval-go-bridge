@@ -1,8 +1,10 @@
-package feishu
+package approval
 
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base"
 )
 
 // ApprovalGroup is the requested grouping axis. The exact field mapping and
@@ -17,7 +19,7 @@ type ApprovalGroup struct {
 // Form remains opaque until the approval definition is supplied.
 type ApprovalDraft struct {
 	Group   ApprovalGroup
-	Records []RecordRef
+	Records []base.RecordRef
 	Form    json.RawMessage
 }
 

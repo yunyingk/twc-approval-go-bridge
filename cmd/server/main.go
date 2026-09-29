@@ -12,8 +12,8 @@ import (
 	"github.com/yunyingk/twc-approval-go-bridge/internal/anyreceipt/ledger"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/events"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/events"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/httpserver"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/version"
@@ -44,7 +44,7 @@ func main() {
 
 	var feishuListener *events.Listener
 	var receiptFlow *flow.Processor
-	var attachmentClient *feishu.AttachmentClient
+	var attachmentClient *base.AttachmentClient
 	if cfg.FeishuEnabled() {
 		sink := events.LoggingSink(logger, cfg.FeishuLogRawEvents)
 		if cfg.ReceiptProvider != "" {
@@ -61,13 +61,13 @@ func main() {
 				logger.Error("configure receipt recognizer", "error", err)
 				os.Exit(1)
 			}
-			attachmentClient = feishu.NewAttachmentClient(cfg.FeishuAppID, cfg.FeishuAppSecret)
+			attachmentClient = base.NewAttachmentClient(cfg.FeishuAppID, cfg.FeishuAppSecret)
 			resultHandler := flow.ResultHandler(func(ctx context.Context, result flow.Result) error {
 				logger.InfoContext(ctx, "receipt recognized", "trigger", result.Trigger, "record_id", result.RecordID, "file_name", result.FileName, "output_fields", len(result.Recognition.Outputs))
 				return nil
 			})
 			if cfg.ReceiptLedgerTableID != "" {
-				ledgerHandler, ledgerErr := ledger.New(ledger.Config{BaseToken: cfg.ReceiptBaseToken, SourceTableID: cfg.ReceiptTableID, SourceDetailFieldID: cfg.ReceiptSourceDetailFieldID, TableID: cfg.ReceiptLedgerTableID, Fields: cfg.ReceiptLedgerFieldIDs}, feishu.NewLedgerClient(cfg.FeishuAppID, cfg.FeishuAppSecret), logger)
+				ledgerHandler, ledgerErr := ledger.New(ledger.Config{BaseToken: cfg.ReceiptBaseToken, SourceTableID: cfg.ReceiptTableID, SourceDetailFieldID: cfg.ReceiptSourceDetailFieldID, TableID: cfg.ReceiptLedgerTableID, Fields: cfg.ReceiptLedgerFieldIDs}, base.NewLedgerClient(cfg.FeishuAppID, cfg.FeishuAppSecret), logger)
 				if ledgerErr != nil {
 					logger.Error("configure invoice ledger", "error", ledgerErr)
 					os.Exit(1)

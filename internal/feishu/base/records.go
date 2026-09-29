@@ -1,6 +1,6 @@
-// Package feishu defines the service-facing operations on Feishu resources.
+// Package base defines the service-facing operations on Feishu Bitable records.
 // The transport implementations can be added after the target Base is mapped.
-package feishu
+package base
 
 import (
 	"context"

@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal/review"
 )
@@ -17,7 +17,7 @@ func runSealSubmit(ctx context.Context, cfg config.Config, recordID string, logg
 	if cfg.SealDocumentURL == "" || cfg.SealBearerToken == "" {
 		return fmt.Errorf("SEAL_DOCUMENT_URL and SEAL_BEARER_TOKEN are required")
 	}
-	source, err := feishu.NewReviewSource(cfg.FeishuAppID, cfg.FeishuAppSecret,
+	source, err := base.NewReviewSource(cfg.FeishuAppID, cfg.FeishuAppSecret,
 		cfg.ReceiptBaseToken, cfg.ReceiptTableID, cfg.ReceiptFieldID,
 		cfg.ReceiptSourceDetailFieldID, cfg.ReceiptLedgerTableID, cfg.ReceiptLedgerFieldIDs)
 	if err != nil {
