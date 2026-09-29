@@ -80,6 +80,8 @@ func TestMapIncompleteReceiptStillMakesDocument(t *testing.T) {
 		StartTime:  time.Unix(1_800_000_000, 0),
 		Upload: seal.UploadResponse{
 			AttachmentID: "seal-attachment-1",
+			Attachment: seal.AttachmentInfo{Name: "receipt.jpg", MimeType: "image/jpeg", URL: "https://example.com/file",
+				OSSPath: "path", OSSSignedURL: "https://example.com/signed", OSSFileSize: 50},
 		},
 		Recognition: receipt.Recognition{
 			Number: "INV-9", Total: "100",
@@ -95,11 +97,16 @@ func TestMapIncompleteReceiptStillMakesDocument(t *testing.T) {
 	if len(document.Invoices) != 0 {
 		t.Fatalf("currency is missing, so structured invoice must be omitted: %#v", document.Invoices)
 	}
-	if hasField(document.Fields, "receipt_attachment", "ATTACHMENT") {
-		t.Fatal("incomplete upload metadata must not be represented as a full attachment")
+	if !hasField(document.Fields, "receipt_attachment", "ATTACHMENT") || hasField(document.Fields, "seal_attachment_id", "TEXT") {
+		t.Fatal("the original must be an attachment field, not a text ID")
 	}
-	if !hasField(document.Fields, "seal_attachment_id", "TEXT") {
-		t.Fatal("uploaded evidence ID should remain in document fields")
+}
+
+func TestMapRejectsTextOnlyUpload(t *testing.T) {
+	_, err := Map(Input{DocumentID: "doc", DocumentSN: "sn", RecordID: "record", FileToken: "file",
+		StartTime: time.Unix(100, 0), Upload: seal.UploadResponse{AttachmentID: "id"}})
+	if err == nil {
+		t.Fatal("missing attachment metadata must stop Seal submission")
 	}
 }
 

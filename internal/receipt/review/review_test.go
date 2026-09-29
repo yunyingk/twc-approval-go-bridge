@@ -45,7 +45,10 @@ type fakeSeal struct {
 
 func (s *fakeSeal) UploadAttachment(_ context.Context, file seal.Attachment) (seal.UploadResponse, error) {
 	s.uploads = append(s.uploads, file.Name)
-	return seal.UploadResponse{AttachmentID: file.Name}, nil
+	return seal.UploadResponse{AttachmentID: file.Name, Attachment: seal.AttachmentInfo{
+		Name: file.Name, MimeType: file.ContentType, URL: "https://example.com/file",
+		OSSPath: "path", OSSSignedURL: "https://example.com/signed", OSSFileSize: int64(len(file.Data)),
+	}}, nil
 }
 
 func (s *fakeSeal) SubmitDocument(_ context.Context, document seal.DocumentRequest) (seal.SubmitResponse, error) {

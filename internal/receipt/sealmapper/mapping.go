@@ -62,12 +62,12 @@ func Map(input Input) (seal.DocumentRequest, error) {
 		}
 	}
 	addText("attachment_name", "附件文件名", input.FileName)
-	addText("seal_attachment_id", "Seal 附件 ID", input.Upload.AttachmentID)
-	if info := input.Upload.Attachment; completeAttachmentInfo(info) {
-		document.Fields = append(document.Fields, seal.DocumentField{
-			Key: "receipt_attachment", Label: "发票附件", Type: "ATTACHMENT", Value: []seal.AttachmentInfo{info},
-		})
+	if input.Upload.AttachmentID == "" || !completeAttachmentInfo(input.Upload.Attachment) {
+		return seal.DocumentRequest{}, fmt.Errorf("Seal upload did not return usable attachment metadata")
 	}
+	document.Fields = append(document.Fields, seal.DocumentField{
+		Key: "receipt_attachment", Label: "发票附件", Type: "ATTACHMENT", Value: []seal.AttachmentInfo{input.Upload.Attachment},
+	})
 	addText("receipt_title", "发票摘要", text(input.Recognition, "title", input.Recognition.Title))
 	addText("receipt_number", "发票号", text(input.Recognition, "Number", input.Recognition.Number))
 	addText("receipt_type", "票据类型", text(input.Recognition, "type", input.Recognition.Type))
