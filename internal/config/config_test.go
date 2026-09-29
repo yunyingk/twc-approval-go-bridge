@@ -58,6 +58,26 @@ func TestLoadRejectsInvalidReceiptTrigger(t *testing.T) {
 	}
 }
 
+func TestLoadParsesLedgerFieldIDs(t *testing.T) {
+	t.Setenv("FEISHU_APP_ID", "cli_test")
+	t.Setenv("FEISHU_APP_SECRET", "secret")
+	t.Setenv("RECEIPT_PROVIDER", "model")
+	t.Setenv("RECEIPT_BASE_TOKEN", "base")
+	t.Setenv("RECEIPT_TABLE_ID", "detail")
+	t.Setenv("RECEIPT_ATTACHMENT_FIELD_ID", "attachment")
+	t.Setenv("RECEIPT_MODEL_API_KEY", "test")
+	t.Setenv("RECEIPT_MODEL_NAME", "test")
+	t.Setenv("RECEIPT_LEDGER_TABLE_ID", "ledger")
+	t.Setenv("RECEIPT_LEDGER_FIELD_IDS", `{"source_key":"source-id","raw_json":"raw-id"}`)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ReceiptLedgerTableID != "ledger" || cfg.ReceiptLedgerFieldIDs["source_key"] != "source-id" {
+		t.Fatalf("ledger config = %+v", cfg.ReceiptLedgerFieldIDs)
+	}
+}
+
 func TestLoadRejectsUnconfiguredReceiptProvider(t *testing.T) {
 	t.Setenv("FEISHU_APP_ID", "cli_test")
 	t.Setenv("FEISHU_APP_SECRET", "secret")

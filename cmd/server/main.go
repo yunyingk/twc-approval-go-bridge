@@ -14,6 +14,7 @@ import (
 	"github.com/yunyingk/twc-approval-go-bridge/internal/httpserver"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/flow"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/ledger"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/model"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/version"
 )
@@ -49,11 +50,19 @@ func main() {
 				os.Exit(1)
 			}
 			attachmentClient = feishu.NewAttachmentClient(cfg.FeishuAppID, cfg.FeishuAppSecret)
-			receiptFlow, err = flow.New(flow.Config{BaseToken: cfg.ReceiptBaseToken, TableID: cfg.ReceiptTableID, FieldID: cfg.ReceiptFieldID}, attachmentClient, recognizer,
-				func(ctx context.Context, result flow.Result) error {
-					logger.InfoContext(ctx, "receipt recognized", "trigger", result.Trigger, "record_id", result.RecordID, "file_name", result.FileName, "output_fields", len(result.Recognition.Outputs))
-					return nil
-				}, logger)
+			resultHandler := flow.ResultHandler(func(ctx context.Context, result flow.Result) error {
+				logger.InfoContext(ctx, "receipt recognized", "trigger", result.Trigger, "record_id", result.RecordID, "file_name", result.FileName, "output_fields", len(result.Recognition.Outputs))
+				return nil
+			})
+			if cfg.ReceiptLedgerTableID != "" {
+				ledgerHandler, ledgerErr := ledger.New(ledger.Config{BaseToken: cfg.ReceiptBaseToken, SourceTableID: cfg.ReceiptTableID, SourceDetailFieldID: cfg.ReceiptSourceDetailFieldID, TableID: cfg.ReceiptLedgerTableID, Fields: cfg.ReceiptLedgerFieldIDs}, feishu.NewLedgerClient(cfg.FeishuAppID, cfg.FeishuAppSecret), logger)
+				if ledgerErr != nil {
+					logger.Error("configure invoice ledger", "error", ledgerErr)
+					os.Exit(1)
+				}
+				resultHandler = ledgerHandler.Handle
+			}
+			receiptFlow, err = flow.New(flow.Config{BaseToken: cfg.ReceiptBaseToken, TableID: cfg.ReceiptTableID, FieldID: cfg.ReceiptFieldID}, attachmentClient, recognizer, resultHandler, logger)
 			if err != nil {
 				logger.Error("configure receipt flow", "error", err)
 				os.Exit(1)
