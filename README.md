@@ -63,15 +63,15 @@ go run ./cmd/server
 
 `RECEIPT_TRIGGER_MODE` 可选 `event`、`poll` 或 `both`（默认）；两条路径共用附件读取、识别队列和进程内去重。`poll` 每隔 `RECEIPT_POLL_INTERVAL`（默认 `5m`）只扫描配置的 Base 中指定的「个人报销明细」Table，并按附件字段 ID 定位字段。`RECEIPT_POLL_STARTUP=baseline`（默认）表示首次扫描仅记录已有附件，后续只处理新增 token；设为 `process` 则首次扫描也处理已有附件。轮询不依赖事件投递，但仍需应用对目标 Base 的读取权限。当前基线和去重只存在于进程内：重启后会重新建立基线，停机期间新增的附件在 `baseline` 模式下不会补处理；多实例或需要跨重启补偿时应接入持久化状态。识别失败的附件会在后续扫描中重试。
 
-当前事件投递尚未验证成功，运行时可设 `RECEIPT_TRIGGER_MODE=poll` 只使用轮询。程序不自动加载 `.env`；须由运行环境注入飞书凭证、识别服务密钥和配置示例中的目标表/字段 ID。
+当前事件投递尚未验证成功，运行时可设 `RECEIPT_TRIGGER_MODE=poll` 只使用轮询。主线路径使用 `RECEIPT_PROVIDER=anyreceipt`，自有多模态模型是可选切换项。程序不自动加载 `.env`；须由运行环境注入飞书凭证、识别服务密钥和配置示例中的目标表/字段 ID。
 
 订阅范围是整个 Base 的记录变更，并非单个字段：任意数据表的行新增、修改、删除都可能推送 `drive.file.bitable_record_changed_v1`。服务收到后才过滤 Base ID、数据表 ID 和附件字段 ID；修改「消费事由」或第三方「交易流水表」不会触发识别，只有「个人报销明细」的「发票附件」新增文件才进入识别队列。字段本身改名属于另一类字段变更事件。长连接方式无需配置事件加密策略；向开发者服务器推送的 Webhook 方式才涉及该配置。
 
-当前测试 Base `BgNkbW1RKavyaPsYD6acNZPFnUb` 的业务定位：`交易流水表`（`tbloRvQFZNLugLB0`）由第三方写入，本服务只读取；`个人报销明细`（`tblMC3p2Vm2Mwuh9`）是员工补充票据附件、触发识别的来源，附件字段是 `发票附件`（`fldnKx8Uzo`）；`发票台账`（`tblKwQ4NK6t4G69S`）接收识别结果。台账新增了「识别来源键」（`fldrkOhogY`）和「识别原始JSON」（`fldeECmr7u`）：按来源记录 ID 与附件 token 查找并新增或更新同一行，完整供应商响应保存在原始 JSON 字段。「发票唯一键」使用 `OCR-` 加来源键哈希作为技术占位，「发票号」单独保存票面号码。映射字段 ID 在 `RECEIPT_LEDGER_FIELD_IDS` 中配置，改名后仍可定位；已有的汇率、人民币金额、白名单、报销状态、关联记录等不从 OCR 结果推断或覆盖。来源明细的「明细ID」由 `RECEIPT_SOURCE_DETAIL_FIELD_ID` 定位并写入台账的「关联明细ID」。OCR 失败目前只记录错误并等待轮询重试，不创建「识别失败」台账行。
+当前测试 Base `BgNkbW1RKavyaPsYD6acNZPFnUb` 的业务定位：`交易流水表`（`tbloRvQFZNLugLB0`）由第三方写入，本服务只读取；`个人报销明细`（`tblMC3p2Vm2Mwuh9`）是员工补充票据附件、触发识别的来源，附件字段是 `发票附件`（`fldnKx8Uzo`）；`发票台账`（`tblKwQ4NK6t4G69S`）接收识别结果。台账新增了「识别来源键」（`fldrkOhogY`）和「识别原始JSON」（`fldeECmr7u`）：按来源记录 ID 与附件 token 查找并新增或更新同一行，完整供应商响应保存在原始 JSON 字段。依照[测试流程](https://xcn4e0le81w4.feishu.cn/wiki/UF7ZwwdtKiwEEikHI19c2VkOndb)的 4.1 对照，「发票唯一键」写 Anyreceipt 的 `traceId`；可选模型结果无 `traceId` 时用 `OCR-` 加来源键哈希。台账已补齐发票摘要、票据类型、业务分类、买方、税率、国家、AI 消费概要；原有「税前金额」「应付金额」「GST税额」已原地改名为「不含税金额」「含税金额」「税额」，保留历史值。每张台账发票关联一条「个人报销明细」，明细一侧允许关联多张发票；字段 ID 映射见 `RECEIPT_LEDGER_FIELD_IDS`。汇率、人民币金额、白名单、报销状态、识别状态等待确认项不从 OCR 结果推断或覆盖。OCR 失败只记录错误并等待轮询重试，不创建「识别失败」台账行。
 
-Anyreceipt 需要 `ANYRECEIPT_API_KEY`，可识别图片和 PDF。模型模式使用 Anthropic Go SDK，配置 `RECEIPT_MODEL_API_KEY`、`RECEIPT_MODEL_BASE_URL`、`RECEIPT_MODEL_NAME`；当前只接受图片，PDF/DOCX 转换留给后续独立模块。默认构建包含 Anyreceipt；`go build -tags no_anyreceipt ./cmd/server` 可在编译时排除它。附件下载还要求飞书应用身份具备 `docs:document.media:download` 或等价权限，并有目标 Base 的资源授权。当前重复附件只在进程内按记录 ID 和附件 token 去重；持久化去重与跨重启补偿属于后续阶段。
+Anyreceipt 需要 `ANYRECEIPT_API_KEY`，可识别图片和 PDF。模型模式使用 Anthropic Go SDK，配置 `RECEIPT_MODEL_API_KEY`、`RECEIPT_MODEL_BASE_URL`、`RECEIPT_MODEL_NAME`；当前只接受图片，PDF/DOCX 转换留给后续独立模块。DeepSeek 测试模型实际返回过 Markdown 围栏 JSON，当前模型适配器只接受纯 JSON，此可选切换项仍需兼容性修复。默认构建包含 Anyreceipt；`go build -tags no_anyreceipt ./cmd/server` 可在编译时排除它。附件下载还要求飞书应用身份具备 `docs:document.media:download` 或等价权限，并有目标 Base 的资源授权。当前重复附件只在进程内按记录 ID 和附件 token 去重；持久化去重与跨重启补偿属于后续阶段。
 
-事件载荷仍需要结合真实测试应用联调。测试 Base 已用项目应用身份订阅云文档事件；开放平台已添加「多维表格记录变更」事件并选用长连接。2026-09-29 在独立测试行 `reczz28HJVvAm8NM`（`明细ID=OCR-TEST-20260929-175848`）修改记录后，开发者后台事件日志暂无投递记录；应用发布新版本后再次通过 API 修改并恢复测试行，长连接已就绪但监听器仍未收到事件，仍需排查投递链路。该测试行保留了一张样本 JPEG 附件。识别结果的字段映射与持久化暂不固化为业务规则。Anyreceipt 的完整输出键及接口见[业务资料](../doc/Anyreceipt-API与完整返回结构.md)。
+事件载荷仍需要结合真实测试应用联调。测试 Base 已用项目应用身份订阅云文档事件；开放平台已添加「多维表格记录变更」事件并选用长连接。2026-09-29 在独立测试行 `reczz28HJVvAm8NM`（`明细ID=OCR-TEST-20260929-175848`）修改记录后，开发者后台事件日志暂无投递记录；应用发布新版本后再次通过 API 修改并恢复测试行，长连接已就绪但监听器仍未收到事件，仍需排查投递链路。该测试行保留了一张样本 JPEG 附件；同日已用真实 Anyreceipt 识别 21 个输出字段，并通过正式服务的轮询入口完成台账回写与双向关联验证。Anyreceipt 的完整输出键及接口见[业务资料](../doc/Anyreceipt-API与完整返回结构.md)。
 
 ## 业务边界
 
@@ -85,9 +85,9 @@ Anyreceipt 需要 `ANYRECEIPT_API_KEY`，可识别图片和 PDF。模型模式�
 | `internal/seal/` | 提交内部数据并处理 Seal 回调 | 接口已定义，协议及鉴权待定 |
 | `internal/receipt/` | 票据识别的可替换接口 | 已定义 |
 | `internal/receipt/flow/` | 监听附件事件、读取附件并交付识别结果 | 已实现，待真实事件联调 |
-| `internal/receipt/anyreceipt/` | 直接调用已有字段捷径使用的 Anyreceipt OCR 接口 | 已实现，待真实凭证联调 |
-| `internal/receipt/model/` | 通过 Anthropic 兼容模型识别图片 | 已实现，待真实附件联调 |
-| `internal/receipt/ledger/` | 映射识别结果并写入发票台账 | 已实现，待真实 OCR 结果端到端验证 |
+| `internal/receipt/anyreceipt/` | 直接调用已有字段捷径使用的 Anyreceipt OCR 接口 | 已通过真实附件联调 |
+| `internal/receipt/model/` | 通过 Anthropic 兼容模型识别图片 | 已实现，DeepSeek 返回格式兼容待修复 |
+| `internal/receipt/ledger/` | 映射识别结果并写入发票台账 | 已通过真实 OCR 结果端到端验证 |
 | `internal/anthropic/` | 独立的 Anthropic Messages API 入口 | SDK 已接入，供模型识别适配器使用 |
 
 Anyreceipt 适配器沿用同项目现有字段捷径中的 `/api/ocr/summary` 请求格式，使用独立 API Key。Anthropic 与 Seal 同级，是独立 AI 能力；模型识别适配器通过它调用 Anthropic 兼容接口。两者不依赖飞书插件运行时。
@@ -124,4 +124,4 @@ deploy/                     Docker 和 Compose 文件
 
 ## 后续扩展边界
 
-接下来需要分别验证飞书事件、目标多维表格的字段与权限、Seal 的请求及回调协议，以及票据识别结果的业务映射。确认后再把这些边界接入主流程；目前没有预设字段名称、审批状态或数据存储方案。
+附件 → Anyreceipt → 发票台账的轮询主线已在测试 Base 跑通；飞书长连接事件投递仍待联调。SealAI 测试租户的 [Webhook 配置](https://mediastorm-test.sealai.cc/audit/deploy/webhook) 已提供单据提交、附件上传、审核结果回调和人工结果同步协议，但服务尚未接入 SealAI；提交地址应以目标租户新建通道为准，密钥只由运行环境注入。审批状态与后续业务编排仍待确定。

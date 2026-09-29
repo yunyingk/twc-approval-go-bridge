@@ -18,20 +18,25 @@ import (
 
 // Field IDs are stable even when a user renames a Bitable column.
 const (
-	SourceKey   = "source_key"
-	RawJSON     = "raw_json"
-	DetailID    = "detail_id"
-	UniqueKey   = "unique_key"
-	Number      = "invoice_number"
-	Seller      = "seller"
-	TaxNumber   = "tax_number"
-	Currency    = "currency"
-	Pretax      = "pretax_amount"
-	Tax         = "tax_amount"
-	Total       = "total_amount"
-	IssueDate   = "issue_date"
-	Description = "description"
-	Status      = "status"
+	SourceKey        = "source_key"
+	RawJSON          = "raw_json"
+	DetailID         = "detail_id"
+	Relation         = "relation"
+	UniqueKey        = "unique_key"
+	Title            = "title"
+	Number           = "invoice_number"
+	ReceiptType      = "receipt_type"
+	BusinessCategory = "business_category"
+	Seller           = "seller"
+	Buyer            = "buyer"
+	Currency         = "currency"
+	Pretax           = "pretax_amount"
+	Tax              = "tax_amount"
+	TaxRate          = "tax_rate"
+	Total            = "total_amount"
+	IssueDate        = "issue_date"
+	Country          = "country"
+	AISummary        = "ai_summary"
 )
 
 type Config struct {
@@ -66,7 +71,7 @@ func New(config Config, store Store, logger *slog.Logger) (*Handler, error) {
 	used := make(map[string]string, len(config.Fields))
 	for semantic, fieldID := range config.Fields {
 		switch semantic {
-		case SourceKey, RawJSON, DetailID, UniqueKey, Number, Seller, TaxNumber, Currency, Pretax, Tax, Total, IssueDate, Description, Status:
+		case SourceKey, RawJSON, DetailID, Relation, UniqueKey, Title, Number, ReceiptType, BusinessCategory, Seller, Buyer, Currency, Pretax, Tax, TaxRate, Total, IssueDate, Country, AISummary:
 		default:
 			return nil, fmt.Errorf("unsupported ledger field mapping %q", semantic)
 		}
@@ -107,14 +112,23 @@ func (h *Handler) Handle(ctx context.Context, result flow.Result) error {
 		return fmt.Errorf("receipt recognition contains invalid JSON")
 	}
 	put(RawJSON, string(raw))
-	hash := sha256.Sum256([]byte(sourceKey))
-	put(UniqueKey, "OCR-"+hex.EncodeToString(hash[:8]))
+	put(Relation, []string{result.RecordID})
+	uniqueKey := traceIDFromRaw(raw)
+	if uniqueKey == "" {
+		hash := sha256.Sum256([]byte(sourceKey))
+		uniqueKey = "OCR-" + hex.EncodeToString(hash[:8])
+	}
+	put(UniqueKey, uniqueKey)
+	put(Title, output(result, "title"))
 	put(Number, output(result, "Number"))
-	put(Seller, first(output(result, "Seller"), output(result, "Payee")))
-	put(TaxNumber, output(result, "Sellertaxnumber"))
+	put(ReceiptType, output(result, "type"))
+	put(BusinessCategory, output(result, "TypeofBill"))
+	put(Seller, output(result, "Seller"))
+	put(Buyer, output(result, "Buyer"))
 	put(Currency, strings.ToUpper(output(result, "currency")))
-	put(Description, first(output(result, "occasion"), output(result, "Remark")))
-	put(Status, "已识别")
+	put(TaxRate, output(result, "taxrate"))
+	put(Country, output(result, "country"))
+	put(AISummary, strings.TrimSpace(result.Recognition.Summary))
 	for _, item := range []struct{ semantic, outputKey string }{{Pretax, "amountwithouttax"}, {Tax, "tax"}, {Total, "total"}} {
 		if amount, ok := parseAmount(output(result, item.outputKey)); ok {
 			put(item.semantic, amount)
@@ -136,6 +150,20 @@ func (h *Handler) Handle(ctx context.Context, result flow.Result) error {
 	}
 	h.logger.InfoContext(ctx, "receipt ledger written", "record_id", id, "created", created, "source_record_id", result.RecordID)
 	return nil
+}
+
+func traceIDFromRaw(raw json.RawMessage) string {
+	var response struct {
+		TraceID json.RawMessage `json:"traceId"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return ""
+	}
+	var traceID string
+	if err := json.Unmarshal(response.TraceID, &traceID); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(traceID)
 }
 
 func output(result flow.Result, key string) string {
