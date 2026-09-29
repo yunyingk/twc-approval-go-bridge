@@ -2,6 +2,8 @@
 
 本目录只封装 Seal AI Webhook 的出站 HTTP 协议；不读取飞书表格，不处理 OCR，也不暴露回调路由。业务映射在调用方完成。
 
+测试租户官方页面导出的 Webhook 接口原文备份见 [`external-api/sealai/`](../../external-api/README.md)，包含发起审核、附件上传、结果回推和人工结果同步的完整参数说明。
+
 使用 `NewClient(Config{DocumentURL, BearerToken}, httpClient)` 创建客户端。`DocumentURL` 是目标通道的完整 `/api/v1/integrations/webhook/{webhookId}/document` 地址；附件地址由同一通道推导为 `/attachments`。Bearer 密钥由运行环境注入，不写入仓库。默认请求超时为 60 秒；传入有 `Timeout` 的 `http.Client` 可覆盖。客户端不跟随重定向，以免向另一地址转发密钥。
 
 调用顺序：

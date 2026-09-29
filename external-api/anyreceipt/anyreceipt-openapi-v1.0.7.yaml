@@ -1,0 +1,551 @@
+openapi: 3.0.3
+info:
+  title: Anyreceipt 票据识别接口
+  version: v1.0.7
+  description: |
+    Yaak 可导入的 OpenAPI 文件。
+
+    使用方式：
+    1. 在 Yaak 中选择 Import。
+    2. 导入本 YAML 文件。
+    3. 在鉴权中设置 API Key，或在每个请求头中填写 `X-API-KEY: ak_xxx`。
+servers:
+  - url: https://pi.anyreceipt.cn
+    description: Production
+  - url: https://receiptsaas-dev-xiljmllalw.cn-beijing.fcapp.run
+    description: Development
+security:
+  - ApiKeyHeader: []
+paths:
+  /api/test:
+    get:
+      summary: 测试 API 接口
+      operationId: testApi
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RespString"
+  /api/getApiKeyUsage:
+    get:
+      summary: 获取 API-key 调用情况
+      operationId: getApiKeyUsage
+      parameters:
+        - $ref: "#/components/parameters/ApiKeyQuery"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RespApiKeyUsage"
+  /api/ocr/summary:
+    post:
+      summary: URL 文件 OCR 结构化输出并总结
+      operationId: ocrSummary
+      parameters:
+        - $ref: "#/components/parameters/ApiKeyQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OcrArgs"
+            example:
+              fileName: receipt.pdf
+              fileType: application/pdf
+              url: https://example.com/receipt.pdf?signature=xxx
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OcrSummaryResponse"
+  /api/ocr/summary/upload:
+    post:
+      summary: 上传文件 OCR 结构化输出并总结
+      operationId: ocrSummaryUpload
+      parameters:
+        - $ref: "#/components/parameters/ApiKeyQuery"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 待识别附件，支持图片或 PDF
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OcrSummaryResponse"
+  /api/upload/url:
+    post:
+      summary: 获取文件上传预签名 URL
+      operationId: getFileUploadUrl
+      parameters:
+        - $ref: "#/components/parameters/ApiKeyQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileNameRequest"
+            example:
+              fileName: ocr/test/receipt-001.jpg
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RespUrl"
+  /api/download/url:
+    post:
+      summary: 获取文件下载预签名 URL
+      operationId: getFileDownloadUrl
+      parameters:
+        - $ref: "#/components/parameters/ApiKeyQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileNameRequest"
+            example:
+              fileName: ocr/test/receipt-001.jpg
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RespUrl"
+  /api/ocr/batch/submit:
+    post:
+      summary: 批量 URL 文件 OCR 异步识别
+      description: |
+        一次最多提交 20 个文件 URL。提交成功后立即返回 taskId，后台异步识别。
+
+        批量任务会异步处理，处理时间与文件数量和大小有关。请通过任务查询接口获取最新进度和结果。
+      operationId: submitOcrBatch
+      parameters:
+        - $ref: "#/components/parameters/ApiKeyQuery"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OcrBatchRequest"
+            example:
+              forceFetch: true
+              files:
+                - fileName: receipt-001.jpg
+                  fileType: image/jpeg
+                  url: https://example.com/receipt-001.jpg?signature=xxx
+                - fileName: receipt-002.pdf
+                  fileType: application/pdf
+                  url: https://example.com/receipt-002.pdf?signature=xxx
+      responses:
+        "200":
+          description: 任务提交成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OcrBatchSubmitResponse"
+  /api/ocr/upload/batch/submit:
+    post:
+      summary: 批量上传文件 OCR 异步识别
+      description: |
+        一次最多上传 20 个文件。上传大小限制：单个文件最大 100MB，单次 multipart 请求总大小最大 256MB。
+
+        提交成功后立即返回 taskId，后台异步识别。请通过任务查询接口获取最新进度和结果。
+      operationId: submitOcrUploadBatch
+      parameters:
+        - $ref: "#/components/parameters/ApiKeyQuery"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - files
+              properties:
+                files:
+                  type: array
+                  description: 待识别附件，可选择多个文件
+                  minItems: 1
+                  maxItems: 20
+                  items:
+                    type: string
+                    format: binary
+                forceFetch:
+                  type: boolean
+                  description: 是否强制重新识别
+                  example: true
+                force_fetch:
+                  type: boolean
+                  description: 与 forceFetch 等价，兼容下划线命名
+      responses:
+        "200":
+          description: 任务提交成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OcrBatchSubmitResponse"
+  /api/ocr/batch/tasks/{taskId}:
+    get:
+      summary: 查询批量 OCR 异步任务
+      operationId: getOcrBatchTask
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          description: 批量任务 ID
+          schema:
+            type: string
+          example: 327c3f54-d8e3-4b32-a7d2-d0aded22e735
+        - $ref: "#/components/parameters/ApiKeyQuery"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OcrBatchTask"
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-KEY
+    ApiKeyQuery:
+      type: apiKey
+      in: query
+      name: apiKey
+  parameters:
+    ApiKeyQuery:
+      name: apiKey
+      in: query
+      required: false
+      description: API-key。也可以使用请求头 `X-API-KEY`。
+      schema:
+        type: string
+      example: ak_xxx
+  schemas:
+    RespString:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          type: string
+          example: API接口调用成功 2
+    RespApiKeyUsage:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          type: object
+          properties:
+            apiKey:
+              type: string
+              example: ak_xxx
+            balancePoints:
+              type: integer
+              example: 100
+            availableCallCount:
+              type: integer
+              example: 100
+            callCostPoints:
+              type: integer
+              example: 1
+    RespUrl:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        msg:
+          type: string
+          example: 操作成功
+        data:
+          type: object
+          properties:
+            url:
+              type: string
+              example: https://example-bucket.oss-cn-beijing.aliyuncs.com/ocr/test/receipt-001.jpg?signature=xxx
+    FileNameRequest:
+      type: object
+      required:
+        - fileName
+      properties:
+        fileName:
+          type: string
+          description: 对象存储文件名或 Key
+          example: ocr/test/receipt-001.jpg
+    OcrArgs:
+      type: object
+      required:
+        - fileName
+        - url
+      properties:
+        fileName:
+          type: string
+          description: 文件名称
+          example: receipt-001.jpg
+        fileType:
+          type: string
+          description: 文件类型，不传则自动判断
+          example: image/jpeg
+        url:
+          type: string
+          description: 文件下载链接
+          example: https://example.com/receipt-001.jpg?signature=xxx
+        forceFetch:
+          type: boolean
+          description: 是否强制重新识别
+          example: true
+    OcrBatchRequest:
+      type: object
+      required:
+        - files
+      properties:
+        forceFetch:
+          type: boolean
+          description: 是否强制重新识别
+          example: true
+        files:
+          type: array
+          minItems: 1
+          maxItems: 20
+          description: 待识别文件列表，一次最多 20 个文件。
+          items:
+            $ref: "#/components/schemas/OcrArgs"
+    OcrBatchSubmitResponse:
+      type: object
+      properties:
+        taskId:
+          type: string
+          example: 327c3f54-d8e3-4b32-a7d2-d0aded22e735
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        total:
+          type: integer
+          example: 2
+        completedCount:
+          type: integer
+          example: 0
+        successCount:
+          type: integer
+          example: 0
+        failureCount:
+          type: integer
+          example: 0
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 0
+        traceId:
+          type: string
+          example: 0fb09b9d-e235-49d1-a471-834e92f5dd69
+    OcrBatchTask:
+      type: object
+      properties:
+        taskId:
+          type: string
+        type:
+          type: string
+          enum:
+            - url
+            - upload
+          description: 批量任务类型
+        tenantId:
+          type: integer
+          format: int64
+        traceId:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskStatus"
+        forceFetch:
+          type: boolean
+        total:
+          type: integer
+        completedCount:
+          type: integer
+        successCount:
+          type: integer
+        failureCount:
+          type: integer
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        errorMessage:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OcrBatchItem"
+    OcrBatchItem:
+      type: object
+      properties:
+        index:
+          type: integer
+          example: 0
+        fileName:
+          type: string
+          example: receipt-001.jpg
+        fileType:
+          type: string
+          example: image/jpeg
+        url:
+          type: string
+          description: 文件识别使用的下载链接
+        publicFileUrl:
+          type: string
+          description: 上传场景下的公开文件地址
+          nullable: true
+        ossKey:
+          type: string
+          description: 上传场景下的对象存储 Key
+          nullable: true
+        contentSha256:
+          type: string
+          description: 上传场景下的文件 SHA-256
+          nullable: true
+        forceFetch:
+          type: boolean
+        cached:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/ItemStatus"
+        outputs:
+          $ref: "#/components/schemas/OcrOutputs"
+        errorMessage:
+          type: string
+          nullable: true
+    OcrSummaryResponse:
+      type: object
+      properties:
+        outputs:
+          $ref: "#/components/schemas/OcrOutputs"
+        summary:
+          type: string
+          example: 本发票由商户开具，包含餐饮消费，总计 47.52 美元。
+        traceId:
+          type: string
+          example: 4b7f4adc-9c9a-4787-b5a9-c8b1a54d8e5a
+        elapsed_time:
+          type: number
+          format: double
+          example: 8.84
+    OcrOutputs:
+      type: object
+      description: OCR 结构化票据信息
+      properties:
+        title:
+          type: string
+          example: DEV RECEIPT A
+        occasion:
+          type: string
+          example: 餐饮
+        country:
+          type: string
+          example: 美国
+        currency:
+          type: string
+          example: USD
+        type:
+          type: string
+          example: invoice
+        taxrate:
+          type: string
+          example: "8"
+        tax:
+          type: string
+          example: "3.52"
+        total:
+          type: string
+          example: "47.52"
+        amountwithouttax:
+          type: string
+          example: "44.00"
+        Seller:
+          type: string
+          example: CODEX TEST STORE
+        Sellertaxnumber:
+          type: string
+          example: ""
+        Buyer:
+          type: string
+          example: ""
+        Buyertaxnumber:
+          type: string
+          example: ""
+        Payee:
+          type: string
+          example: ""
+        Payer:
+          type: string
+          example: ""
+        TypeofBill:
+          type: string
+          example: 餐饮
+        DateofInssuance:
+          type: string
+          example: 2026/07/01
+        Remark:
+          type: string
+          example: ""
+        Number:
+          type: string
+          example: DEV-RETEST-A
+        fileUrl:
+          type: string
+          description: 上传批量场景下可能返回的文件地址
+        ossKey:
+          type: string
+          description: 上传批量场景下可能返回的对象存储 Key
+      additionalProperties: true
+    TaskStatus:
+      type: string
+      enum:
+        - pending
+        - running
+        - succeeded
+        - failed
+        - partial_failed
+      example: pending
+    ItemStatus:
+      type: string
+      enum:
+        - pending
+        - running
+        - succeeded
+        - failed
+      example: succeeded

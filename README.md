@@ -4,6 +4,8 @@
 
 配置加载、结构化日志、HTTP 生命周期、健康检查、Docker 构建和原生二进制构建已经具备。SealAI 自动提交时机、公网回调、审批结果回写、跨单据历史占用与高级权限能力仍需后续联调。
 
+Anyreceipt 与 SealAI 的供应商接口原文保存在仓库顶层的 [`external-api/`](external-api/README.md)，由 Git 管理；该目录只保存官方原始资料，不承载运行配置。
+
 ## 快速开始
 
 需要 Go 1.24.13。项目通过 `go.mod` 的 `toolchain` 指令、CI 和 Docker 构建镜像统一固定到该版本。
