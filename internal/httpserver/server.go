@@ -10,10 +10,11 @@ import (
 	"time"
 )
 
-// Server exposes only infrastructure endpoints. Domain routes can be registered
-// by a future application layer without coupling this package to a business system.
+// Server starts with infrastructure endpoints. Domain routes can be registered
+// by the application layer without coupling this package to a business system.
 type Server struct {
 	httpServer *http.Server
+	mux        *http.ServeMux
 	logger     *slog.Logger
 	version    string
 }
@@ -26,6 +27,7 @@ func New(addr string, logger *slog.Logger, version string) *Server {
 
 	s := &Server{logger: logger, version: version}
 	mux := http.NewServeMux()
+	s.mux = mux
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /readyz", s.ready)
 	mux.HandleFunc("GET /version", s.versionHandler)
@@ -37,6 +39,11 @@ func New(addr string, logger *slog.Logger, version string) *Server {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s
+}
+
+// Register mounts an optional domain adapter before ListenAndServe.
+func (s *Server) Register(pattern string, handler http.Handler) {
+	s.mux.Handle(pattern, handler)
 }
 
 // ListenAndServe starts serving until the server is stopped.

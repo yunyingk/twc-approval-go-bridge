@@ -16,6 +16,7 @@ import (
 	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/flow"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/ledger"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/model"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/version"
 )
 
@@ -28,7 +29,19 @@ func main() {
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	if len(os.Args) > 1 {
+		if len(os.Args) != 3 || os.Args[1] != "submit-seal" {
+			logger.Error("usage: server submit-seal <personal-detail-record-id>")
+			os.Exit(2)
+		}
+		if err := runSealSubmit(context.Background(), cfg, os.Args[2], logger); err != nil {
+			logger.Error("submit reimbursement to Seal", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	server := httpserver.New(cfg.HTTPAddr, logger, version.Version)
+	server.Register("POST /seal/callback/mock", seal.MockCallback(logger))
 
 	var feishuListener *events.Listener
 	var receiptFlow *flow.Processor

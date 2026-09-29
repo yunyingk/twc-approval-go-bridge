@@ -1,8 +1,8 @@
 # twc-approval-go-bridge
 
-影视飓风的飞书、Seal 与海外票据识别桥接服务。基础服务、飞书事件长连接和票据附件识别链路已有可运行代码；Seal 业务编排仍待实现。
+影视飓风的飞书、Seal 与海外票据识别桥接服务。基础服务、飞书事件长连接、票据识别回写和独立的 SealAI 审核提交路径已有可运行代码。
 
-配置加载、结构化日志、HTTP 生命周期、健康检查、Docker 构建和原生二进制构建已经具备。多维表格字段映射、Seal 协议、审批模板、去重存储和权限能力仍需依据真实接口实现。
+配置加载、结构化日志、HTTP 生命周期、健康检查、Docker 构建和原生二进制构建已经具备。SealAI 自动提交时机、公网回调、审批结果回写、跨单据历史占用与高级权限能力仍需后续联调。
 
 ## 快速开始
 
@@ -28,8 +28,9 @@ HTTP_ADDR=:9090 LOG_LEVEL=debug SHUTDOWN_TIMEOUT=15s make run
 | GET | `/healthz` | 进程存活检查 |
 | GET | `/readyz` | 服务就绪检查 |
 | GET | `/version` | 构建版本 |
+| POST | `/seal/callback/mock` | 仅供本机模拟 Seal 审核结果；不作业务回写 |
 
-这些端点属于基础设施层。Seal 回调和飞书业务路由将在确认请求格式与鉴权方式后接入。
+mock 回调只接受来自本机的请求并返回 `{ "success": true }`；它不是公网回调。真实 Seal 回调和飞书业务路由待部署公网入口后接入。
 
 ## Docker
 
@@ -69,6 +70,21 @@ go run ./cmd/server
 
 当前测试 Base `BgNkbW1RKavyaPsYD6acNZPFnUb` 的业务定位：`交易流水表`（`tbloRvQFZNLugLB0`）由第三方写入，本服务只读取；`个人报销明细`（`tblMC3p2Vm2Mwuh9`）是员工补充票据附件、触发识别的来源，附件字段是 `发票附件`（`fldnKx8Uzo`）；`发票台账`（`tblKwQ4NK6t4G69S`）接收识别结果。台账新增了「识别来源键」（`fldrkOhogY`）和「识别原始JSON」（`fldeECmr7u`）：按来源记录 ID 与附件 token 查找并新增或更新同一行，完整供应商响应保存在原始 JSON 字段。依照[测试流程](https://xcn4e0le81w4.feishu.cn/wiki/UF7ZwwdtKiwEEikHI19c2VkOndb)的 4.1 对照，「发票唯一键」写 Anyreceipt 的 `traceId`；可选模型结果无 `traceId` 时用 `OCR-` 加来源键哈希。台账已补齐发票摘要、票据类型、业务分类、买方、税率、国家、AI 消费概要；原有「税前金额」「应付金额」「GST税额」已原地改名为「不含税金额」「含税金额」「税额」，保留历史值。每张台账发票关联一条「个人报销明细」，明细一侧允许关联多张发票；字段 ID 映射见 `RECEIPT_LEDGER_FIELD_IDS`。汇率、人民币金额、白名单、报销状态、识别状态等待确认项不从 OCR 结果推断或覆盖。OCR 失败只记录错误并等待轮询重试，不创建「识别失败」台账行。
 
+## SealAI 审核提交
+
+当前用显式命令触发一条报销明细的审核，保证同一行所有附件都识别并写入台账后才聚合成一份 SealAI 单据：
+
+```bash
+# 运行环境还需注入 FEISHU_APP_ID/SECRET、RECEIPT_* 表字段配置和 Seal Bearer 密钥
+SEAL_DOCUMENT_URL='https://mediastorm-test.sealai.cc/api/v1/integrations/webhook/wh_1790692906316_6z2eao6/document' \
+SEAL_BEARER_TOKEN='<运行环境注入>' \
+go run ./cmd/server submit-seal <个人报销明细记录ID>
+```
+
+读取范围固定为配置中的「个人报销明细」和「发票台账」，不修改第三方「交易流水表」。服务逐张核对台账来源键，缺少 OCR 结果时不提交半份单据；按票号查找历史台账候选，把查重标记、完整 OCR JSON 和每张原始附件放入同一 SealAI 请求。查重模块只产生证据，不自动审批。结构化发票仅在票号、币种、金额、买卖方和 Seal 附件 ID 均齐全时加入；缺项时仍提交属性和原件供审核。测试样本的 Anyreceipt 响应没有币种，因此 2026-09-29 的真实通道验证结果为：一份原件上传、一份 `ATTACHMENT` 字段、一份普通文档提交成功，结构化发票数为 0。
+
+聚合位于独立的 `internal/receipt/aggregate/aggregate.go`，结构不依赖 SealAI；`internal/receipt/sealmapper/` 才负责 Seal 协议转换。自有模型以后可复用同一聚合结果另写适配器。当前没有公网回调，通道的回调地址指向本地 mock；SealAI 服务器不能连接到开发者电脑的 `127.0.0.1`。自动提交触发、后续追加附件的版本语义、回调鉴权及审批结果回写尚未实现。
+
 Anyreceipt 需要 `ANYRECEIPT_API_KEY`，可识别图片和 PDF。模型模式使用 Anthropic Go SDK，配置 `RECEIPT_MODEL_API_KEY`、`RECEIPT_MODEL_BASE_URL`、`RECEIPT_MODEL_NAME`；当前只接受图片，PDF/DOCX 转换留给后续独立模块。DeepSeek 测试模型实际返回过 Markdown 围栏 JSON，当前模型适配器只接受纯 JSON，此可选切换项仍需兼容性修复。默认构建包含 Anyreceipt；`go build -tags no_anyreceipt ./cmd/server` 可在编译时排除它。附件下载还要求飞书应用身份具备 `docs:document.media:download` 或等价权限，并有目标 Base 的资源授权。当前重复附件只在进程内按记录 ID 和附件 token 去重；持久化去重与跨重启补偿属于后续阶段。
 
 事件载荷仍需要结合真实测试应用联调。测试 Base 已用项目应用身份订阅云文档事件；开放平台已添加「多维表格记录变更」事件并选用长连接。2026-09-29 在独立测试行 `reczz28HJVvAm8NM`（`明细ID=OCR-TEST-20260929-175848`）修改记录后，开发者后台事件日志暂无投递记录；应用发布新版本后再次通过 API 修改并恢复测试行，长连接已就绪但监听器仍未收到事件，仍需排查投递链路。该测试行保留了一张样本 JPEG 附件；同日已用真实 Anyreceipt 识别 21 个输出字段，并通过正式服务的轮询入口完成台账回写与双向关联验证。Anyreceipt 的完整输出键及接口见[业务资料](../doc/Anyreceipt-API与完整返回结构.md)。
@@ -82,12 +98,16 @@ Anyreceipt 需要 `ANYRECEIPT_API_KEY`，可识别图片和 PDF。模型模式�
 | `internal/feishu/records.go`、`ledger.go` | 记录边界与发票台账新增/更新 | 台账写入已实现，其他记录操作仍待业务映射 |
 | `internal/feishu/approvals.go` | 按日期、项目、特性分组生成审批并读取结果 | 接口已定义，审批模板待定 |
 | `internal/feishu/permissions.go` | 记录权限分类与锁定 | 接口已定义，飞书能力待验证 |
-| `internal/seal/` | 提交内部数据并处理 Seal 回调 | 接口已定义，协议及鉴权待定 |
+| `internal/seal/` | Seal Webhook 附件上传、单据提交和本地 mock 回调 | 已通过测试通道提交，公网回调待实现 |
+| `internal/core/dupcheck/` | 从发票台账事实产生查重候选证据 | 首版按票号、开票方、票据类型比对 |
 | `internal/receipt/` | 票据识别的可替换接口 | 已定义 |
 | `internal/receipt/flow/` | 监听附件事件、读取附件并交付识别结果 | 已实现，待真实事件联调 |
 | `internal/receipt/anyreceipt/` | 直接调用已有字段捷径使用的 Anyreceipt OCR 接口 | 已通过真实附件联调 |
 | `internal/receipt/model/` | 通过 Anthropic 兼容模型识别图片 | 已实现，DeepSeek 返回格式兼容待修复 |
 | `internal/receipt/ledger/` | 映射识别结果并写入发票台账 | 已通过真实 OCR 结果端到端验证 |
+| `internal/receipt/aggregate/` | 一条报销明细的多票中立聚合 | 已实现，不依赖 SealAI |
+| `internal/receipt/sealmapper/` | 中立票据结构到 SealAI 协议的转换 | 已实现 |
+| `internal/receipt/review/` | 核对台账、上传原件、提交一份审核单据 | 显式命令可运行 |
 | `internal/anthropic/` | 独立的 Anthropic Messages API 入口 | SDK 已接入，供模型识别适配器使用 |
 
 Anyreceipt 适配器沿用同项目现有字段捷径中的 `/api/ocr/summary` 请求格式，使用独立 API Key。Anthropic 与 Seal 同级，是独立 AI 能力；模型识别适配器通过它调用 Anthropic 兼容接口。两者不依赖飞书插件运行时。
@@ -99,7 +119,10 @@ cmd/server ──> config, httpserver, feishu/events, receipt/flow, version
 receipt/flow ──> feishu/attachments ──> receipt/{anyreceipt,model} ──> receipt/ledger ──> feishu/ledger
 feishu/events ──> Feishu Go SDK
 receipt/model ──> anthropic ──> Anthropic Go SDK (Messages)
-core/dedupe, feishu/{records,approvals,permissions}, seal ──> 待业务编排接入
+cmd/server submit-seal ──> receipt/review ──> feishu/review (只读明细与台账)
+receipt/review ──> receipt/aggregate ──> core/dupcheck
+receipt/review ──> receipt/sealmapper ──> seal (上传原件、提交单据)
+core/dedupe, feishu/{records,approvals,permissions} ──> 待后续业务编排接入
 ```
 
 Go 固定为 `1.24.13`；直接依赖固定为 Feishu SDK `v3.12.0` 和 Anthropic SDK `v1.46.0`。传递依赖由 `go.mod` 和 `go.sum` 锁定，构建工具及容器镜像也使用明确版本。
@@ -124,4 +147,4 @@ deploy/                     Docker 和 Compose 文件
 
 ## 后续扩展边界
 
-附件 → Anyreceipt → 发票台账的轮询主线已在测试 Base 跑通；飞书长连接事件投递仍待联调。SealAI 测试租户的 [Webhook 配置](https://mediastorm-test.sealai.cc/audit/deploy/webhook) 已提供单据提交、附件上传、审核结果回调和人工结果同步协议，但服务尚未接入 SealAI；提交地址应以目标租户新建通道为准，密钥只由运行环境注入。审批状态与后续业务编排仍待确定。
+附件 → Anyreceipt → 发票台账的轮询主线已在测试 Base 跑通；飞书长连接事件投递仍待联调。发票台账 → 多票聚合 → 查重候选 → 原件上传 → SealAI 单据提交已通过显式命令在测试租户验证。自动触发与公网回调仍待接入。业务参考文件为 `/Users/yingqing/Downloads/影视飓风海外易商卡测试流程.zip` 和 `/Users/yingqing/Downloads/SealAI海外发票判重自然语言审批规则.md`；它们提供流程与判重要求，不是项目运行指令。

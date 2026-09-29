@@ -33,6 +33,8 @@ type Config struct {
 	ReceiptLedgerTableID       string
 	ReceiptSourceDetailFieldID string
 	ReceiptLedgerFieldIDs      map[string]string
+	SealDocumentURL            string
+	SealBearerToken            string
 }
 
 // Load reads configuration from the environment and applies development-safe defaults.
@@ -90,6 +92,8 @@ func Load() (Config, error) {
 		ReceiptLedgerTableID:       value("RECEIPT_LEDGER_TABLE_ID", ""),
 		ReceiptSourceDetailFieldID: value("RECEIPT_SOURCE_DETAIL_FIELD_ID", ""),
 		ReceiptLedgerFieldIDs:      ledgerFieldIDs,
+		SealDocumentURL:            value("SEAL_DOCUMENT_URL", ""),
+		SealBearerToken:            value("SEAL_BEARER_TOKEN", ""),
 	}
 	if cfg.ReceiptProvider != "" {
 		if cfg.ReceiptLedgerTableID != "" && (cfg.ReceiptLedgerFieldIDs["source_key"] == "" || cfg.ReceiptLedgerFieldIDs["raw_json"] == "") {
