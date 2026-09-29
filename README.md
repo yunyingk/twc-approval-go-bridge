@@ -1,6 +1,6 @@
 # twc-approval-go-bridge
 
-影视飓风的飞书、Seal 与海外票据识别桥接服务。仓库已从通用服务骨架进入业务架构阶段；目前只有基础服务、飞书事件长连接和 Anyreceipt 适配器具备可运行代码。
+影视飓风的飞书、Seal 与海外票据识别桥接服务。基础服务、飞书事件长连接和票据附件识别链路已有可运行代码；Seal 业务编排仍待实现。
 
 配置加载、结构化日志、HTTP 生命周期、健康检查、Docker 构建和原生二进制构建已经具备。多维表格字段映射、Seal 协议、审批模板、去重存储和权限能力仍需依据真实接口实现。
 
@@ -57,9 +57,19 @@ FEISHU_EVENT_TYPE=drive.file.bitable_record_changed_v1 \
 go run ./cmd/server
 ```
 
-当前监听器只负责建立连接、注册事件类型并接收原始事件。默认日志记录事件 ID、事件类型和载荷大小，不解析具体字段，也不执行附件判断、队列处理或业务回写。调试原始载荷时可以临时设置 `FEISHU_LOG_RAW_EVENTS=true`。
+未配置识别服务时，监听器只负责建立连接、注册事件类型并接收原始事件。默认日志记录事件 ID、事件类型和载荷大小；调试原始载荷时可以临时设置 `FEISHU_LOG_RAW_EVENTS=true`。
 
-事件类型和事件载荷需要结合真实测试应用继续验证。豆包资料中提到的字段结构不会在验证前固化为业务规则。
+配置 `RECEIPT_PROVIDER=anyreceipt` 或 `RECEIPT_PROVIDER=model` 后，会启用附件识别链路。服务按 `RECEIPT_BASE_TOKEN`、`RECEIPT_TABLE_ID`、`RECEIPT_ATTACHMENT_FIELD_ID` 筛选记录变更事件，只在附件字段新增内容时读取该行。字段用稳定 ID 定位，改名不影响配置。事件快速进入有界队列；后台校验下载文件的实际内容类型，仅允许 PDF、JPEG、PNG、GIF、WebP。识别结果（包括供应商返回的所有字段和原始响应）交给 `ResultHandler`；当前入口只记录记录 ID、文件名和字段数，尚不回写多维表格。应用还需在飞书开放平台的「事件与回调」中选择长连接接收并添加「多维表格记录变更」事件，同时通过云文档订阅接口订阅目标 Base；仅建立长连接不会自动订阅事件。
+
+`RECEIPT_TRIGGER_MODE` 可选 `event`、`poll` 或 `both`（默认）；两条路径共用附件读取、识别队列和进程内去重。`poll` 每隔 `RECEIPT_POLL_INTERVAL`（默认 `5m`）只扫描配置的 Base 中指定的「个人报销明细」Table，并按附件字段 ID 定位字段。`RECEIPT_POLL_STARTUP=baseline`（默认）表示首次扫描仅记录已有附件，后续只处理新增 token；设为 `process` 则首次扫描也处理已有附件。轮询不依赖事件投递，但仍需应用对目标 Base 的读取权限。当前基线和去重只存在于进程内：重启后会重新建立基线，停机期间新增的附件在 `baseline` 模式下不会补处理；多实例或需要跨重启补偿时应接入持久化状态。识别失败的附件会在后续扫描中重试。
+
+订阅范围是整个 Base 的记录变更，并非单个字段：任意数据表的行新增、修改、删除都可能推送 `drive.file.bitable_record_changed_v1`。服务收到后才过滤 Base ID、数据表 ID 和附件字段 ID；修改「消费事由」或第三方「交易流水表」不会触发识别，只有「个人报销明细」的「发票附件」新增文件才进入识别队列。字段本身改名属于另一类字段变更事件。长连接方式无需配置事件加密策略；向开发者服务器推送的 Webhook 方式才涉及该配置。
+
+当前测试 Base `BgNkbW1RKavyaPsYD6acNZPFnUb` 的业务定位：`交易流水表`（`tbloRvQFZNLugLB0`）由第三方写入，本服务只读取；`个人报销明细`（`tblMC3p2Vm2Mwuh9`）是员工补充票据附件、触发识别的来源，附件字段是 `发票附件`（`fldnKx8Uzo`）；`发票台账`（`tblKwQ4NK6t4G69S`）是后续识别结果的写入目标。台账写入的新增/更新规则与字段映射尚未确定，当前 `ResultHandler` 不执行写入。
+
+Anyreceipt 需要 `ANYRECEIPT_API_KEY`，可识别图片和 PDF。模型模式使用 Anthropic Go SDK，配置 `RECEIPT_MODEL_API_KEY`、`RECEIPT_MODEL_BASE_URL`、`RECEIPT_MODEL_NAME`；当前只接受图片，PDF/DOCX 转换留给后续独立模块。默认构建包含 Anyreceipt；`go build -tags no_anyreceipt ./cmd/server` 可在编译时排除它。附件下载还要求飞书应用身份具备 `docs:document.media:download` 或等价权限，并有目标 Base 的资源授权。当前重复附件只在进程内按记录 ID 和附件 token 去重；持久化去重与跨重启补偿属于后续阶段。
+
+事件载荷仍需要结合真实测试应用联调。测试 Base 已用项目应用身份订阅云文档事件；开放平台已添加「多维表格记录变更」事件并选用长连接。2026-09-29 在独立测试行 `reczz28HJVvAm8NM`（`明细ID=OCR-TEST-20260929-175848`）修改记录后，开发者后台事件日志暂无投递记录；应用发布新版本后再次通过 API 修改并恢复测试行，长连接已就绪但监听器仍未收到事件，仍需排查投递链路。该测试行保留了一张样本 JPEG 附件。识别结果的字段映射与持久化暂不固化为业务规则。Anyreceipt 的完整输出键及接口见[业务资料](../doc/Anyreceipt-API与完整返回结构.md)。
 
 ## 业务边界
 
@@ -72,18 +82,20 @@ go run ./cmd/server
 | `internal/feishu/permissions.go` | 记录权限分类与锁定 | 接口已定义，飞书能力待验证 |
 | `internal/seal/` | 提交内部数据并处理 Seal 回调 | 接口已定义，协议及鉴权待定 |
 | `internal/receipt/` | 票据识别的可替换接口 | 已定义 |
+| `internal/receipt/flow/` | 监听附件事件、读取附件并交付识别结果 | 已实现，待真实事件联调 |
 | `internal/receipt/anyreceipt/` | 直接调用已有字段捷径使用的 Anyreceipt OCR 接口 | 已实现，待真实凭证联调 |
-| `internal/anthropic/` | 独立的 Anthropic Messages API 入口 | SDK 已接入，具体业务调用待定 |
+| `internal/receipt/model/` | 通过 Anthropic 兼容模型识别图片 | 已实现，待真实附件联调 |
+| `internal/anthropic/` | 独立的 Anthropic Messages API 入口 | SDK 已接入，供模型识别适配器使用 |
 
-Anyreceipt 适配器沿用同项目现有字段捷径中的 `/api/ocr/summary` 请求格式，使用独立 API Key。Anthropic 与 Seal 同级，是独立 AI 能力；票据识别将来可以调用它，但目前只封装标准 Messages API，不设定模型、提示词或图片传输方式，也没有接入 `receipt.Recognizer`。两者不依赖飞书插件运行时。
+Anyreceipt 适配器沿用同项目现有字段捷径中的 `/api/ocr/summary` 请求格式，使用独立 API Key。Anthropic 与 Seal 同级，是独立 AI 能力；模型识别适配器通过它调用 Anthropic 兼容接口。两者不依赖飞书插件运行时。
 
-当前服务入口只启动飞书监听和基础 HTTP 端点。各业务接口尚未接入主流程，调用关系如下：
+当前服务入口启动基础 HTTP 端点；配置飞书凭证后启动事件监听，配置识别提供方后接入附件识别。调用关系如下：
 
 ```text
-cmd/server ──> config, httpserver, feishu/events, version
+cmd/server ──> config, httpserver, feishu/events, receipt/flow, version
+receipt/flow ──> feishu/attachments ──> receipt/{anyreceipt,model} ──> ResultHandler
 feishu/events ──> Feishu Go SDK
-receipt/anyreceipt ──> receipt.Recognizer
-anthropic ──> Anthropic Go SDK (Messages)
+receipt/model ──> anthropic ──> Anthropic Go SDK (Messages)
 core/dedupe, feishu/{records,approvals,permissions}, seal ──> 待业务编排接入
 ```
 

@@ -14,6 +14,10 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("FEISHU_APP_SECRET", "")
 	t.Setenv("FEISHU_EVENT_TYPE", "")
 	t.Setenv("FEISHU_LOG_RAW_EVENTS", "")
+	t.Setenv("RECEIPT_PROVIDER", "")
+	t.Setenv("RECEIPT_TRIGGER_MODE", "")
+	t.Setenv("RECEIPT_POLL_STARTUP", "")
+	t.Setenv("RECEIPT_POLL_INTERVAL", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -33,6 +37,34 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.FeishuEventType != "drive.file.bitable_record_changed_v1" {
 		t.Errorf("FeishuEventType = %q, want default event type", cfg.FeishuEventType)
+	}
+	if cfg.ReceiptTriggerMode != "both" || cfg.ReceiptPollStartup != "baseline" || cfg.ReceiptPollInterval != 5*time.Minute {
+		t.Errorf("unexpected receipt trigger defaults: mode=%q startup=%q interval=%s", cfg.ReceiptTriggerMode, cfg.ReceiptPollStartup, cfg.ReceiptPollInterval)
+	}
+}
+
+func TestLoadRejectsInvalidReceiptTrigger(t *testing.T) {
+	t.Setenv("FEISHU_APP_ID", "cli_test")
+	t.Setenv("FEISHU_APP_SECRET", "secret")
+	t.Setenv("RECEIPT_PROVIDER", "model")
+	t.Setenv("RECEIPT_BASE_TOKEN", "base")
+	t.Setenv("RECEIPT_TABLE_ID", "table")
+	t.Setenv("RECEIPT_ATTACHMENT_FIELD_ID", "field")
+	t.Setenv("RECEIPT_MODEL_API_KEY", "test")
+	t.Setenv("RECEIPT_MODEL_NAME", "test")
+	t.Setenv("RECEIPT_TRIGGER_MODE", "invalid")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() accepted invalid receipt trigger mode")
+	}
+}
+
+func TestLoadRejectsUnconfiguredReceiptProvider(t *testing.T) {
+	t.Setenv("FEISHU_APP_ID", "cli_test")
+	t.Setenv("FEISHU_APP_SECRET", "secret")
+	t.Setenv("RECEIPT_PROVIDER", "model")
+	t.Setenv("RECEIPT_BASE_TOKEN", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() accepted receipt provider without target Base")
 	}
 }
 

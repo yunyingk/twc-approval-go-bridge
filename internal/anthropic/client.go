@@ -18,11 +18,20 @@ type Client struct {
 }
 
 func New(apiKey string) (*Client, error) {
+	return NewWithBaseURL(apiKey, "")
+}
+
+// NewWithBaseURL supports Anthropic-compatible model services.
+func NewWithBaseURL(apiKey, baseURL string) (*Client, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
 		return nil, fmt.Errorf("Anthropic API key is required")
 	}
-	return &Client{sdk: sdk.NewClient(option.WithAPIKey(apiKey))}, nil
+	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	if strings.TrimSpace(baseURL) != "" {
+		opts = append(opts, option.WithBaseURL(strings.TrimSpace(baseURL)))
+	}
+	return &Client{sdk: sdk.NewClient(opts...)}, nil
 }
 
 func (c *Client) CreateMessage(ctx context.Context, params sdk.MessageNewParams) (*sdk.Message, error) {

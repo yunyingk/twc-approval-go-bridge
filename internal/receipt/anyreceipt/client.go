@@ -79,8 +79,13 @@ func (c *Client) Recognize(ctx context.Context, attachment receipt.Attachment) (
 		} `json:"data"`
 		ErrorCode    *int   `json:"errorCode"`
 		ErrorMessage string `json:"errorMessage"`
+		Summary      string `json:"summary"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return receipt.Recognition{}, fmt.Errorf("read Anyreceipt response: %w", err)
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
 		return receipt.Recognition{}, fmt.Errorf("decode Anyreceipt response: %w", err)
 	}
 	if result.ErrorCode != nil || result.ErrorMessage != "" {
@@ -102,6 +107,9 @@ func (c *Client) Recognize(ctx context.Context, attachment receipt.Attachment) (
 		Tax:     textValue(outputs["tax"]),
 		Date:    textValue(outputs["DateofInssuance"]),
 		Number:  textValue(outputs["Number"]),
+		Summary: result.Summary,
+		Outputs: outputs,
+		Raw:     raw,
 	}, nil
 }
 

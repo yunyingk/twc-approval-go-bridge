@@ -9,8 +9,12 @@ import (
 	"syscall"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/events"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/httpserver"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/flow"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/receipt/model"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/version"
 )
 
@@ -26,17 +30,50 @@ func main() {
 	server := httpserver.New(cfg.HTTPAddr, logger, version.Version)
 
 	var feishuListener *events.Listener
+	var receiptFlow *flow.Processor
+	var attachmentClient *feishu.AttachmentClient
 	if cfg.FeishuEnabled() {
-		feishuListener, err = events.New(
-			cfg.FeishuAppID,
-			cfg.FeishuAppSecret,
-			cfg.FeishuEventType,
-			events.LoggingSink(logger, cfg.FeishuLogRawEvents),
-			logger,
-		)
-		if err != nil {
-			logger.Error("create Feishu listener", "error", err)
-			os.Exit(1)
+		sink := events.LoggingSink(logger, cfg.FeishuLogRawEvents)
+		if cfg.ReceiptProvider != "" {
+			var recognizer receipt.Recognizer
+			switch cfg.ReceiptProvider {
+			case "anyreceipt":
+				recognizer, err = newAnyreceipt(cfg.AnyreceiptAPIKey)
+			case "model":
+				recognizer, err = model.New(cfg.ReceiptModelAPIKey, cfg.ReceiptModelBaseURL, cfg.ReceiptModelName)
+			default:
+				err = errors.New("unsupported RECEIPT_PROVIDER")
+			}
+			if err != nil {
+				logger.Error("configure receipt recognizer", "error", err)
+				os.Exit(1)
+			}
+			attachmentClient = feishu.NewAttachmentClient(cfg.FeishuAppID, cfg.FeishuAppSecret)
+			receiptFlow, err = flow.New(flow.Config{BaseToken: cfg.ReceiptBaseToken, TableID: cfg.ReceiptTableID, FieldID: cfg.ReceiptFieldID}, attachmentClient, recognizer,
+				func(ctx context.Context, result flow.Result) error {
+					logger.InfoContext(ctx, "receipt recognized", "trigger", result.Trigger, "record_id", result.RecordID, "file_name", result.FileName, "output_fields", len(result.Recognition.Outputs))
+					return nil
+				}, logger)
+			if err != nil {
+				logger.Error("configure receipt flow", "error", err)
+				os.Exit(1)
+			}
+			if cfg.ReceiptTriggerMode != "poll" {
+				sink = receiptFlow.Sink
+			}
+		}
+		if cfg.ReceiptProvider == "" || cfg.ReceiptTriggerMode != "poll" {
+			feishuListener, err = events.New(
+				cfg.FeishuAppID,
+				cfg.FeishuAppSecret,
+				cfg.FeishuEventType,
+				sink,
+				logger,
+			)
+			if err != nil {
+				logger.Error("create Feishu listener", "error", err)
+				os.Exit(1)
+			}
 		}
 	} else {
 		logger.Info("Feishu long connection disabled", "reason", "credentials not configured")
@@ -44,6 +81,12 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if receiptFlow != nil {
+		go receiptFlow.Run(ctx)
+		if cfg.ReceiptTriggerMode != "event" {
+			go receiptFlow.Poll(ctx, attachmentClient, cfg.ReceiptPollInterval, cfg.ReceiptPollStartup == "process")
+		}
+	}
 
 	serverErr := make(chan error, 1)
 	go func() {

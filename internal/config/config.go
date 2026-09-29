@@ -11,13 +11,24 @@ import (
 
 // Config contains runtime settings for the service shell.
 type Config struct {
-	HTTPAddr           string
-	LogLevel           slog.Level
-	ShutdownTimeout    time.Duration
-	FeishuAppID        string
-	FeishuAppSecret    string
-	FeishuEventType    string
-	FeishuLogRawEvents bool
+	HTTPAddr            string
+	LogLevel            slog.Level
+	ShutdownTimeout     time.Duration
+	FeishuAppID         string
+	FeishuAppSecret     string
+	FeishuEventType     string
+	FeishuLogRawEvents  bool
+	ReceiptBaseToken    string
+	ReceiptTableID      string
+	ReceiptFieldID      string
+	ReceiptProvider     string
+	ReceiptTriggerMode  string
+	ReceiptPollInterval time.Duration
+	ReceiptPollStartup  string
+	AnyreceiptAPIKey    string
+	ReceiptModelAPIKey  string
+	ReceiptModelBaseURL string
+	ReceiptModelName    string
 }
 
 // Load reads configuration from the environment and applies development-safe defaults.
@@ -42,16 +53,59 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	pollInterval, err := duration("RECEIPT_POLL_INTERVAL", 5*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
 
-	return Config{
-		HTTPAddr:           value("HTTP_ADDR", ":8080"),
-		LogLevel:           level,
-		ShutdownTimeout:    shutdownTimeout,
-		FeishuAppID:        feishuAppID,
-		FeishuAppSecret:    feishuAppSecret,
-		FeishuEventType:    value("FEISHU_EVENT_TYPE", "drive.file.bitable_record_changed_v1"),
-		FeishuLogRawEvents: logRawEvents,
-	}, nil
+	cfg := Config{
+		HTTPAddr:            value("HTTP_ADDR", ":8080"),
+		LogLevel:            level,
+		ShutdownTimeout:     shutdownTimeout,
+		FeishuAppID:         feishuAppID,
+		FeishuAppSecret:     feishuAppSecret,
+		FeishuEventType:     value("FEISHU_EVENT_TYPE", "drive.file.bitable_record_changed_v1"),
+		FeishuLogRawEvents:  logRawEvents,
+		ReceiptBaseToken:    value("RECEIPT_BASE_TOKEN", ""),
+		ReceiptTableID:      value("RECEIPT_TABLE_ID", ""),
+		ReceiptFieldID:      value("RECEIPT_ATTACHMENT_FIELD_ID", ""),
+		ReceiptProvider:     strings.ToLower(value("RECEIPT_PROVIDER", "")),
+		ReceiptTriggerMode:  strings.ToLower(value("RECEIPT_TRIGGER_MODE", "both")),
+		ReceiptPollInterval: pollInterval,
+		ReceiptPollStartup:  strings.ToLower(value("RECEIPT_POLL_STARTUP", "baseline")),
+		AnyreceiptAPIKey:    value("ANYRECEIPT_API_KEY", ""),
+		ReceiptModelAPIKey:  value("RECEIPT_MODEL_API_KEY", ""),
+		ReceiptModelBaseURL: value("RECEIPT_MODEL_BASE_URL", ""),
+		ReceiptModelName:    value("RECEIPT_MODEL_NAME", ""),
+	}
+	if cfg.ReceiptProvider != "" {
+		switch cfg.ReceiptTriggerMode {
+		case "event", "poll", "both":
+		default:
+			return Config{}, fmt.Errorf("RECEIPT_TRIGGER_MODE must be event, poll or both")
+		}
+		switch cfg.ReceiptPollStartup {
+		case "baseline", "process":
+		default:
+			return Config{}, fmt.Errorf("RECEIPT_POLL_STARTUP must be baseline or process")
+		}
+		if !cfg.FeishuEnabled() || cfg.ReceiptBaseToken == "" || cfg.ReceiptTableID == "" || cfg.ReceiptFieldID == "" {
+			return Config{}, fmt.Errorf("receipt recognition requires Feishu credentials and Base, Table and attachment field IDs")
+		}
+		switch cfg.ReceiptProvider {
+		case "anyreceipt":
+			if cfg.AnyreceiptAPIKey == "" {
+				return Config{}, fmt.Errorf("ANYRECEIPT_API_KEY is required")
+			}
+		case "model":
+			if cfg.ReceiptModelAPIKey == "" || cfg.ReceiptModelName == "" {
+				return Config{}, fmt.Errorf("receipt model API key and name are required")
+			}
+		default:
+			return Config{}, fmt.Errorf("unsupported RECEIPT_PROVIDER %q", cfg.ReceiptProvider)
+		}
+	}
+	return cfg, nil
 }
 
 // FeishuEnabled reports whether the optional long-connection client is configured.
