@@ -41,7 +41,7 @@ func TestUploadAttachment(t *testing.T) {
 		if string(data) != "image-data" || files[0].Header.Get("Content-Type") != "image/png" {
 			t.Errorf("uploaded data or type differs")
 		}
-		_, _ = io.WriteString(w, `{"data":{"attachments":[{"attachmentId":"att-1","name":"receipt.png","mimeType":"image/png","ossPath":"path","ossSignedUrl":"signed","ossFileSize":10}]}}`)
+		_, _ = io.WriteString(w, `{"data":{"attachments":[{"attachmentId":"att-1","name":"receipt.png","mimeType":"image/png","url":"https://example.com/file","ossPath":"path","ossSignedUrl":"signed","ossFileSize":10}]}}`)
 	}))
 	defer server.Close()
 	client, err := NewClient(Config{DocumentURL: server.URL + "/api/v1/integrations/webhook/test/document", BearerToken: "test-secret"}, nil)
@@ -57,7 +57,7 @@ func TestUploadAttachment(t *testing.T) {
 	}
 }
 
-func TestUploadAttachmentSingleID(t *testing.T) {
+func TestUploadAttachmentRejectsIDWithoutAttachmentObject(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"data":{"attachmentId":"att-2"}}`)
@@ -67,9 +67,9 @@ func TestUploadAttachmentSingleID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := client.UploadAttachment(context.Background(), Attachment{Data: []byte("x")})
-	if err != nil || response.AttachmentID != "att-2" {
-		t.Fatalf("upload = %#v, %v", response, err)
+	_, err = client.UploadAttachment(context.Background(), Attachment{Data: []byte("x")})
+	if err == nil {
+		t.Fatal("successful upload must include the attachment object")
 	}
 }
 

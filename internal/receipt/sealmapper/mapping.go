@@ -62,8 +62,8 @@ func Map(input Input) (seal.DocumentRequest, error) {
 		}
 	}
 	addText("attachment_name", "附件文件名", input.FileName)
-	if input.Upload.AttachmentID == "" || !completeAttachmentInfo(input.Upload.Attachment) {
-		return seal.DocumentRequest{}, fmt.Errorf("Seal upload did not return usable attachment metadata")
+	if !input.Upload.Valid() {
+		return seal.DocumentRequest{}, fmt.Errorf("Seal attachment upload has not completed successfully")
 	}
 	document.Fields = append(document.Fields, seal.DocumentField{
 		Key: "receipt_attachment", Label: "发票附件", Type: "ATTACHMENT", Value: []seal.AttachmentInfo{input.Upload.Attachment},
@@ -192,15 +192,6 @@ func currencyCode(value string) bool {
 		}
 	}
 	return true
-}
-
-func completeAttachmentInfo(info seal.AttachmentInfo) bool {
-	return strings.TrimSpace(info.Name) != "" &&
-		strings.TrimSpace(info.MimeType) != "" &&
-		strings.TrimSpace(info.URL) != "" &&
-		strings.TrimSpace(info.OSSPath) != "" &&
-		strings.TrimSpace(info.OSSSignedURL) != "" &&
-		info.OSSFileSize > 0
 }
 
 func date(value string) (string, bool) {

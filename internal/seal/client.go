@@ -86,6 +86,16 @@ type UploadResponse struct {
 	Attachments  []UploadedAttachment
 }
 
+// Valid means the upload response can be referenced by both an ATTACHMENT
+// field and a structured invoice's evidenceAttachmentId.
+func (r UploadResponse) Valid() bool {
+	info := r.Attachment
+	return strings.TrimSpace(r.AttachmentID) != "" && strings.TrimSpace(info.Name) != "" &&
+		strings.TrimSpace(info.MimeType) != "" && strings.TrimSpace(info.URL) != "" &&
+		strings.TrimSpace(info.OSSPath) != "" && strings.TrimSpace(info.OSSSignedURL) != "" &&
+		info.OSSFileSize > 0
+}
+
 // UploadAttachment sends one already validated file as multipart field "files".
 func (c *Client) UploadAttachment(ctx context.Context, file Attachment) (UploadResponse, error) {
 	if c == nil {
@@ -144,6 +154,9 @@ func (c *Client) UploadAttachment(ctx context.Context, file Attachment) (UploadR
 		result.Attachment = response.Data.Attachment
 	} else {
 		result.Attachment = response.Data.AttachmentInfo
+	}
+	if !result.Valid() {
+		return UploadResponse{}, errors.New("Seal attachment upload returned an incomplete response")
 	}
 	return result, nil
 }
