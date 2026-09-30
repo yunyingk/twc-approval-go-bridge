@@ -1,5 +1,18 @@
 # 飞书审批定义快照
 
+## 官方接口原文
+
+以下文件于 2026-09-30 从飞书官方 Markdown 文档库直接下载，原始字节未改写。通过 `llms.txt` → `llms-approval.txt` 定位来源。
+
+| 文件 | 来源 |
+| --- | --- |
+| [`create-approval-definition.md`](create-approval-definition.md) | [创建审批定义](https://open.feishu.cn/document/server-docs/approval-v4/approval/create.md)，包含完整请求体、响应、权限和使用限制 |
+| [`approval-definition-form-controls.md`](approval-definition-form-controls.md) | [审批定义表单控件参数](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/approval-v4/approval/approval-definition-form-control-parameters.md)，包含明细、附件等控件协议及不支持的类型 |
+
+校验值见上一级 [`README.md`](../README.md)。项目编写的模板请求示例放在 `configs/feishu/`，不混入此原文目录。
+
+## 当前企业模板
+
 [`approval-definition-9944A2AE-ED45-43F3-9B87-0F3902F09844.json`](approval-definition-9944A2AE-ED45-43F3-9B87-0F3902F09844.json) 是 2026-09-30 使用企业应用 `cli_aaea8d481d381bee` 调用飞书官方接口取得的完整响应，原始字节未改写。这是当前审批模板的资源快照，不是 OpenAPI 规范文件。
 
 官方接口：[查看审批定义](https://open.feishu.cn/document/server-docs/approval-v4/approval/get)。本次请求为：

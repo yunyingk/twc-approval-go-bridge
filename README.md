@@ -4,7 +4,7 @@
 
 配置加载、结构化日志、HTTP 生命周期、健康检查、Docker 构建和原生二进制构建已经具备。SealAI 自动提交时机、公网回调、审批结果回写、跨单据历史占用与高级权限能力仍需后续联调。
 
-Anyreceipt 与 SealAI 的供应商接口原文保存在仓库顶层的 [`external-api/`](external-api/README.md)，由 Git 管理；该目录只保存官方原始资料，不承载运行配置。
+Anyreceipt、SealAI 与飞书审批的接口原文保存在仓库顶层的 [`external-api/`](external-api/README.md)，由 Git 管理；该目录只保存官方原始资料，不承载运行配置。
 
 ## 快速开始
 
@@ -93,6 +93,18 @@ Anyreceipt 始终编入，启用识别时使用 `RECEIPT_PROVIDER=anyreceipt` �
 
 事件载荷仍需要结合真实测试应用联调。测试 Base 已用项目应用身份订阅云文档事件；开放平台已添加「多维表格记录变更」事件并选用长连接。2026-09-29 在独立测试行 `reczz28HJVvAm8NM`（`明细ID=OCR-TEST-20260929-175848`）修改记录后，开发者后台事件日志暂无投递记录；应用发布新版本后再次通过 API 修改并恢复测试行，长连接已就绪但监听器仍未收到事件，仍需排查投递链路。该测试行保留了一张样本 JPEG 附件；同日已用真实 Anyreceipt 识别 21 个输出字段，并通过正式服务的轮询入口完成台账回写与双向关联验证。Anyreceipt 的完整输出键及接口见[业务资料](../doc/Anyreceipt-API与完整返回结构.md)。
 
+## 飞书审批模板初始化
+
+独立的一次性工具使用应用身份创建原生审批模板；表单和审批流程来自 JSON 配置，默认只校验，加 `-apply` 才发送创建请求：
+
+```bash
+go run ./cmd/approval-template -app personal -file configs/feishu/approval-template.example.json
+# 注入个人版 FEISHU_APP_ID / FEISHU_APP_SECRET 后执行创建
+go run ./cmd/approval-template -app personal -file configs/feishu/approval-template.example.json -apply
+```
+
+企业租户选 `-app enterprise`，使用独立的 `FEISHU_APPROVAL_APP_ID` / `FEISHU_APPROVAL_APP_SECRET`，不会回退到个人版凭证。工具不自动加载 `.env`，也不随服务启动运行。模板创建需要 `approval:definition` 或 `approval:approval` 写权限；2026-09-30 个人版测试请求因缺少写权限返回 `99991672`，尚未成功创建。官方接口创建的模板不能停用或删除，正式创建前应审核模板配置。示例支持一个多行明细及 14 个子控件，包含真实附件类型；完整约定见 [`internal/feishu/approval/README.md`](internal/feishu/approval/README.md)。创建审批实例和结果回写仍待接入。
+
 ## 业务边界
 
 | 目录 | 职责 | 当前状态 |
@@ -100,7 +112,7 @@ Anyreceipt 始终编入，启用识别时使用 `RECEIPT_PROVIDER=anyreceipt` �
 | `internal/core/dedupe/` | 判断变化是否重复；由持久化实现提供原子领取 | 接口已定义，键规则和存储待定 |
 | `internal/feishu/base/events/` | 接收多维表格变更事件 | 长连接已实现，事件内容待验证 |
 | `internal/feishu/base/records.go`、`ledger.go` | 多维表格记录边界与发票台账新增/更新 | 台账写入已实现，其他记录操作仍待业务映射 |
-| `internal/feishu/approval/` | 飞书原生审批单据的创建与结果读取 | 仅接口草稿，审批模板待定 |
+| `internal/feishu/approval/` | 飞书原生审批模板与单据 | 模板创建/读取已实现；实例仍为接口草稿 |
 | `internal/feishu/base/permissions.go` | 多维表格记录权限分类与锁定 | 接口已定义，飞书能力待验证 |
 | `internal/seal/` | Seal Webhook 附件上传、单据提交和本地 mock 回调 | 已通过测试通道提交，公网回调待实现 |
 | `internal/core/dupcheck/` | 从发票台账事实产生查重候选证据 | 首版按票号、开票方、票据类型比对 |
@@ -125,7 +137,8 @@ anthropic/model ──> anthropic ──> Anthropic Go SDK (Messages，可编译
 cmd/server submit-seal ──> seal/review ──> feishu/base/review (只读明细与台账)
 seal/review ──> core/invoice/aggregate ──> core/dupcheck
 seal/review ──> seal/mapper ──> seal (上传原件、提交单据)
-core/dedupe, feishu/base/{records,permissions}, feishu/approval ──> 待后续业务编排接入
+cmd/approval-template ──> feishu/approval ──> Feishu Approval v4 SDK（独立初始化工具）
+core/dedupe, feishu/base/{records,permissions}, feishu/approval 的实例接口 ──> 待后续业务编排接入
 ```
 
 Go 固定为 `1.24.13`；直接依赖固定为 Feishu SDK `v3.12.0` 和 Anthropic SDK `v1.46.0`。传递依赖由 `go.mod` 和 `go.sum` 锁定，构建工具及容器镜像也使用明确版本。
@@ -139,6 +152,7 @@ cmd/server/                      服务入口和编译开关
 ├── model_enabled.go            默认编入 Anthropic 模型
 ├── model_disabled.go           no_anthropic 构建时排除模型
 └── submit_seal.go              显式提交一条报销明细
+cmd/approval-template/main.go    独立的一次性审批模板初始化工具
 internal/
 ├── core/                      不调用外部服务的业务核心
 │   ├── invoice/                识别接口、结果结构及多票聚合
@@ -152,7 +166,7 @@ internal/
 ├── feishu/                    飞书产品边界
 │   ├── base/                   多维表格记录、附件和台账
 │   │   └── events/             多维表格变更长连接
-│   └── approval/               飞书原生审批单据接口草稿
+│   └── approval/               原生审批模板创建/读取及实例接口草稿
 ├── seal/                      SealAI HTTP 客户端与 mock 回调
 │   ├── mapper/                 聚合结果转 SealAI 单据格式
 │   └── review/                 上传原件、提交审核单据
