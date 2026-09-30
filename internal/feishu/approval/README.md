@@ -25,7 +25,11 @@ go run ./cmd/approval-template -app personal -file configs/feishu/approval-templ
 
 [`configs/feishu/approval-template.example.json`](../../../configs/feishu/approval-template.example.json) 是本项目按官方协议编写的测试配置，**不是官方原文，也不是当前企业模板的复制件**。它包含一个 `fieldList` 明细和 14 个子控件（含真正的 `attachmentV2` 附件控件），审批人由发起人选择，允许后台修改表单和流程。所有业务名称、字段和流程均在 JSON 内，客户端不硬编码这些内容。金额示例默认 CNY，可按生产要求修改币种范围。
 
-调用权限：应用身份具备 `approval:definition` 或 `approval:approval` 任意一个。2026-09-30 个人版应用 `cli_aa39f558f7799cbb` 的实际创建请求返回 `99991672`，明确缺少上述写权限；模板尚未创建。默认客户端、应用身份鉴权、明细与附件序列化、错误响应和读取路径已用模拟 HTTP 验证。
+调用权限：应用身份具备 `approval:definition` 或 `approval:approval` 任意一个。2026-09-30 个人版应用 `cli_aa39f558f7799cbb` 初次创建返回 `99991672`，开通权限后完成真实创建。联系人控件首次校验返回 `1390001: widget contact value can not be nil`，因此示例显式配置 `value: {"ignore": false, "multi": false}`，不能依赖文档所述可选默认值。
+
+个人版测试模板「海外易商卡-接口测试」：Code 为 `EA296788-7BFC-47A2-91D7-6B7D8D2D0B11`，ID 为 `7691166041770233028`。同一客户端的 `GetDefinition` 已读取验证：状态 `ACTIVE`，一个 `fieldList` 明细、14 个子控件及 3 个流程节点，字段类型和必填设置与配置一致；「发票账单附件」为 `attachmentV2`。完整官方响应见 [`external-api/feishu/`](../../../external-api/feishu/README.md)。仅创建模板，未发起审批实例。
+
+飞书在创建时分配 `widget...` 系统控件 ID，将请求内的语义 ID 保存为 `custom_id`。填充实例时应重新读取模板并使用返回的系统 `id`，可按 `custom_id` 匹配业务字段，不能直接拿示例中的 `cardholder`、`invoice_files` 等值当系统 ID。
 
 ## 官方协议边界
 

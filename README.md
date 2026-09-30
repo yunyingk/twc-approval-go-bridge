@@ -103,7 +103,7 @@ go run ./cmd/approval-template -app personal -file configs/feishu/approval-templ
 go run ./cmd/approval-template -app personal -file configs/feishu/approval-template.example.json -apply
 ```
 
-企业租户选 `-app enterprise`，使用独立的 `FEISHU_APPROVAL_APP_ID` / `FEISHU_APPROVAL_APP_SECRET`，不会回退到个人版凭证。工具不自动加载 `.env`，也不随服务启动运行。模板创建需要 `approval:definition` 或 `approval:approval` 写权限；2026-09-30 个人版测试请求因缺少写权限返回 `99991672`，尚未成功创建。官方接口创建的模板不能停用或删除，正式创建前应审核模板配置。示例支持一个多行明细及 14 个子控件，包含真实附件类型；完整约定见 [`internal/feishu/approval/README.md`](internal/feishu/approval/README.md)。创建审批实例和结果回写仍待接入。
+企业租户选 `-app enterprise`，使用独立的 `FEISHU_APPROVAL_APP_ID` / `FEISHU_APPROVAL_APP_SECRET`，不会回退到个人版凭证。工具不自动加载 `.env`，也不随服务启动运行。模板创建需要 `approval:definition` 或 `approval:approval` 写权限；2026-09-30 初次个人版测试因缺少写权限返回 `99991672`，开通权限后已成功创建「海外易商卡-接口测试」（Code：`EA296788-7BFC-47A2-91D7-6B7D8D2D0B11`），并通过正式客户端读取验证为 `ACTIVE`、一个明细、14 个子控件和 3 个流程节点。官方接口创建的模板不能停用或删除，正式创建前应审核模板配置。示例包含真实附件类型；完整约定见 [`internal/feishu/approval/README.md`](internal/feishu/approval/README.md)。创建审批实例和结果回写仍待接入。
 
 ## 业务边界
 

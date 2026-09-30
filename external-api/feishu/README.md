@@ -44,3 +44,20 @@ Authorization: Bearer <企业应用的 tenant_access_token>
 | 发票重复判断 | `widget17858352721280001` | `input` | 是 |
 
 此快照确认读取链路和当前结构；审批文件上传、创建实例和审批结果回写尚未通过本项目验证。
+
+## 个人版创建测试
+
+2026-09-30 使用个人版应用 `cli_aa39f558f7799cbb`，通过独立 `cmd/approval-template` 创建「海外易商卡-接口测试」，返回：
+
+```json
+{"approval_code":"EA296788-7BFC-47A2-91D7-6B7D8D2D0B11","approval_id":"7691166041770233028"}
+```
+
+[`approval-definition-EA296788-7BFC-47A2-91D7-6B7D8D2D0B11.json`](approval-definition-EA296788-7BFC-47A2-91D7-6B7D8D2D0B11.json) 是随后通过正式 `DefinitionClient.GetDefinition` 取得的官方完整响应；在 HTTP 层保存原始字节，没有根据 Go 返回类型重新序列化。请求为：
+
+```text
+GET https://open.feishu.cn/open-apis/approval/v4/approvals/EA296788-7BFC-47A2-91D7-6B7D8D2D0B11?locale=zh-CN&user_id_type=open_id&with_option=true
+Authorization: Bearer <个人版应用的 tenant_access_token>
+```
+
+状态 `ACTIVE`，一个明细、14 个子控件、3 个节点。明细系统 ID 为 `widget17907391970`；子控件系统 ID 为 `widget17907391971` 至 `widget179073919714`，与企业模板无关。各控件的 `custom_id` 对应请求示例中的语义 ID，可用来定位字段；「发票账单附件」的系统 ID 为 `widget179073919712`、`custom_id=invoice_files`、类型为 `attachmentV2`。后台入口：[个人版测试审批模板](https://www.feishu.cn/approval/admin/createApproval?id=7691166041770233028)。

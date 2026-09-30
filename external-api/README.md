@@ -11,5 +11,6 @@
 | [`feishu/approval-definition-9944A2AE-ED45-43F3-9B87-0F3902F09844.json`](feishu/approval-definition-9944A2AE-ED45-43F3-9B87-0F3902F09844.json) | 飞书官方「查看审批定义」接口的完整响应；企业应用身份，采集详情与字段索引见 [`feishu/README.md`](feishu/README.md) | `0a850b8425cd094a9caf766e5f79e107323bbf7923f251092452379f764bfe04` |
 | [`feishu/create-approval-definition.md`](feishu/create-approval-definition.md) | [飞书官方创建审批定义文档的 Markdown 原文](https://open.feishu.cn/document/server-docs/approval-v4/approval/create.md) | `f02362953035fb7fdd80b0cd6c0a7a0e6b9578557579fedc75dea798a5ca3d25` |
 | [`feishu/approval-definition-form-controls.md`](feishu/approval-definition-form-controls.md) | [飞书官方审批定义表单控件文档的 Markdown 原文](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/approval-v4/approval/approval-definition-form-control-parameters.md) | `5abb56725aeca5c8a6d100e5aecc59b6dff3a402009d22e5197382fe9d77d29a` |
+| [`feishu/approval-definition-EA296788-7BFC-47A2-91D7-6B7D8D2D0B11.json`](feishu/approval-definition-EA296788-7BFC-47A2-91D7-6B7D8D2D0B11.json) | 飞书官方「查看审批定义」接口的完整响应；个人版应用创建后读取，采集详情见 [`feishu/README.md`](feishu/README.md) | `cb84dbb61fd7b66aaa7cafa19018ee0d31efcc754adbc430aadbae386a559311` |
 
 SealAI 这三份是租户官方页面直接生成的 Markdown，并非 OpenAPI 导出文件；目前未发现该租户提供可下载的完整 OpenAPI 规范。原文中的 Webhook 地址属于当前测试通道，不能当成其他租户的固定地址。原文只含 `Bearer <token>` 占位符，没有提交鉴权密钥。更新时应重新从供应商获取原文，并记录新版本或新的采集日期与校验值。
