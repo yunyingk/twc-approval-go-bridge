@@ -18,7 +18,10 @@ import (
 // accepted instance. Query the same UUID before deciding what happened.
 var ErrUUIDConflict = errors.New("approval UUID already exists")
 
-type InstanceClient struct{ definitions *DefinitionClient }
+type InstanceClient struct {
+	definitions *DefinitionClient
+	scope       string
+}
 
 // NewInstanceClient uses one explicit application identity for definitions,
 // creation and UUID lookup. Construction never sends a request.
@@ -27,8 +30,10 @@ func NewInstanceClient(appID, appSecret string, httpClient *http.Client) (*Insta
 	if err != nil {
 		return nil, err
 	}
-	return &InstanceClient{definitions: definitions}, nil
+	return &InstanceClient{definitions: definitions, scope: "feishu-app:" + strings.TrimSpace(appID)}, nil
 }
+
+func (c *InstanceClient) TargetScope() string { return c.scope }
 
 type InstanceRequest struct {
 	ApprovalCode string          `json:"approval_code"`
@@ -93,8 +98,11 @@ func (r InstanceRequest) Validate() error {
 	if err := validateInstanceForm(r.Form); err != nil {
 		return err
 	}
+	if len(r.NodeApprovers) > 20 {
+		return fmt.Errorf("approval supports at most 20 selected approver nodes")
+	}
 	for node, ids := range r.NodeApprovers {
-		if strings.TrimSpace(node) == "" || len(ids) == 0 {
+		if node == "" || node != strings.TrimSpace(node) || len(ids) == 0 {
 			return fmt.Errorf("approval node approvers require a node and open IDs")
 		}
 		seen := map[string]bool{}

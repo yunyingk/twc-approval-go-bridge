@@ -124,7 +124,7 @@ go run ./cmd/approval-template -app personal -file configs/feishu/approval-templ
 | `internal/core/dedupe/` | 判断变化是否重复；由持久化实现提供原子领取 | 接口已定义，键规则和存储待定 |
 | `internal/feishu/base/events/` | 接收多维表格变更事件 | 已在企业测试 Base 验证真实附件事件触发识别和台账回写 |
 | `internal/feishu/base/records.go`、`ledger.go` | 多维表格记录边界与发票台账新增/更新 | 台账写入已实现，其他记录操作仍待业务映射 |
-| `internal/feishu/approval/` | 飞书原生审批模板与单据 | 模板创建/读取、实例创建/UUID 查询及明细映射已实现；实例业务接入仍未启用 |
+| `internal/feishu/approval/` | 飞书原生审批模板与单据 | 模板、实例、实时明细映射及共用用例 gateway 已实现；真实业务接入仍未启用 |
 | `internal/feishu/base/permissions.go` | 多维表格记录权限分类与锁定 | 接口已定义，飞书能力待验证 |
 | `internal/seal/` | Seal Webhook 附件上传、单据提交和可选结果接收 | 已通过测试通道提交和公网真实回调验收 |
 | `internal/core/dupcheck/` | 从发票台账事实产生查重候选证据 | 首版按票号、开票方、票据类型比对 |
@@ -157,7 +157,9 @@ app/review ──> core/invoice/aggregate, core/dupcheck, core/review
 seal/review ──> seal/mapper ──> seal (上传原件、提交单据)
 seal/callback ──> app/review.Complete ──> 状态保存、版本核对、feishu/base 结果回写
 cmd/approval-template ──> feishu/approval ──> Feishu Approval v4 SDK（独立初始化工具）
-core/dedupe, feishu/base/{records,permissions}, feishu/approval 的实例接口 ──> 待后续业务编排接入
+app/approval ──> core/approval, state, 来源/创建/查询接口（尚未装配服务入口）
+feishu/approval.InstanceGateway ──> 实时模板、原生表单、同 UUID 创建/查询
+core/dedupe, feishu/base/{records,permissions} ──> 待后续业务编排接入
 ```
 
 Go 固定为 `1.24.13`；直接依赖固定为 Feishu SDK `v3.12.0` 和 Anthropic SDK `v1.46.0`。传递依赖由 `go.mod` 和 `go.sum` 锁定，构建工具及容器镜像也使用明确版本。
@@ -191,7 +193,7 @@ internal/
 ├── feishu/                    飞书产品边界
 │   ├── base/                   多维表格记录、附件、台账映射及审核结果写入
 │   │   └── events/             多维表格变更长连接
-│   └── approval/               原生审批模板创建/读取及实例接口草稿
+│   └── approval/               原生审批模板、实例、明细映射和 gateway
 ├── seal/                      SealAI HTTP 客户端与 mock 回调
 │   ├── mapper/                 聚合结果转 SealAI 单据格式
 │   └── review/                 Seal 上传、提交适配与旧入口门面

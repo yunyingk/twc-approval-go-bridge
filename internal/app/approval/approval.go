@@ -12,16 +12,21 @@ import (
 )
 
 type Source interface {
+	// The scope identifies the physical source, independent of field mapping,
+	// grouping or provider configuration, so those edits cannot bypass reservations.
 	ApprovalSourceScope() string
 	ReadApprovalRows(context.Context, []string) ([]core.Row, error)
 }
 type Target struct{ Scope, Template, ConfigurationVersion string }
-type Gateway interface {
+type LookupGateway interface {
 	TargetScope() string
+	Lookup(context.Context, core.Plan) (core.Instance, error)
+}
+type Gateway interface {
+	LookupGateway
 	Describe(context.Context) (Target, error)
 	ValidatePlan(context.Context, core.Plan) error
 	Create(context.Context, core.Plan) (core.Instance, error)
-	Lookup(context.Context, core.Plan) (core.Instance, error)
 }
 type Store interface {
 	BeginApproval(context.Context, core.Plan) (core.Attempt, bool, error)
@@ -36,6 +41,7 @@ type Options struct {
 type Service struct {
 	source  Source
 	gateway Gateway
+	lookup  LookupGateway
 	store   Store
 	options Options
 }
@@ -46,20 +52,20 @@ func New(source Source, gateway Gateway, store Store, options Options) (*Service
 	}
 	options.Axes = append([]string(nil), options.Axes...)
 	options.AllowedDecisions = append([]string(nil), options.AllowedDecisions...)
-	return &Service{source, gateway, store, options}, nil
+	return &Service{source: source, gateway: gateway, lookup: gateway, store: store, options: options}, nil
 }
 
 // NewReconciler requires no current business source or submission configuration.
 // Saved UUIDs can be resolved after templates or source facts have changed.
-func NewReconciler(gateway Gateway, store Store, sourceScope string) (*Service, error) {
+func NewReconciler(gateway LookupGateway, store Store, sourceScope string) (*Service, error) {
 	if gateway == nil || store == nil || sourceScope == "" {
 		return nil, fmt.Errorf("approval reconciliation requires gateway, store and source scope")
 	}
-	return &Service{gateway: gateway, store: store, options: Options{SourceScope: sourceScope}}, nil
+	return &Service{lookup: gateway, store: store, options: Options{SourceScope: sourceScope}}, nil
 }
 
 func (s *Service) Prepare(ctx context.Context, recordIDs []string) ([]core.Plan, error) {
-	if s.source == nil || s.source.ApprovalSourceScope() != s.options.SourceScope {
+	if s.source == nil || s.gateway == nil || s.source.ApprovalSourceScope() != s.options.SourceScope {
 		return nil, fmt.Errorf("approval preparation source is not configured")
 	}
 	selected := map[string]bool{}
@@ -106,7 +112,7 @@ func (s *Service) Prepare(ctx context.Context, recordIDs []string) ([]core.Plan,
 }
 
 func (s *Service) checkScope(plan core.Plan) error {
-	if plan.SourceScope != s.options.SourceScope || plan.TargetScope != s.gateway.TargetScope() {
+	if plan.SourceScope != s.options.SourceScope || plan.TargetScope != s.lookup.TargetScope() {
 		return fmt.Errorf("approval plan belongs to another source or target identity")
 	}
 	return plan.Validate()
@@ -123,7 +129,7 @@ func existingAttempt(attempt core.Attempt) (core.Attempt, error) {
 // once. Existing attempts retain their historical mapping; they are not a live
 // approval of current source facts and never cause another creation request.
 func (s *Service) Submit(ctx context.Context, plan core.Plan) (core.Attempt, error) {
-	if s.source == nil {
+	if s.source == nil || s.gateway == nil {
 		return core.Attempt{}, fmt.Errorf("reconciliation service cannot submit approvals")
 	}
 	if err := s.checkScope(plan); err != nil {
@@ -206,7 +212,7 @@ func (s *Service) Reconcile(ctx context.Context, id string) (core.Attempt, error
 		return core.Attempt{}, err
 	}
 	started := time.Now().UTC()
-	instance, callErr := s.gateway.Lookup(ctx, attempt.Plan)
+	instance, callErr := s.lookup.Lookup(ctx, attempt.Plan)
 	if callErr == nil {
 		callErr = validateInstance(attempt.Plan, instance)
 		if callErr == nil && !instance.Verified {
