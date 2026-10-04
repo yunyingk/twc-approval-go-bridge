@@ -28,3 +28,5 @@
 私有证据为忽略的 `approval-readiness-{bridge,legacy_approval,identities,mapping}.json`，辅助程序在 `tmp/_approval-readiness/`。它们是读取/本地映射证据，不是已知真实人员、有效附件 code 或已创建审批单的证据。
 
 下一步继续共用分组、冻结来源版本与建单尝试，再以显式业务配置绑定目标企业模板、同应用人员、选取与分组字段。当前服务未启用人工审批，没有自动向旧企业建单。人工结果回写、Seal manual-result、正式冻结和结算仍未完成。
+
+实现提交：`929cbf1 feat: add native approval instance client and live form mapping`。三份官方原文保留原始尾空格和末尾空行，未为格式检查修改字节；排除这三份原文后的提交 diff 检查通过。下一阶段的来源版本、成员预约、UUID 对账及独立结果交付细则已落到[实现约定](../native-approval-implementation.md)，作为后续 review 的依据。
