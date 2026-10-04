@@ -45,6 +45,7 @@ type RecognitionSettings struct {
 // Local rules are configured separately and used only by the model provider.
 type ReviewSettings struct {
 	ResubmitOnDetailChange bool              `json:"resubmit_on_detail_change,omitempty"`
+	ResubmitOnSourceChange bool              `json:"resubmit_on_source_change,omitempty"`
 	ChangeDebounce         string            `json:"change_debounce,omitempty"`
 	IncludeTransactions    bool              `json:"include_transactions,omitempty"`
 	Provider               string            `json:"provider"`
@@ -153,6 +154,14 @@ func (p *BusinessProfile) validate() error {
 	}
 	if p.Review.ResubmitOnDetailChange && p.Review.TriggerMode != "after_recognition" {
 		return fmt.Errorf("resubmit_on_detail_change requires after_recognition")
+	}
+	if p.Review.ResubmitOnSourceChange {
+		if p.Review.TriggerMode != "after_recognition" {
+			return fmt.Errorf("resubmit_on_source_change requires after_recognition")
+		}
+		if p.Tables.InvoiceLedger.Fields["invoice_number"] == "" {
+			return fmt.Errorf("source change review requires invoice_ledger.invoice_number")
+		}
 	}
 	if p.Review.ChangeDebounce != "" {
 		wait, err := time.ParseDuration(p.Review.ChangeDebounce)

@@ -47,6 +47,25 @@ func TestReviewChangeConfigurationRequiresAutomaticTriggerAndBoundedDebounce(t *
 	}
 }
 
+func TestSourceChangeConfigurationIsIndependentAndRequiresInvoiceNumber(t *testing.T) {
+	p := testProfile()
+	p.Review.ResubmitOnSourceChange = true
+	if err := p.validate(); err == nil {
+		t.Fatal("manual mode enabled source-change submissions")
+	}
+	p.Review.TriggerMode = "after_recognition"
+	if err := p.validate(); err != nil {
+		t.Fatal(err)
+	}
+	if p.Review.ResubmitOnDetailChange {
+		t.Fatal("source change option forced detail edits on")
+	}
+	delete(p.Tables.InvoiceLedger.Fields, "invoice_number")
+	if err := p.validate(); err == nil {
+		t.Fatal("source dependency lookup has no invoice number binding")
+	}
+}
+
 func writeProfile(t *testing.T, profile BusinessProfile) string {
 	t.Helper()
 	raw, err := json.Marshal(profile)

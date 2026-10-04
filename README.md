@@ -84,6 +84,8 @@ go run ./cmd/server
 
 业务文件的 `review.resubmit_on_detail_change=true` 可启用明细修改重审，`change_debounce` 配置连续编辑的合并等待时间，默认 `10s`。企业文件当前关闭此开关。AI 回写不触发重审；全部附件清空或明细删除会结束待送审，旧结果仍保留。范围、费用和恢复边界见[配置说明](docs/business-configuration.md#可选的明细修改重审)。
 
+`review.resubmit_on_source_change=true` 可独立联动直接流水/台账修改，并覆盖新增同票号候选对已有明细的影响。事件先持久化，后台定位审核依赖再排队，部分失败后恢复，不使用事件值替代当前事实。企业文件当前也关闭此开关；见[来源联动配置](docs/business-configuration.md#可选的来源修改联动)。
+
 ```bash
 # 运行环境还需注入 FEISHU_APP_ID/SECRET、RECEIPT_* 表字段配置和 Seal Bearer 密钥
 SEAL_DOCUMENT_URL='https://mediastorm-test.sealai.cc/api/v1/integrations/webhook/wh_1790692906316_6z2eao6/document' \

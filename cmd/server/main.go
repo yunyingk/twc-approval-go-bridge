@@ -67,6 +67,7 @@ func main() {
 			"receipt_provider", cfg.ReceiptProvider, "review_provider", cfg.ReviewProvider, "review_trigger", cfg.ReviewTriggerMode,
 			"include_transactions", cfg.Business.Review.IncludeTransactions)
 		logger.Info("review change settings", "resubmit_on_detail_change", cfg.Business.Review.ResubmitOnDetailChange,
+			"resubmit_on_source_change", cfg.Business.Review.ResubmitOnSourceChange,
 			"change_debounce", cfg.Business.Review.ChangeDebounce)
 	}
 	server := httpserver.New(cfg.HTTPAddr, logger, version.Version)
@@ -92,6 +93,7 @@ func main() {
 		reviewServiceProvider = cfg.ReviewProvider
 	}
 	var automaticReview *appreview.Automatic
+	var sourceChanges *appreview.SourceChanges
 	if cfg.ReviewTriggerMode == "after_recognition" {
 		// Automatic submissions follow REVIEW_PROVIDER independently of a Seal
 		// callback receiver that may still finish older in-flight Seal requests.
@@ -113,7 +115,7 @@ func main() {
 			logger.Error("configure automatic review", "error", err)
 			os.Exit(1)
 		}
-		if cfg.Business != nil && cfg.Business.Review.ResubmitOnDetailChange {
+		if reviewChangesEnabled(cfg) {
 			debounce := 10 * time.Second
 			if cfg.Business.Review.ChangeDebounce != "" {
 				debounce, _ = time.ParseDuration(cfg.Business.Review.ChangeDebounce) // validated during configuration loading
@@ -218,7 +220,22 @@ func main() {
 				return changeSink.Sink(ctx, event)
 			}
 		}
-		if cfg.ReceiptProvider == "" || cfg.ReceiptTriggerMode != "poll" || (cfg.Business != nil && cfg.Business.Review.ResubmitOnDetailChange) {
+		if automaticReview != nil && cfg.Business != nil && cfg.Business.Review.ResubmitOnSourceChange {
+			var sourceSink *events.ReviewSourceChangeSink
+			sourceChanges, sourceSink, err = newReviewSourceChanges(cfg, automaticReview, logger)
+			if err != nil {
+				logger.Error("configure review source changes", "error", err)
+				os.Exit(1)
+			}
+			previousSink := sink
+			sink = func(ctx context.Context, event events.Event) error {
+				if err := previousSink(ctx, event); err != nil {
+					return err
+				}
+				return sourceSink.Sink(ctx, event)
+			}
+		}
+		if cfg.ReceiptProvider == "" || cfg.ReceiptTriggerMode != "poll" || reviewChangesEnabled(cfg) {
 			feishuListener, err = events.New(
 				cfg.FeishuAppID,
 				cfg.FeishuAppSecret,
@@ -239,6 +256,9 @@ func main() {
 	defer stop()
 	if automaticReview != nil {
 		go automaticReview.Run(ctx)
+	}
+	if sourceChanges != nil {
+		go sourceChanges.Run(ctx)
 	}
 	if reviewService != nil {
 		go func() {

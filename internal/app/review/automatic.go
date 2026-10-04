@@ -52,14 +52,20 @@ func (a *Automatic) EnableChanges(debounce time.Duration) error {
 }
 
 func (a *Automatic) NotifyChange(ctx context.Context, recordID, eventID string) error {
-	if a.changeDebounce <= 0 || strings.TrimSpace(recordID) == "" || strings.TrimSpace(eventID) == "" {
+	return a.NotifyChangeAt(ctx, recordID, eventID, time.Now())
+}
+
+// NotifyChangeAt retains the original receipt time during source fanout retries.
+// Replaying a partly delivered notice does not restart its quiet period.
+func (a *Automatic) NotifyChangeAt(ctx context.Context, recordID, eventID string, receivedAt time.Time) error {
+	if a.changeDebounce <= 0 || strings.TrimSpace(recordID) == "" || strings.TrimSpace(eventID) == "" || receivedAt.IsZero() {
 		return fmt.Errorf("review change requires enabled changes, record ID and event ID")
 	}
 	store, ok := a.store.(ChangeStore)
 	if !ok {
 		return fmt.Errorf("review change store is unavailable")
 	}
-	deadline := time.Now().Add(a.changeDebounce)
+	deadline := receivedAt.Add(a.changeDebounce)
 	if err := store.QueueAutomaticReviewChange(ctx, a.scope, recordID, eventID, deadline); err != nil {
 		return err
 	}
