@@ -181,7 +181,8 @@ func (s *Files) PendingReviews(ctx context.Context) ([]core.Attempt, error) {
 		if err := json.Unmarshal(raw, &attempt); err != nil {
 			return nil, err
 		}
-		if attempt.State == "completed" && !attempt.Delivered && attempt.Submission != nil && attempt.Submission.Outcome != nil {
+		if attempt.State == "completed" && !attempt.Delivered && attempt.Submission != nil && attempt.Submission.Outcome != nil &&
+			(attempt.Delivery == nil || attempt.Delivery.State != "superseded") {
 			attempts = append(attempts, attempt)
 		}
 	}

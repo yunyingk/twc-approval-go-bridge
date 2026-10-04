@@ -93,7 +93,7 @@ func (g *Gateway) Review(ctx context.Context, request core.Request) (core.Submis
 	if err != nil {
 		var status *seal.HTTPStatusError
 		if errors.As(err, &status) && status.StatusCode >= 400 && status.StatusCode < 500 && status.StatusCode != 408 && status.StatusCode != 429 {
-			return core.Submission{}, fmt.Errorf("%w: %v", core.ErrRequestRejected, err)
+			return core.Submission{}, fmt.Errorf("%w: %w", core.ErrRequestRejected, err)
 		}
 		return core.Submission{}, err
 	}

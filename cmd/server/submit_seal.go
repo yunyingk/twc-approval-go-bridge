@@ -22,7 +22,7 @@ func runSealSubmit(ctx context.Context, cfg config.Config, recordID string, logg
 	return runReviewSubmit(ctx, cfg, recordID, "seal", false, logger)
 }
 
-func newReviewService(cfg config.Config, provider string, versioned bool) (*appreview.Service, error) {
+func newReviewSource(cfg config.Config) (*base.ReviewSource, error) {
 	source, err := base.NewReviewSource(cfg.FeishuAppID, cfg.FeishuAppSecret, cfg.ReceiptBaseToken, cfg.ReceiptTableID, cfg.ReceiptFieldID, cfg.ReceiptSourceDetailFieldID, cfg.ReceiptLedgerTableID, cfg.ReceiptLedgerFieldIDs)
 	if err != nil {
 		return nil, err
@@ -34,6 +34,14 @@ func newReviewService(cfg config.Config, provider string, versioned bool) (*appr
 			RelationFieldID: cfg.Business.Tables.ReimbursementDetails.Fields["transaction_relation"], Fields: table.Fields}); err != nil {
 			return nil, err
 		}
+	}
+	return source, nil
+}
+
+func newReviewService(cfg config.Config, provider string, versioned bool) (*appreview.Service, error) {
+	source, err := newReviewSource(cfg)
+	if err != nil {
+		return nil, err
 	}
 	options := appreview.Options{Provider: provider, Versioned: versioned}
 	var gateway appreview.Reviewer
@@ -72,6 +80,25 @@ func newReviewService(cfg config.Config, provider string, versioned bool) (*appr
 	}
 	return appreview.New(source, gateway, options)
 }
+
+func newReviewDeliveryService(cfg config.Config) (*appreview.Service, error) {
+	source, err := newReviewSource(cfg)
+	if err != nil {
+		return nil, err
+	}
+	store, err := state.NewFiles(cfg.StateDir)
+	if err != nil {
+		return nil, err
+	}
+	var writer appreview.Writer
+	if len(cfg.ReviewResultFieldIDs) > 0 {
+		writer, err = base.NewReviewWriter(base.NewLedgerClient(cfg.FeishuAppID, cfg.FeishuAppSecret), cfg.ReceiptBaseToken, cfg.ReceiptTableID, cfg.ReviewResultFieldIDs)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return appreview.NewDelivery(source, store, writer)
+}
 func runReviewSubmit(ctx context.Context, cfg config.Config, recordID, provider string, versioned bool, logger *slog.Logger) error {
 	service, err := newReviewService(cfg, provider, versioned)
 	if err != nil {
@@ -100,7 +127,7 @@ func runSealResult(ctx context.Context, cfg config.Config, path string) error {
 	if err != nil {
 		return err
 	}
-	service, err := newReviewService(cfg, "seal", true)
+	service, err := newReviewDeliveryService(cfg)
 	if err != nil {
 		return err
 	}

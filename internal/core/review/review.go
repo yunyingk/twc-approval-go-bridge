@@ -21,6 +21,8 @@ var ErrRequestRejected = errors.New("review request was explicitly rejected by p
 // invoice history. Permission, network and incomplete-ledger errors are distinct.
 var ErrNoAttachments = errors.New("review source has no attachments")
 var ErrSourceRemoved = errors.New("review source record was removed")
+var ErrLedgerIncomplete = errors.New("invoice ledger is incomplete")
+var ErrLedgerAmbiguous = errors.New("invoice ledger has conflicting source rows")
 
 type File struct {
 	Token      string
@@ -75,10 +77,28 @@ type Submission struct {
 	AcceptedInvoices    int      `json:"accepted_invoices"`
 }
 type Attempt struct {
-	Request    Request     `json:"request"`
-	State      string      `json:"state"` // submitting, unknown, failed, pending, completed
-	Submission *Submission `json:"submission,omitempty"`
-	Delivered  bool        `json:"delivered"`
+	Request    Request       `json:"request"`
+	State      string        `json:"state"` // submitting, unknown, failed, pending, completed
+	Submission *Submission   `json:"submission,omitempty"`
+	Delivered  bool          `json:"delivered"`
+	Failure    *FailureInfo  `json:"failure,omitempty"`
+	Delivery   *DeliveryInfo `json:"delivery,omitempty"`
+}
+
+// FailureInfo stores safe classifications, never upstream response bodies,
+// credentials, error strings or receipt facts.
+type FailureInfo struct {
+	Phase      string    `json:"phase"`
+	Code       string    `json:"code"`
+	HTTPStatus int       `json:"http_status,omitempty"`
+	RemoteCode string    `json:"remote_code,omitempty"`
+	OccurredAt time.Time `json:"occurred_at"`
+}
+
+type DeliveryInfo struct {
+	State     string    `json:"state"` // delivered, superseded, check_failed, write_failed
+	Reason    string    `json:"reason,omitempty"`
+	CheckedAt time.Time `json:"checked_at"`
 }
 
 // Fingerprint excludes fetch timestamps and temporary URLs. Content, effective

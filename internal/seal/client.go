@@ -256,6 +256,8 @@ func (e *HTTPStatusError) Error() string {
 	return fmt.Sprintf("Seal %s returned HTTP %d", e.Operation, e.StatusCode)
 }
 
+func (e *HTTPStatusError) HTTPStatus() int { return e.StatusCode }
+
 func (c *Client) post(ctx context.Context, endpoint, contentType string, body []byte, operation string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {

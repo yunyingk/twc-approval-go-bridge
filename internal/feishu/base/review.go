@@ -31,7 +31,7 @@ type ReviewSource struct {
 func NewReviewSource(appID, appSecret, base, detailTable, attachmentFieldID, detailIDFieldID, ledgerTable string, ledgerFields map[string]string) (*ReviewSource, error) {
 	if appID == "" || appSecret == "" || base == "" || detailTable == "" || attachmentFieldID == "" || ledgerTable == "" ||
 		ledgerFields["source_key"] == "" || ledgerFields["raw_json"] == "" || ledgerFields["invoice_number"] == "" {
-		return nil, fmt.Errorf("Seal review requires Feishu credentials and detail, attachment and ledger field IDs")
+		return nil, fmt.Errorf("review requires Feishu credentials and detail, attachment and ledger field IDs")
 	}
 	return &ReviewSource{client: NewLedgerClient(appID, appSecret), base: base, detailTable: detailTable,
 		attachmentFieldID: attachmentFieldID, detailIDFieldID: detailIDFieldID, ledgerTable: ledgerTable, ledgerFields: ledgerFields}, nil
@@ -113,8 +113,11 @@ func (s *ReviewSource) ReadLedgerEntry(ctx context.Context, sourceKey string) (r
 	if err != nil {
 		return review.LedgerEntry{}, err
 	}
+	if len(rows) == 0 {
+		return review.LedgerEntry{}, review.ErrLedgerIncomplete
+	}
 	if len(rows) != 1 {
-		return review.LedgerEntry{}, fmt.Errorf("expected one invoice ledger row for source key, found %d", len(rows))
+		return review.LedgerEntry{}, fmt.Errorf("%w: found %d rows", review.ErrLedgerAmbiguous, len(rows))
 	}
 	row := rows[0]
 	return s.decodeLedgerEntry(row, names)
@@ -123,7 +126,7 @@ func (s *ReviewSource) ReadLedgerEntry(ctx context.Context, sourceKey string) (r
 func (s *ReviewSource) decodeLedgerEntry(row reviewRow, names map[string]string) (review.LedgerEntry, error) {
 	rawJSON := fieldText(row.Fields, names[s.ledgerFields["raw_json"]])
 	if rawJSON == "" {
-		return review.LedgerEntry{}, fmt.Errorf("ledger OCR JSON field is empty in matched record")
+		return review.LedgerEntry{}, fmt.Errorf("%w: OCR JSON is empty", review.ErrLedgerIncomplete)
 	}
 	recognized, err := receiptcompat.Decode(json.RawMessage(rawJSON))
 	if err != nil {

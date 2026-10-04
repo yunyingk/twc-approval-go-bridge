@@ -1,6 +1,6 @@
 # 当前业务实现与交接
 
-更新：2026-10-04。本文记录实际实现；[架构评审](architecture-review.md)保留为实施前的评审快照，[迁移任务](architecture-tasks.md)保留原有目标和后续验收依据。
+更新：2026-10-05。本文记录实际实现；[架构评审](architecture-review.md)保留为实施前的评审快照，[迁移任务](architecture-tasks.md)保留原有目标和后续验收依据。
 
 业务来源已收敛到[显式业务配置文件](business-configuration.md)：本机选择 `configs/business/enterprise-test.json`，按角色声明流水、明细、台账及提供方和触发方式。以下环境变量说明保留给未选择 `BUSINESS_CONFIG_FILE` 的兼容模式；选中文件后，对应业务变量不再覆盖文件。凭证和运行参数继续由环境提供。
 
@@ -56,6 +56,23 @@ REVIEW_PROVIDER=model go run ./cmd/server submit-review <个人报销明细记�
 Seal 提供方版本目前标识通道 URL，不锁定其规则集。Seal 实际使用最新发布规则；当前 Webhook 不提供规则版本选择或规则更新后强制重审协议。
 
 提交请求失去响应时保留 `unknown`，不自动再次调用供应商；明确的 Seal 4xx 拒绝（408/429 除外）记录为 `failed`。两者都需要核对原因与供应商状态，当前不提供自动查询或自动解除该尝试的接口。
+
+审核诊断与恢复命令共用当前业务配置：
+
+```bash
+# 仅查看本地状态，不创建目录、锁文件或调用任何外部接口。
+go run ./cmd/server review-status all
+# 使用项目应用身份只读核对当前附件、台账、上下文和流水。
+go run ./cmd/server check-review <明细记录ID>
+# 只恢复已收到结果的交付，不重新送审；会核对来源与业务版本。
+go run ./cmd/server retry-writeback <document-id>
+```
+
+`review-status` 的 `revision_status=not_checked` 不表示结果仍有效；`check-review` 才给出 `current/changed/source_removed/no_attachments/unavailable`。同一明细的多份历史版本分别比较。没有审核快照的指定明细会返回 `readiness`，台账未齐为 `ledger_incomplete`，同来源键冲突为 `ledger_conflict`。诊断不改变任何任务；结果只包含标识、结论和安全错误分类，不输出原票据、评论、URL 或提供方配置。
+
+已确认来源变化的未交付结果保存为 `delivery.state=superseded`，退出每 30 秒的自动补交付。显式重试、同版本再次提交或同结果再次回调会重新核对归档版本；业务事实精确恢复后可交付原结果。已经 `delivered=true` 的显式重试是幂等空操作，其输出不替代 `check-review` 的有效性核对。核对失败及写入失败仍保留结果并自动恢复；归档保存失败不能按“旧版本已收到”确认回调。具体状态和验收见[恢复过程记录](progress/2026-10-05-review-recovery.md)。
+
+结果接收、状态查看、版本核对和回写恢复不构造 Seal/模型审核客户端，也不加载本地规则；自有模块被编译排除后仍能完成已保存结果的交付。运行配置仍需通过统一加载校验，实际自动送审仍需所选提供方。
 
 旧 `submit-seal` 继续固定使用 Seal，保留原 DocumentID 和未启用持久化的联调行为。正式接入版本和回调应使用 `submit-review`；不能把旧测试记录的回调当作新状态库中的已知任务。
 

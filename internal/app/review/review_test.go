@@ -84,12 +84,16 @@ type reviewer struct {
 	fail      bool
 	completed bool
 	before    func(core.Request)
+	failure   error
 }
 
 func (r *reviewer) Review(_ context.Context, request core.Request) (core.Submission, error) {
 	r.calls++
 	if r.before != nil {
 		r.before(request)
+	}
+	if r.failure != nil {
+		return core.Submission{}, r.failure
 	}
 	if r.fail {
 		return core.Submission{}, errors.New("lost response")

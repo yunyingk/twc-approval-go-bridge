@@ -36,7 +36,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	if len(os.Args) > 1 {
 		if (os.Args[1] == "check-business-config" && len(os.Args) != 2) || (os.Args[1] != "check-business-config" && len(os.Args) != 3) {
-			logger.Error("usage: server check-business-config | {preview-review|submit-seal|submit-review|apply-seal-result} <record-id-or-file>")
+			logger.Error("usage: server check-business-config | {review-status|check-review|preview-review|submit-seal|submit-review|retry-writeback|apply-seal-result} <record-id-document-id-or-file>")
 			os.Exit(2)
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -46,6 +46,12 @@ func main() {
 			err = runBusinessCheck(ctx, cfg, os.Stdout)
 		case "preview-review":
 			err = runReviewPreview(ctx, cfg, os.Args[2], os.Stdout)
+		case "review-status":
+			err = runReviewInspection(ctx, cfg, os.Args[2], false, os.Stdout)
+		case "check-review":
+			err = runReviewInspection(ctx, cfg, os.Args[2], true, os.Stdout)
+		case "retry-writeback":
+			err = runReviewWriteback(ctx, cfg, os.Args[2], os.Stdout)
 		case "submit-seal":
 			err = runSealSubmit(ctx, cfg, os.Args[2], logger)
 		case "submit-review":
@@ -74,36 +80,30 @@ func main() {
 	server.Register("POST /seal/callback/mock", seal.MockCallback(logger))
 
 	var reviewService *appreview.Service
-	var reviewServiceProvider string
 	if cfg.SealCallbackToken != "" {
-		reviewService, err = newReviewService(cfg, "seal", true)
+		reviewService, err = newReviewDeliveryService(cfg)
 		if err != nil {
 			logger.Error("configure Seal callback", "error", err)
 			os.Exit(1)
 		}
 		server.Register("POST /seal/callback/{token}", seal.CallbackHandler(cfg.SealCallbackToken, reviewService))
-		reviewServiceProvider = "seal"
 	}
 	if reviewService == nil && len(cfg.ReviewResultFieldIDs) > 0 {
-		reviewService, err = newReviewService(cfg, cfg.ReviewProvider, true)
+		reviewService, err = newReviewDeliveryService(cfg)
 		if err != nil {
 			logger.Error("configure review writeback", "error", err)
 			os.Exit(1)
 		}
-		reviewServiceProvider = cfg.ReviewProvider
 	}
 	var automaticReview *appreview.Automatic
 	var sourceChanges *appreview.SourceChanges
 	if cfg.ReviewTriggerMode == "after_recognition" {
 		// Automatic submissions follow REVIEW_PROVIDER independently of a Seal
 		// callback receiver that may still finish older in-flight Seal requests.
-		submitter := reviewService
-		if submitter == nil || cfg.ReviewProvider != reviewServiceProvider {
-			submitter, err = newReviewService(cfg, cfg.ReviewProvider, true)
-			if err != nil {
-				logger.Error("configure automatic review provider", "error", err)
-				os.Exit(1)
-			}
+		submitter, err := newReviewService(cfg, cfg.ReviewProvider, true)
+		if err != nil {
+			logger.Error("configure automatic review provider", "error", err)
+			os.Exit(1)
 		}
 		triggers, storeErr := state.NewFiles(cfg.StateDir)
 		if storeErr != nil {

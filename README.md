@@ -86,6 +86,8 @@ go run ./cmd/server
 
 `review.resubmit_on_source_change=true` 可独立联动直接流水/台账修改，并覆盖新增同票号候选对已有明细的影响。事件先持久化，后台定位审核依赖再排队，部分失败后恢复，不使用事件值替代当前事实。企业文件当前也关闭此开关；见[来源联动配置](docs/business-configuration.md#可选的来源修改联动)。
 
+`review-status <记录ID|all>` 查看当前来源的持久化状态；`check-review <记录ID|all>` 只读核对当前事实与历史版本。已收到结果但回写失败时，`retry-writeback <document-id>` 单独恢复交付，不再调用审核器。旧版本结果退出后台重试；明确拒绝与响应未知仍需对账，不能靠诊断自动重发。命令、状态含义及恢复步骤见[审核诊断与恢复](docs/progress/2026-10-05-review-recovery.md)。
+
 ```bash
 # 运行环境还需注入 FEISHU_APP_ID/SECRET、RECEIPT_* 表字段配置和 Seal Bearer 密钥
 SEAL_DOCUMENT_URL='https://mediastorm-test.sealai.cc/api/v1/integrations/webhook/wh_1790692906316_6z2eao6/document' \

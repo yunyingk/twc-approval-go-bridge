@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/dupcheck"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice/aggregate"
@@ -53,6 +54,15 @@ func New(source Source, reviewer Reviewer, options Options) (*Service, error) {
 		return nil, fmt.Errorf("review source, provider and reviewer are required")
 	}
 	return &Service{source, reviewer, options}, nil
+}
+
+// NewDelivery does not construct an audit provider. Saved results can finish
+// after provider credentials or optional SDK availability have changed.
+func NewDelivery(source Source, store Store, writer Writer) (*Service, error) {
+	if source == nil || store == nil {
+		return nil, fmt.Errorf("review delivery requires source and persistent store")
+	}
+	return &Service{source: source, options: Options{Store: store, Writer: writer}}, nil
 }
 
 // Prepare reads every attachment and its written ledger result before any
@@ -102,6 +112,9 @@ func (s *Service) Prepare(ctx context.Context, recordID string) (core.Request, e
 }
 
 func (s *Service) Submit(ctx context.Context, recordID string) (core.Submission, error) {
+	if s.reviewer == nil {
+		return core.Submission{}, fmt.Errorf("review delivery service cannot submit to a provider")
+	}
 	r, err := s.Prepare(ctx, recordID)
 	if err != nil {
 		return core.Submission{}, err
@@ -136,9 +149,15 @@ func (s *Service) Submit(ctx context.Context, recordID string) (core.Submission,
 				if errors.Is(callErr, core.ErrRequestRejected) {
 					a.State = "failed"
 				}
+				code := "result_unknown"
+				if a.State == "failed" {
+					code = "request_rejected"
+				}
+				a.Failure = failureInfo("submission", code, callErr)
 				return nil
 			}
 			a.State, a.Submission = result.Status, &result
+			a.Failure = nil
 			return nil
 		})
 		if saveErr != nil {
@@ -188,6 +207,7 @@ func (s *Service) Complete(ctx context.Context, documentID, provider string, out
 			a.Submission = &core.Submission{DocumentID: documentID}
 		}
 		a.State, a.Submission.Status, a.Submission.Outcome = "completed", "completed", &outcome
+		a.Failure = nil
 		return nil
 	})
 	if err != nil {
@@ -200,30 +220,75 @@ func (s *Service) deliver(ctx context.Context, attempt core.Attempt) error {
 	if attempt.Delivered || attempt.Submission == nil || attempt.Submission.Outcome == nil || s.options.Writer == nil {
 		return nil
 	}
-	if source, ok := s.source.(ScopedSource); ok && source.ReviewLogicalID(attempt.Request.Document.RecordID) != attempt.Request.LogicalID {
-		return ErrStale
-	}
-	// In-flight work keeps its original implementation and rules, even after
-	// configuration changes. Only changed business evidence invalidates its result.
-	pinned := *s
-	pinned.options.Provider = attempt.Request.Provider
-	pinned.options.ProviderVersion = attempt.Request.ProviderVersion
-	pinned.options.RulesVersion = attempt.Request.RulesVersion
-	current, err := pinned.Prepare(ctx, attempt.Request.Document.RecordID)
-	if errors.Is(err, core.ErrNoAttachments) || errors.Is(err, core.ErrSourceRemoved) {
-		return ErrStale
-	}
+	status, err := checkRevision(ctx, s.source, attempt.Request)
 	if err != nil {
-		return err
+		return errors.Join(err, s.saveDelivery(ctx, attempt, "check_failed", status, failureInfo("source_check", preparationFailureCode(err), err)))
 	}
-	if current.Revision != attempt.Request.Revision {
+	if status != RevisionCurrent {
+		if err := s.saveDelivery(ctx, attempt, "superseded", status, nil); err != nil {
+			return err
+		}
 		return ErrStale
 	}
 	if err := s.options.Writer.WriteReviewResult(ctx, attempt.Request, *attempt.Submission.Outcome); err != nil {
+		return errors.Join(err, s.saveDelivery(ctx, attempt, "write_failed", "", failureInfo("writeback", "writeback_failed", err)))
+	}
+	return s.saveDelivery(ctx, attempt, "delivered", "", nil)
+}
+
+func failureInfo(phase, code string, err error) *core.FailureInfo {
+	info := &core.FailureInfo{Phase: phase, Code: code, OccurredAt: time.Now().UTC()}
+	var status interface{ HTTPStatus() int }
+	if errors.As(err, &status) {
+		info.HTTPStatus = status.HTTPStatus()
+	}
+	var remote interface{ RemoteErrorCode() string }
+	if errors.As(err, &remote) {
+		info.RemoteCode = remote.RemoteErrorCode()
+	}
+	return info
+}
+
+func (s *Service) saveDelivery(ctx context.Context, attempt core.Attempt, state, reason string, failure *core.FailureInfo) error {
+	_, err := s.options.Store.Update(context.WithoutCancel(ctx), attempt.Request.Document.DocumentID, func(a *core.Attempt) error {
+		// A concurrent successful delivery must not be downgraded by an older
+		// check or write failure. The saved outcome itself remains immutable.
+		if a.Delivered {
+			return nil
+		}
+		a.Delivery = &core.DeliveryInfo{State: state, Reason: reason, CheckedAt: time.Now().UTC()}
+		a.Failure = failure
+		if state == "delivered" {
+			a.Delivered = true
+		}
+		return nil
+	})
+	return err
+}
+
+type AttemptReader interface {
+	ReadReview(context.Context, string) (core.Attempt, error)
+}
+
+// RetryWriteback never calls a reviewer. Even an archived result is checked
+// again on this explicit path, so an exact business revision can be restored.
+// An already delivered result is an idempotent no-op, not a live validity check.
+func (s *Service) RetryWriteback(ctx context.Context, documentID string) error {
+	reader, ok := s.options.Store.(AttemptReader)
+	if !ok || s.options.Writer == nil {
+		return fmt.Errorf("review writeback requires a readable store and configured writer")
+	}
+	attempt, err := reader.ReadReview(ctx, documentID)
+	if err != nil {
 		return err
 	}
-	_, err = s.options.Store.Update(ctx, attempt.Request.Document.DocumentID, func(a *core.Attempt) error { a.Delivered = true; return nil })
-	return err
+	if attempt.State != "completed" || attempt.Submission == nil || attempt.Submission.Outcome == nil {
+		return fmt.Errorf("review has no completed outcome to deliver")
+	}
+	if scoped, ok := s.source.(ScopedSource); ok && scoped.ReviewLogicalID(attempt.Request.Document.RecordID) != attempt.Request.LogicalID {
+		return fmt.Errorf("review belongs to another configured source")
+	}
+	return s.deliver(ctx, attempt)
 }
 
 type RetryStore interface {
