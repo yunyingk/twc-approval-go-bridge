@@ -46,6 +46,9 @@ func (c *Client) Review(ctx context.Context, request core.Request) (core.Submiss
 			return completed(core.Outcome{Decision: "review", Comment: "缺少审核依据：" + key}), nil
 		}
 	}
+	if request.Transactions != nil && len(request.Transactions.Issues) > 0 {
+		return completed(core.Outcome{Decision: "review", Comment: "关联交易流水资料不完整或格式异常，请核对审核快照中的问题项"}), nil
+	}
 	type receipt struct {
 		SourceKey string `json:"source_key"`
 		Facts     any    `json:"facts"`
@@ -58,7 +61,7 @@ func (c *Client) Review(ctx context.Context, request core.Request) (core.Submiss
 		}
 		items = append(items, receipt{in.Facts.SourceKey, in.Recognition.Facts, in.Recognition.Summary})
 	}
-	data, err := json.Marshal(map[string]any{"context": request.Context, "invoices": items, "duplicate_evidence": request.Document.Findings})
+	data, err := json.Marshal(map[string]any{"context": request.Context, "transactions": request.Transactions, "invoices": items, "duplicate_evidence": request.Document.Findings})
 	if err != nil {
 		return core.Submission{}, err
 	}

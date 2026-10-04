@@ -26,6 +26,7 @@ type Detail struct {
 	StartTime                        time.Time
 	Files                            []File
 	Context                          map[string]string
+	Transactions                     *TransactionEvidence
 }
 type LedgerEntry struct {
 	RecordID    string
@@ -34,13 +35,14 @@ type LedgerEntry struct {
 }
 
 type Request struct {
-	Document        aggregate.Document `json:"document"`
-	LogicalID       string             `json:"logical_id"`
-	Revision        string             `json:"revision"`
-	Provider        string             `json:"provider"`
-	ProviderVersion string             `json:"provider_version,omitempty"`
-	RulesVersion    string             `json:"rules_version,omitempty"`
-	Context         map[string]string  `json:"context,omitempty"`
+	Document        aggregate.Document   `json:"document"`
+	LogicalID       string               `json:"logical_id"`
+	Revision        string               `json:"revision"`
+	Provider        string               `json:"provider"`
+	ProviderVersion string               `json:"provider_version,omitempty"`
+	RulesVersion    string               `json:"rules_version,omitempty"`
+	Context         map[string]string    `json:"context,omitempty"`
+	Transactions    *TransactionEvidence `json:"transactions,omitempty"`
 }
 
 type Outcome struct {
@@ -97,7 +99,8 @@ func Fingerprint(r Request) (string, error) {
 		LogicalID, DocumentSN, Provider, ProviderVersion, RulesVersion string
 		Context                                                        map[string]string
 		Items                                                          []item
-	}{r.LogicalID, r.Document.DocumentSN, r.Provider, r.ProviderVersion, r.RulesVersion, r.Context, items})
+		Transactions                                                   *TransactionEvidence `json:",omitempty"`
+	}{r.LogicalID, r.Document.DocumentSN, r.Provider, r.ProviderVersion, r.RulesVersion, r.Context, items, canonicalTransactions(r.Transactions)})
 	if err != nil {
 		return "", fmt.Errorf("encode review revision: %w", err)
 	}

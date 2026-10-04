@@ -18,11 +18,12 @@ type source struct {
 	amount, logicalID string
 	missing           bool
 	detailReads       int
+	transactions      *core.TransactionEvidence
 }
 
 func (s *source) ReadDetail(context.Context, string) (core.Detail, error) {
 	s.detailReads++
-	return core.Detail{DocumentID: s.ReviewLogicalID("rec"), DocumentSN: "SN", RecordID: "rec", StartTime: time.Now(), Files: []core.File{{Token: "file", Attachment: invoice.Attachment{Data: []byte("image")}}}}, nil
+	return core.Detail{DocumentID: s.ReviewLogicalID("rec"), DocumentSN: "SN", RecordID: "rec", StartTime: time.Now(), Files: []core.File{{Token: "file", Attachment: invoice.Attachment{Data: []byte("image")}}}, Transactions: s.transactions}, nil
 }
 func (s *source) ReviewLogicalID(string) string {
 	if s.logicalID != "" {
@@ -122,6 +123,40 @@ func TestUnknownSubmissionIsNotRetried(t *testing.T) {
 	}
 	if r.calls != 1 {
 		t.Fatal("ambiguous request was resubmitted")
+	}
+}
+
+func TestPaymentChangeArchivesOldOutcomeAndRestartReusesSubmission(t *testing.T) {
+	s := &source{amount: "10", transactions: &core.TransactionEvidence{Source: "payments", LinkedRecordIDs: []string{"payment"}, Transactions: []core.Transaction{{RecordID: "payment", OriginalAmount: "10", OriginalCurrency: "USD"}}}}
+	r, w := &reviewer{}, &writer{}
+	svc, store := service(t, s, r, w)
+	ctx := context.Background()
+	first, err := svc.Submit(ctx, "rec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := app.New(s, r, app.Options{Provider: "seal", Versioned: true, Store: store, Writer: w})
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := restarted.Submit(ctx, "rec")
+	if err != nil || duplicate.DocumentID != first.DocumentID || r.calls != 1 {
+		t.Fatal("unchanged payment caused duplicate review after restart")
+	}
+	s.transactions.Transactions[0].OriginalAmount = "11"
+	if err := restarted.Complete(ctx, first.DocumentID, "seal", core.Outcome{Decision: "approve"}); !errors.Is(err, app.ErrStale) {
+		t.Fatalf("old payment outcome was accepted: %v", err)
+	}
+	old, err := store.Update(ctx, first.DocumentID, func(*core.Attempt) error { return nil })
+	if err != nil || old.State != "completed" || old.Delivered || w.calls != 0 {
+		t.Fatal("old payment outcome was lost or written")
+	}
+	current, err := restarted.Submit(ctx, "rec")
+	if err != nil || current.DocumentID == first.DocumentID || r.calls != 2 {
+		t.Fatal("new payment facts did not produce a new review revision")
+	}
+	if err := restarted.RetryWritebacks(ctx); err != nil || w.calls != 0 || r.calls != 2 {
+		t.Fatal("retry wrote stale outcome or called provider again")
 	}
 }
 func TestMissingLedgerStopsBeforeProvider(t *testing.T) {

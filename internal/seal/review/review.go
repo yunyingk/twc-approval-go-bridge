@@ -67,6 +67,11 @@ func (g *Gateway) Review(ctx context.Context, request core.Request) (core.Submis
 	if err != nil {
 		return core.Submission{}, err
 	}
+	transactionFields, err := mapper.TransactionFields(request.Transactions)
+	if err != nil {
+		return core.Submission{}, err
+	}
+	payload.Fields = append(payload.Fields, transactionFields...)
 	keys := make([]string, 0, len(request.Context))
 	for key := range request.Context {
 		keys = append(keys, key)

@@ -9,17 +9,19 @@ import (
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/dupcheck"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
+	core "github.com/yunyingk/twc-approval-go-bridge/internal/core/review"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
 )
 
 type fakeSource struct {
-	missing bool
+	missing      bool
+	transactions *core.TransactionEvidence
 }
 
 func (s fakeSource) ReadDetail(context.Context, string) (Detail, error) {
 	return Detail{DocumentID: "detail-1", DocumentSN: "SN-1", RecordID: "rec1", StartTime: time.Unix(100, 0),
 		Files: []File{{Token: "b", Attachment: invoice.Attachment{Name: "b.jpg", ContentType: "image/jpeg", Data: []byte("b")}},
-			{Token: "a", Attachment: invoice.Attachment{Name: "a.jpg", ContentType: "image/jpeg", Data: []byte("a")}}}}, nil
+			{Token: "a", Attachment: invoice.Attachment{Name: "a.jpg", ContentType: "image/jpeg", Data: []byte("a")}}}, Transactions: s.transactions}, nil
 }
 
 func (s fakeSource) ReadLedgerEntry(_ context.Context, key string) (LedgerEntry, error) {
@@ -78,5 +80,41 @@ func TestSubmitDoesNotUploadPartialLedger(t *testing.T) {
 	}
 	if len(gateway.uploads) != 0 || len(gateway.submits) != 0 {
 		t.Fatal("partial reimbursement must not be sent")
+	}
+}
+
+func TestGatewayPreservesSharedPaymentEvidenceWithoutInventingClaims(t *testing.T) {
+	evidence := &core.TransactionEvidence{Source: "payments", LinkedRecordIDs: []string{"payment"}, Transactions: []core.Transaction{{RecordID: "payment", OriginalAmount: "9007199254740993.01", OriginalCurrency: "USD", BookedAmountCNY: "700.00"}}, Issues: []core.EvidenceIssue{{Code: "missing_merchant"}}}
+	gateway := &fakeSeal{}
+	service, _ := New(fakeSource{transactions: evidence}, gateway)
+	if _, err := service.Submit(context.Background(), "rec1"); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, field := range gateway.submits[0].Fields {
+		if field.Key == "bridge_transaction_evidence" {
+			var got core.TransactionEvidence
+			if err := json.Unmarshal([]byte(field.Value.(string)), &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Source != evidence.Source || got.Transactions[0].OriginalAmount != "9007199254740993.01" || len(got.Issues) != 1 {
+				t.Fatal("payment evidence lost precision, provenance or missing-data flags")
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("Seal request omitted common payment snapshot")
+	}
+	for _, invoice := range gateway.submits[0].Invoices {
+		raw, _ := json.Marshal(invoice)
+		var fields map[string]any
+		_ = json.Unmarshal(raw, &fields)
+		if _, ok := fields["claimedAmount"]; ok {
+			t.Fatal("payment facts invented an invoice claim")
+		}
+		if _, ok := fields["expenseRefs"]; ok {
+			t.Fatal("payment facts invented allocation")
+		}
 	}
 }

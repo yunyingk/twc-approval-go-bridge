@@ -87,7 +87,7 @@ func (s *Service) Prepare(ctx context.Context, recordID string) (core.Request, e
 	if err != nil {
 		return core.Request{}, err
 	}
-	r := core.Request{Document: batch, LogicalID: detail.DocumentID, Provider: s.options.Provider, ProviderVersion: s.options.ProviderVersion, RulesVersion: s.options.RulesVersion, Context: detail.Context}
+	r := core.Request{Document: batch, LogicalID: detail.DocumentID, Provider: s.options.Provider, ProviderVersion: s.options.ProviderVersion, RulesVersion: s.options.RulesVersion, Context: detail.Context, Transactions: detail.Transactions}
 	r.Revision, err = core.Fingerprint(r)
 	if err != nil {
 		return core.Request{}, err
