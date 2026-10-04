@@ -33,3 +33,4 @@
 - Anyreceipt 已于 2026-09-29 通过真实识别及台账回写；密钥于 2026-10-04 从历史会话恢复并统一放入私有 `.env`。新企业副本已验证真实附件事件触发、21 个识别输出、台账回写及双向关联，见 [企业 OCR 验收](docs/anyreceipt-enterprise-verification.md)。运行配置缺少凭证时先核对 `.env` 与交接记录，不将其误判为从未联调。
 - 同日企业副本已通过显式 Seal 送审、真实公网回调及七个 AI 专用文本列回写验收。旧来源任务先隔离再读取，结果列按线上类型校验；人工审批、锁定及结算不由 AI 回调驱动。字段与过程证据见 [审核回写过程记录](docs/progress/2026-10-04-seal-review.md)。
 - 用户选择当前启用 `REVIEW_TRIGGER_MODE=after_recognition`，保留 `manual` 配置切换。全自动附件识别、台账、Seal 送审及结果回写已通过企业副本真实验收；意图持久化并按代次确认，同一版本复用原审核尝试。详见 [自动送审过程记录](docs/progress/2026-10-04-automatic-review.md)。
+- 业务来源统一使用 `BUSINESS_CONFIG_FILE` 选择 JSON，本机为 `configs/business/enterprise-test.json`；文件完整决定流水/明细/台账、字段、提供方和触发方式，对应旧业务环境变量不覆盖文件，凭证仍由环境提供。明细与台账目前必须同 Base；一个进程只运行一份配置。换副本前用应用身份执行 `check-business-config`，核验字段类型和关联目标，不能把来源声明当作跨表交易或 Webhook 流程已实现。见 [业务配置说明](docs/business-configuration.md)。
