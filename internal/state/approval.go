@@ -164,7 +164,7 @@ func (s *Files) UpdateApproval(ctx context.Context, scope, id string, update fun
 		// A late update cannot turn an uncertain external call into a proven
 		// rejection, forget an observation, or release a confirmed reservation.
 		if attempt.CreatedAt != createdAt || attempt.LastObservedAt.Before(lastObservedAt) || len(attempt.History) < oldHistoryLen ||
-			(attempt.Phase == "failed" && oldPhase != "submitting" && oldPhase != "failed") {
+			!validApprovalTransition(oldPhase, attempt.Phase) {
 			return nil, core.ErrConflict
 		}
 		if oldHistoryLen > 0 {
@@ -190,4 +190,19 @@ func (s *Files) UpdateApproval(ctx context.Context, scope, id string, update fun
 		return registry, nil
 	})
 	return attempt, err
+}
+
+func validApprovalTransition(from, to string) bool {
+	if from == to {
+		return true
+	}
+	switch from {
+	case "submitting":
+		return to == "unknown" || to == "failed" || to == "pending" || to == "finished"
+	case "unknown", "failed":
+		return to == "pending" || to == "finished"
+	case "pending":
+		return to == "finished"
+	}
+	return false
 }

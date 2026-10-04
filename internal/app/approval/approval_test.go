@@ -342,10 +342,12 @@ func TestUnknownLookupCannotReleaseMembersOrRewriteFrozenMapping(t *testing.T) {
 	if _, err := svc.Submit(context.Background(), prepare(t, svc, "b", "c")); !errors.Is(err, core.ErrMemberReserved) {
 		t.Fatal("negative lookup released uncertain members")
 	}
-	for _, change := range []string{"release", "plan"} {
+	for _, change := range []string{"release", "reset", "plan"} {
 		if _, err := store.UpdateApproval(context.Background(), "source", plan.ID, func(a *core.Attempt) error {
 			if change == "release" {
 				a.Phase = "failed"
+			} else if change == "reset" {
+				a.Phase = "submitting"
 			} else {
 				a.Plan.Rows[0].RecordID = "foreign-record"
 			}
