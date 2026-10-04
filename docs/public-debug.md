@@ -16,7 +16,7 @@ DNS 已解析到 `118.31.4.210`。nginx 当前采用域名白名单，因此新�
 
 - [健康检查](https://twc-approval.ying-qing.cn/healthz)：`200 {"status":"ok"}`。
 - [就绪检查](https://twc-approval.ying-qing.cn/readyz)：`200 {"status":"ready"}`。
-- [构建版本](https://twc-approval.ying-qing.cn/version)：当前运行 `public-debug-20261004`。
+- [构建版本](https://twc-approval.ying-qing.cn/version)：当前运行 `public-debug-20261004-review`。
 - `POST /seal/callback/<密钥>`：密钥在本地私有配置及 Seal `test` 通道保存，不写入本文。
 
 公网根路径、mock 与其他路径返回 404；错误回调密钥返回 401；正确密钥搭配无效内容返回 400。nginx 限制请求体为 1 MiB，禁止记录该域名的访问 URL 和错误 URL；应用已有回调路径遮蔽。不要把完整回调 URL 复制到日志或公开文档。
@@ -34,7 +34,7 @@ plist 位于 `~/Library/LaunchAgents/`。运行日志在 `data/public-debug/`，
 
 [运行包装器](../deploy/run-local-debug.py)明确依次加载 `configs/config.example.env`、`.env`、`.env.public-debug`，后者覆盖前者；不执行 shell 展开。Go 程序本身仍不自动读取 `.env`。
 
-本调试进程启用 Seal 结果接收及 `RECEIPT_PROVIDER=anyreceipt`，`RECEIPT_TRIGGER_MODE=both`；首次扫描使用 `baseline`，已有附件不会因此批量识别。`REVIEW_RESULT_FIELD_IDS={}`：真实审核结果保存到本地状态，不覆盖人工审批或结算字段。若要验收飞书 AI 结果回写，先核对专用字段，再配置该映射。当前二进制使用 `no_anthropic` 构建，调试外部系统主线。
+本调试进程启用 Seal 结果接收及 `RECEIPT_PROVIDER=anyreceipt`，`RECEIPT_TRIGGER_MODE=both`；首次扫描使用 `baseline`，已有附件不会因此批量识别。`REVIEW_RESULT_FIELD_IDS` 已映射七个专用文本列，真实审核结果保存到本地状态并回写 AI 建议，不覆盖人工审批或结算字段。字段映射与验收见[阶段过程记录](progress/2026-10-04-seal-review.md)。当前二进制使用 `no_anthropic` 构建，调试外部系统主线。
 
 ```bash
 # 查询进程
@@ -42,7 +42,7 @@ launchctl list com.yingqing.twc-approval-debug
 launchctl list com.yingqing.twc-approval-frpc
 
 # 修改 Go 代码后重新构建，再仅重启自己的服务
-go build -tags no_anthropic -ldflags '-X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version=public-debug-20261004' -o bin/twc-approval-public-debug ./cmd/server
+go build -tags no_anthropic -ldflags '-X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version=public-debug-20261004-review' -o bin/twc-approval-public-debug ./cmd/server
 launchctl kickstart -k gui/$(id -u)/com.yingqing.twc-approval-debug
 
 # 使用同一套私有配置与状态目录手动送审
@@ -53,7 +53,7 @@ python3 deploy/run-local-debug.py submit-review <报销明细记录ID>
 
 ## 企业测试应用切换（2026-10-04）
 
-本机服务已改用企业测试应用及新 Base，私有配置中的表和字段 ID 已重新核对。真实记录变更事件已收到，详见[飞书事件验收](feishu-event-verification.md)。原有公网地址、FRP、Seal 通道及状态目录继续使用；OCR 已启用并完成[新副本验收](anyreceipt-enterprise-verification.md)，AI 审核结果回写仍关闭。原应用配置的私有备份保存在 `data/public-debug/feishu-before-enterprise.env`，不提交 Git。
+本机服务已改用企业测试应用及新 Base，私有配置中的表和字段 ID 已重新核对。真实记录变更事件已收到，详见[飞书事件验收](feishu-event-verification.md)。原有公网地址、FRP、Seal 通道及状态目录继续使用；OCR 已完成[新副本验收](anyreceipt-enterprise-verification.md)，七个 AI 专用结果列已启用并完成真实回写。原应用配置的私有备份保存在 `data/public-debug/feishu-before-enterprise.env`，不提交 Git。
 
 ## Anyreceipt 凭证恢复（2026-10-04）
 
@@ -67,4 +67,4 @@ Anyreceipt 的密钥已于 2026-10-04 从 2026-09-29 的历史联调会话恢复
 
 同日真实 Seal 回调已抵达，任务由 `pending` 变为 `completed`，结论为 `review`（人工复核），包含真实审批记录 ID 与 Seal 详情 URL。使用同一回调内容从公网重复投递，返回 `200 {"success":true}`，保存状态完全一致。
 
-此次没有配置飞书 AI 输出列，因此 `delivered=false` 表示没有进行表格交付，不是回调失败。实际回调接收、持久化及重复投递已验证；飞书结果回写和完整财务流程仍需另行验收。
+2026-10-03 此次没有配置飞书 AI 输出列，因此 `delivered=false` 表示没有进行表格交付，不是回调失败。后续企业副本已完成专用 AI 字段回写，任务为 `completed`、`delivered=true`；旧来源结果继续保留归档。完整财务流程仍需另行验收。
