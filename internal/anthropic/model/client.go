@@ -6,13 +6,13 @@ package model
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/anthropic"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/receiptcompat"
 )
 
 type Client struct {
@@ -45,7 +45,7 @@ func (c *Client) Recognize(ctx context.Context, attachment invoice.Attachment) (
 	if len(attachment.Data) == 0 {
 		return invoice.Recognition{}, fmt.Errorf("receipt image data is empty")
 	}
-	const prompt = `Extract every visible receipt or invoice field. Return only a JSON object with "outputs" (an object) and "summary" (a string). In outputs include all fields you can identify, using keys title, occasion, country, currency, type, taxrate, tax, total, amountwithouttax, Seller, Sellertaxnumber, Buyer, Buyertaxnumber, Payee, Payer, TypeofBill, DateofInssuance, Remark, Number where applicable; add other useful fields without inventing values. Keep amounts and dates as source text.`
+	const prompt = `Extract the visible receipt facts without inventing values. Return only one JSON object with "facts" and "summary". Facts use the keys title, country, receipt_type, number, issue_date, currency, seller, buyer, business_category, tax_rate, total, tax, pretax. All values are strings; absent facts are empty strings. Preserve source amount and date text. If this file contains more than one distinct receipt, return {"multiple_receipts":true} instead of silently merging them.`
 	msg, err := c.api.CreateMessage(ctx, sdk.MessageNewParams{
 		Model: sdk.Model(c.model), MaxTokens: 2048,
 		Messages: []sdk.MessageParam{sdk.NewUserMessage(
@@ -56,19 +56,14 @@ func (c *Client) Recognize(ctx context.Context, attachment invoice.Attachment) (
 	if err != nil {
 		return invoice.Recognition{}, fmt.Errorf("recognize receipt with model: %w", err)
 	}
-	var response strings.Builder
-	for _, block := range msg.Content {
-		if block.Type == "text" {
-			response.WriteString(block.Text)
-		}
+	raw, err := anthropic.JSONMessage(msg)
+	if err != nil {
+		return invoice.Recognition{}, err
 	}
-	raw := []byte(strings.TrimSpace(response.String()))
-	var parsed struct {
-		Outputs map[string]json.RawMessage `json:"outputs"`
-		Summary string                     `json:"summary"`
+	result, err := receiptcompat.Decode(raw)
+	if err != nil {
+		return invoice.Recognition{}, err
 	}
-	if err := json.Unmarshal(raw, &parsed); err != nil || parsed.Outputs == nil {
-		return invoice.Recognition{}, fmt.Errorf("receipt model returned no valid JSON outputs")
-	}
-	return invoice.Recognition{Outputs: parsed.Outputs, Summary: parsed.Summary, Raw: raw}, nil
+	result.Origin.Provider, result.Origin.Model = "model", c.model
+	return result, nil
 }

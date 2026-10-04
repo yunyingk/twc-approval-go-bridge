@@ -133,7 +133,9 @@ func TestAttachmentChangeRecognizesOnlyNewFile(t *testing.T) {
 	if err := p.Sink(ctx, event); err != nil {
 		t.Fatal(err)
 	}
-	if len(p.jobs) != 0 {
-		t.Fatal("wrong Base event was queued")
+	select {
+	case <-results:
+		t.Fatal("wrong Base event was processed")
+	case <-time.After(50 * time.Millisecond):
 	}
 }

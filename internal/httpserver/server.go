@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -85,6 +86,10 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 func requestLog(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r)
-		logger.Debug("http request", "method", r.Method, "path", r.URL.Path)
+		path := r.URL.Path
+		if strings.HasPrefix(path, "/seal/callback/") && path != "/seal/callback/mock" {
+			path = "/seal/callback/[redacted]"
+		}
+		logger.Debug("http request", "method", r.Method, "path", path)
 	})
 }

@@ -9,3 +9,8 @@ services:
       SHUTDOWN_TIMEOUT: 10s
     ports:
       - "8080:8080"
+    volumes:
+      - bridge-state:/data
+
+volumes:
+  bridge-state:

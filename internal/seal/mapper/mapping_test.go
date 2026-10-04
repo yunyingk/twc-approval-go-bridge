@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/dupcheck"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice/aggregate"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
 )
 
@@ -132,4 +134,36 @@ func hasField(fields []seal.DocumentField, key, fieldType string) bool {
 		}
 	}
 	return false
+}
+
+func TestBatchProvidesDuplicateFactsAndSearchLimits(t *testing.T) {
+	prior := dupcheck.Invoice{RecordID: "old", SourceKey: "old:file", Number: "INV-1", Seller: "Shop", Type: "invoice", IssueDate: "2026-09-29", Total: "9007199254740993.01", Currency: "USD"}
+	current := dupcheck.Invoice{SourceKey: "rec:file", Number: "INV-1", Seller: "Shop", Type: "invoice"}
+	batch := aggregate.Document{DocumentID: "doc", DocumentSN: "sn", RecordID: "rec", StartTime: time.Unix(100, 0),
+		Invoices: []aggregate.Invoice{{FileToken: "file", Facts: current, Candidates: []dupcheck.Invoice{prior}}},
+		Findings: dupcheck.Compare(current, []dupcheck.Invoice{prior})}
+	uploads := map[string]seal.UploadResponse{"file": {AttachmentID: "id", Attachment: seal.AttachmentInfo{Name: "receipt.jpg", MimeType: "image/jpeg", URL: "https://example.com/file", OSSPath: "path", OSSSignedURL: "https://example.com/signed", OSSFileSize: 50}}}
+	result, err := MapBatch(batch, uploads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var evidence map[string]string
+	for _, field := range result.Fields {
+		if field.Key == "duplicate_candidate_01" {
+			if err := json.Unmarshal([]byte(field.Value.(string)), &evidence); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if evidence["prior_record_id"] != "old" || evidence["seller"] != "Shop" || evidence["issue_date"] != "2026-09-29" || evidence["total_amount"] != prior.Total || evidence["currency"] != "USD" || evidence["code"] != "same_seller_number_type" {
+		t.Fatalf("Seal received incomplete candidate evidence: %#v", evidence)
+	}
+	if !hasField(result.Fields, "duplicate_evidence_scope", "TEXT") {
+		t.Fatal("missing search scope")
+	}
+	batch.Findings = nil
+	result, err = MapBatch(batch, uploads)
+	if err != nil || !hasField(result.Fields, "duplicate_evidence_scope", "TEXT") {
+		t.Fatal("no candidates must still disclose search limits")
+	}
 }

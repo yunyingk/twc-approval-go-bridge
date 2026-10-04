@@ -1,0 +1,6 @@
+{
+  "version": "example-advisory-v1",
+  "instructions": "这是自有审核的示例规则，不是生产财务制度。核对所提供票据事实与申报上下文，列出金额、币种、商户等不一致以及缺失依据。查重候选仅作为线索，不能认定已经报销。没有已核验的汇率、授权或历史占用事实时明确说明资料不足，交由人工复核。",
+  "required_context": ["claimed_amount", "claimed_currency", "merchant"],
+  "allow_automatic_decision": false
+}

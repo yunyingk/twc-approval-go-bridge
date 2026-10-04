@@ -10,6 +10,9 @@ type Invoice struct {
 	Number    string
 	Seller    string
 	Type      string
+	IssueDate string
+	Total     string
+	Currency  string
 }
 
 type Finding struct {

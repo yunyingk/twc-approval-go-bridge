@@ -2,20 +2,26 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	"github.com/yunyingk/twc-approval-go-bridge/internal/anyreceipt/flow"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/anyreceipt/ledger"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/app/recognition"
+	appreview "github.com/yunyingk/twc-approval-go-bridge/internal/app/review"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/events"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/invoiceledger"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/httpserver"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/state"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/version"
 )
 
@@ -29,12 +35,24 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	if len(os.Args) > 1 {
-		if len(os.Args) != 3 || os.Args[1] != "submit-seal" {
-			logger.Error("usage: server submit-seal <personal-detail-record-id>")
+		if len(os.Args) != 3 {
+			logger.Error("usage: server {submit-seal|submit-review|apply-seal-result} <record-id-or-file>")
 			os.Exit(2)
 		}
-		if err := runSealSubmit(context.Background(), cfg, os.Args[2], logger); err != nil {
-			logger.Error("submit reimbursement to Seal", "error", err)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		switch os.Args[1] {
+		case "submit-seal":
+			err = runSealSubmit(ctx, cfg, os.Args[2], logger)
+		case "submit-review":
+			err = runReviewSubmit(ctx, cfg, os.Args[2], cfg.ReviewProvider, true, logger)
+		case "apply-seal-result":
+			err = runSealResult(ctx, cfg, os.Args[2])
+		default:
+			err = errors.New("unknown command")
+		}
+		if err != nil {
+			logger.Error("review command failed", "error", err)
 			os.Exit(1)
 		}
 		return
@@ -42,8 +60,24 @@ func main() {
 	server := httpserver.New(cfg.HTTPAddr, logger, version.Version)
 	server.Register("POST /seal/callback/mock", seal.MockCallback(logger))
 
+	var reviewService *appreview.Service
+	if cfg.SealCallbackToken != "" {
+		reviewService, err = newReviewService(cfg, "seal", true)
+		if err != nil {
+			logger.Error("configure Seal callback", "error", err)
+			os.Exit(1)
+		}
+		server.Register("POST /seal/callback/{token}", seal.CallbackHandler(cfg.SealCallbackToken, reviewService))
+	}
+	if reviewService == nil && len(cfg.ReviewResultFieldIDs) > 0 {
+		reviewService, err = newReviewService(cfg, cfg.ReviewProvider, true)
+		if err != nil {
+			logger.Error("configure review writeback", "error", err)
+			os.Exit(1)
+		}
+	}
 	var feishuListener *events.Listener
-	var receiptFlow *flow.Processor
+	var receiptFlow *recognition.Processor
 	var attachmentClient *base.AttachmentClient
 	if cfg.FeishuEnabled() {
 		sink := events.LoggingSink(logger, cfg.FeishuLogRawEvents)
@@ -62,25 +96,42 @@ func main() {
 				os.Exit(1)
 			}
 			attachmentClient = base.NewAttachmentClient(cfg.FeishuAppID, cfg.FeishuAppSecret)
-			resultHandler := flow.ResultHandler(func(ctx context.Context, result flow.Result) error {
+			resultHandler := recognition.ResultHandler(func(ctx context.Context, result recognition.Result) error {
 				logger.InfoContext(ctx, "receipt recognized", "trigger", result.Trigger, "record_id", result.RecordID, "file_name", result.FileName, "output_fields", len(result.Recognition.Outputs))
 				return nil
 			})
 			if cfg.ReceiptLedgerTableID != "" {
-				ledgerHandler, ledgerErr := ledger.New(ledger.Config{BaseToken: cfg.ReceiptBaseToken, SourceTableID: cfg.ReceiptTableID, SourceDetailFieldID: cfg.ReceiptSourceDetailFieldID, TableID: cfg.ReceiptLedgerTableID, Fields: cfg.ReceiptLedgerFieldIDs}, base.NewLedgerClient(cfg.FeishuAppID, cfg.FeishuAppSecret), logger)
+				ledgerHandler, ledgerErr := invoiceledger.New(invoiceledger.Config{BaseToken: cfg.ReceiptBaseToken, SourceTableID: cfg.ReceiptTableID, SourceDetailFieldID: cfg.ReceiptSourceDetailFieldID, TableID: cfg.ReceiptLedgerTableID, Fields: cfg.ReceiptLedgerFieldIDs}, base.NewLedgerClient(cfg.FeishuAppID, cfg.FeishuAppSecret), logger)
 				if ledgerErr != nil {
 					logger.Error("configure invoice ledger", "error", ledgerErr)
 					os.Exit(1)
 				}
 				resultHandler = ledgerHandler.Handle
 			}
-			receiptFlow, err = flow.New(flow.Config{BaseToken: cfg.ReceiptBaseToken, TableID: cfg.ReceiptTableID, FieldID: cfg.ReceiptFieldID}, attachmentClient, recognizer, resultHandler, logger)
+			receiptFlow, err = recognition.New(recognition.Config{BaseToken: cfg.ReceiptBaseToken, TableID: cfg.ReceiptTableID, FieldID: cfg.ReceiptFieldID}, attachmentClient, recognizer, resultHandler, logger)
 			if err != nil {
 				logger.Error("configure receipt flow", "error", err)
 				os.Exit(1)
 			}
+			checkpoints, cacheErr := state.NewFiles(cfg.StateDir)
+			if cacheErr != nil {
+				logger.Error("configure receipt state", "error", cacheErr)
+				os.Exit(1)
+			}
+			scopeData, _ := json.Marshal(struct {
+				Base, Table, Field, Provider, Model, Endpoint, Ledger string
+				Fields                                                map[string]string
+			}{cfg.ReceiptBaseToken, cfg.ReceiptTableID, cfg.ReceiptFieldID, cfg.ReceiptProvider, cfg.ReceiptModelName, cfg.ReceiptModelBaseURL, cfg.ReceiptLedgerTableID, cfg.ReceiptLedgerFieldIDs})
+			lease, leaseErr := checkpoints.AcquireWorker(cfg.ReceiptBaseToken + ":" + cfg.ReceiptTableID + ":" + cfg.ReceiptFieldID)
+			if leaseErr != nil {
+				logger.Error("claim receipt worker", "error", leaseErr)
+				os.Exit(1)
+			}
+			defer lease.Close()
+			scopeHash := sha256.Sum256(scopeData)
+			receiptFlow.WithCheckpoints(checkpoints, hex.EncodeToString(scopeHash[:]))
 			if cfg.ReceiptTriggerMode != "poll" {
-				sink = receiptFlow.Sink
+				sink = events.NewAttachmentSink(recognition.Config{BaseToken: cfg.ReceiptBaseToken, TableID: cfg.ReceiptTableID, FieldID: cfg.ReceiptFieldID}, receiptFlow).Sink
 			}
 		}
 		if cfg.ReceiptProvider == "" || cfg.ReceiptTriggerMode != "poll" {
@@ -102,6 +153,22 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if reviewService != nil {
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				if err := reviewService.RetryWritebacks(ctx); err != nil && ctx.Err() == nil {
+					logger.ErrorContext(ctx, "retry review writeback", "error", err)
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
+	}
 	if receiptFlow != nil {
 		go receiptFlow.Run(ctx)
 		if cfg.ReceiptTriggerMode != "event" {

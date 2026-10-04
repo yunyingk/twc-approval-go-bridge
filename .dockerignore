@@ -3,6 +3,9 @@
 bin
 dist
 coverage.out
+data
+tmp
+*.log
 .env
 .env.*
 !.env.example

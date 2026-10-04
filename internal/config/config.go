@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -34,6 +35,15 @@ type Config struct {
 	ReceiptSourceDetailFieldID string
 	ReceiptLedgerFieldIDs      map[string]string
 	SealDocumentURL            string
+	StateDir                   string
+	SealCallbackToken          string
+	ReviewProvider             string
+	ReviewModelAPIKey          string
+	ReviewModelBaseURL         string
+	ReviewModelName            string
+	ReviewRulesFile            string
+	ReviewContextFieldIDs      map[string]string
+	ReviewResultFieldIDs       map[string]string
 	SealBearerToken            string
 }
 
@@ -70,6 +80,21 @@ func Load() (Config, error) {
 		}
 	}
 
+	contextFields, err := fieldMapping("REVIEW_CONTEXT_FIELD_IDS")
+	if err != nil {
+		return Config{}, err
+	}
+	resultFields, err := fieldMapping("REVIEW_RESULT_FIELD_IDS")
+	if err != nil {
+		return Config{}, err
+	}
+	for semantic := range resultFields {
+		switch semantic {
+		case "decision", "comment", "document_id", "revision", "provider", "external_id", "url":
+		default:
+			return Config{}, fmt.Errorf("unsupported review result field %q", semantic)
+		}
+	}
 	cfg := Config{
 		HTTPAddr:                   value("HTTP_ADDR", ":8080"),
 		LogLevel:                   level,
@@ -93,7 +118,15 @@ func Load() (Config, error) {
 		ReceiptSourceDetailFieldID: value("RECEIPT_SOURCE_DETAIL_FIELD_ID", ""),
 		ReceiptLedgerFieldIDs:      ledgerFieldIDs,
 		SealDocumentURL:            value("SEAL_DOCUMENT_URL", ""),
-		SealBearerToken:            value("SEAL_BEARER_TOKEN", ""),
+		SealCallbackToken:          value("SEAL_CALLBACK_TOKEN", ""),
+		StateDir:                   value("STATE_DIR", "data"),
+		ReviewProvider:             strings.ToLower(value("REVIEW_PROVIDER", "seal")),
+		ReviewModelAPIKey:          value("REVIEW_MODEL_API_KEY", ""),
+		ReviewModelBaseURL:         value("REVIEW_MODEL_BASE_URL", ""),
+		ReviewModelName:            value("REVIEW_MODEL_NAME", ""),
+		ReviewRulesFile:            value("REVIEW_RULES_FILE", ""),
+		ReviewContextFieldIDs:      contextFields, ReviewResultFieldIDs: resultFields,
+		SealBearerToken: value("SEAL_BEARER_TOKEN", ""),
 	}
 	if cfg.ReceiptProvider != "" {
 		if cfg.ReceiptLedgerTableID != "" && (cfg.ReceiptLedgerFieldIDs["source_key"] == "" || cfg.ReceiptLedgerFieldIDs["raw_json"] == "") {
@@ -125,6 +158,24 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("unsupported RECEIPT_PROVIDER %q", cfg.ReceiptProvider)
 		}
 	}
+	if cfg.ReviewProvider != "seal" && cfg.ReviewProvider != "model" {
+		return Config{}, fmt.Errorf("REVIEW_PROVIDER must be seal or model")
+	}
+	if cfg.SealCallbackToken != "" && !regexp.MustCompile(`^[A-Za-z0-9_-]{32,}$`).MatchString(cfg.SealCallbackToken) {
+		return Config{}, fmt.Errorf("SEAL_CALLBACK_TOKEN must have at least 32 URL-safe characters")
+	}
+	for _, id := range resultFields {
+		for _, contextID := range contextFields {
+			if id == contextID {
+				return Config{}, fmt.Errorf("review context and result fields must not overlap")
+			}
+		}
+		if id == cfg.ReceiptFieldID || id == cfg.ReceiptSourceDetailFieldID {
+			return Config{}, fmt.Errorf("review result fields must not overwrite source attachment or detail ID")
+		}
+	}
+	// Provider credentials are checked when that capability is constructed.
+	// Seal never requires a local rules file.
 	return cfg, nil
 }
 
@@ -181,4 +232,21 @@ func boolean(key string, fallback bool) (bool, error) {
 	default:
 		return false, fmt.Errorf("%s: unsupported boolean value %q", key, v)
 	}
+}
+
+func fieldMapping(key string) (map[string]string, error) {
+	var fields map[string]string
+	if raw := value(key, ""); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+			return nil, fmt.Errorf("%s: invalid field mapping", key)
+		}
+		used := make(map[string]bool)
+		for semantic, id := range fields {
+			if strings.TrimSpace(semantic) == "" || strings.TrimSpace(id) == "" || used[id] {
+				return nil, fmt.Errorf("%s: empty or duplicate field mapping", key)
+			}
+			used[id] = true
+		}
+	}
+	return fields, nil
 }

@@ -5,16 +5,15 @@ package mapper
 import (
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/dupcheck"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice/aggregate"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/receiptcompat"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
 )
-
-var amountPattern = regexp.MustCompile(`^-?[0-9]+(?:\.[0-9]+)?$`)
 
 // Input contains the facts available after OCR and a successful Seal upload.
 // StartTime is supplied by the caller so retries and tests can control it.
@@ -46,6 +45,8 @@ func Map(input Input) (seal.DocumentRequest, error) {
 	if input.StartTime.IsZero() || input.StartTime.Unix() <= 0 {
 		return seal.DocumentRequest{}, fmt.Errorf("document start time must be after Unix epoch")
 	}
+	input.Recognition = receiptcompat.Normalize(input.Recognition)
+	facts := input.Recognition.Facts
 	sourceID := input.RecordID + ":" + input.FileToken
 	document := seal.DocumentRequest{
 		DocumentID: input.DocumentID,
@@ -68,17 +69,17 @@ func Map(input Input) (seal.DocumentRequest, error) {
 	document.Fields = append(document.Fields, seal.DocumentField{
 		Key: "receipt_attachment", Label: "发票附件", Type: "ATTACHMENT", Value: []seal.AttachmentInfo{input.Upload.Attachment},
 	})
-	addText("receipt_title", "发票摘要", text(input.Recognition, "title", input.Recognition.Title))
-	addText("receipt_number", "发票号", text(input.Recognition, "Number", input.Recognition.Number))
-	addText("receipt_type", "票据类型", text(input.Recognition, "type", input.Recognition.Type))
-	addText("receipt_business_category", "业务分类", text(input.Recognition, "TypeofBill", ""))
-	addText("receipt_seller", "开票方", text(input.Recognition, "Seller", ""))
-	addText("receipt_buyer", "购买方", text(input.Recognition, "Buyer", ""))
-	addText("receipt_currency", "币种", text(input.Recognition, "currency", ""))
-	addText("receipt_total", "含税金额", text(input.Recognition, "total", input.Recognition.Total))
-	addText("receipt_tax", "税额", text(input.Recognition, "tax", input.Recognition.Tax))
-	addText("receipt_date", "开票日期", text(input.Recognition, "DateofInssuance", input.Recognition.Date))
-	addText("receipt_country", "国家", text(input.Recognition, "country", input.Recognition.Country))
+	addText("receipt_title", "发票摘要", facts.Title)
+	addText("receipt_number", "发票号", facts.Number)
+	addText("receipt_type", "票据类型", facts.ReceiptType)
+	addText("receipt_business_category", "业务分类", facts.BusinessCategory)
+	addText("receipt_seller", "开票方", facts.Seller)
+	addText("receipt_buyer", "购买方", facts.Buyer)
+	addText("receipt_currency", "币种", facts.Currency)
+	addText("receipt_total", "含税金额", facts.Total)
+	addText("receipt_tax", "税额", facts.Tax)
+	addText("receipt_date", "开票日期", facts.IssueDate)
+	addText("receipt_country", "国家", facts.Country)
 	addText("receipt_summary", "AI 消费概要", input.Recognition.Summary)
 
 	if invoice, ok := mapInvoice(input, sourceID); ok {
@@ -118,21 +119,52 @@ func MapBatch(batch aggregate.Document, uploads map[string]seal.UploadResponse) 
 		result.Invoices = append(result.Invoices, part.Invoices...)
 	}
 	for index, finding := range batch.Findings {
+		var prior dupcheck.Invoice
+		for _, item := range batch.Invoices {
+			if item.Facts.SourceKey != finding.CurrentSourceKey {
+				continue
+			}
+			for _, candidate := range item.Candidates {
+				if candidate.RecordID == finding.PriorRecordID && candidate.SourceKey == finding.PriorSourceKey {
+					prior = candidate
+					break
+				}
+			}
+		}
+		// Supply facts as evidence; a candidate is not proof of prior reimbursement.
+		evidence, err := json.Marshal(struct {
+			CurrentSourceKey string `json:"current_source_key"`
+			PriorRecordID    string `json:"prior_record_id"`
+			PriorSourceKey   string `json:"prior_source_key"`
+			Code             string `json:"code"`
+			Number           string `json:"invoice_number"`
+			Seller           string `json:"seller"`
+			Type             string `json:"receipt_type"`
+			IssueDate        string `json:"issue_date"`
+			Total            string `json:"total_amount"`
+			Currency         string `json:"currency"`
+		}{finding.CurrentSourceKey, finding.PriorRecordID, finding.PriorSourceKey, finding.Code,
+			prior.Number, prior.Seller, prior.Type, prior.IssueDate, prior.Total, prior.Currency})
+		if err != nil {
+			return seal.DocumentRequest{}, fmt.Errorf("encode duplicate candidate evidence: %w", err)
+		}
 		result.Fields = append(result.Fields, seal.DocumentField{
 			Key: fmt.Sprintf("duplicate_candidate_%02d", index+1), Label: "台账查重候选", Type: "TEXT",
-			Value: fmt.Sprintf("当前来源 %s；候选台账记录 %s；候选来源 %s；标记 %s",
-				finding.CurrentSourceKey, finding.PriorRecordID, finding.PriorSourceKey, finding.Code),
+			Value: string(evidence),
 		})
 	}
+	result.Fields = append(result.Fields, seal.DocumentField{Key: "duplicate_evidence_scope", Label: "查重证据范围", Type: "TEXT",
+		Value: "候选来自按当前票号查询的来源记录；缺少票号时未执行查询。候选仅用于核对，不证明已报销或已结算；没有候选不证明不存在重复。检索未覆盖无票号、不同票号、其他来源或所有历史费用，未提供审批与结算状态。"})
 	return result, nil
 }
 
 func mapInvoice(input Input, sourceID string) (seal.ExternalInvoice, bool) {
-	number := text(input.Recognition, "Number", input.Recognition.Number)
-	currency := strings.ToUpper(text(input.Recognition, "currency", ""))
-	total, totalOK := amount(text(input.Recognition, "total", input.Recognition.Total))
-	seller := text(input.Recognition, "Seller", "")
-	buyer := text(input.Recognition, "Buyer", "")
+	facts := receiptcompat.Normalize(input.Recognition).Facts
+	number := facts.Number
+	currency := strings.ToUpper(facts.Currency)
+	total, totalOK := amount(facts.Total)
+	seller := facts.Seller
+	buyer := facts.Buyer
 	evidenceID := strings.TrimSpace(input.Upload.AttachmentID)
 	if number == "" || !currencyCode(currency) || !totalOK || seller == "" || buyer == "" || evidenceID == "" {
 		return seal.ExternalInvoice{}, false
@@ -148,39 +180,19 @@ func mapInvoice(input Input, sourceID string) (seal.ExternalInvoice, bool) {
 		Buyer:                seal.InvoiceParty{Name: buyer},
 		EvidenceAttachmentID: evidenceID,
 	}
-	if date, ok := date(text(input.Recognition, "DateofInssuance", input.Recognition.Date)); ok {
+	if date, ok := date(facts.IssueDate); ok {
 		invoice.InvoiceDate = date
 	}
-	if tax, ok := amount(text(input.Recognition, "tax", input.Recognition.Tax)); ok {
+	if tax, ok := amount(facts.Tax); ok {
 		invoice.TaxAmount = tax
 	}
-	if pretax, ok := amount(text(input.Recognition, "amountwithouttax", "")); ok {
+	if pretax, ok := amount(facts.Pretax); ok {
 		invoice.AmountWithoutTax = pretax
 	}
 	return invoice, true
 }
 
-func text(recognition invoice.Recognition, key, fallback string) string {
-	if raw := recognition.Outputs[key]; len(raw) != 0 {
-		var value string
-		if json.Unmarshal(raw, &value) == nil {
-			return strings.TrimSpace(value)
-		}
-		var number json.Number
-		if json.Unmarshal(raw, &number) == nil {
-			return number.String()
-		}
-	}
-	return strings.TrimSpace(fallback)
-}
-
-func amount(value string) (json.Number, bool) {
-	value = strings.ReplaceAll(strings.TrimSpace(value), ",", "")
-	if !amountPattern.MatchString(value) || !json.Valid([]byte(value)) {
-		return "", false
-	}
-	return json.Number(value), true
-}
+func amount(value string) (json.Number, bool) { return invoice.Decimal(value) }
 
 func currencyCode(value string) bool {
 	if len(value) != 3 {

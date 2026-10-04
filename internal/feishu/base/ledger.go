@@ -98,6 +98,16 @@ func (c *LedgerClient) ReadTextField(ctx context.Context, base, table, recordID,
 // UpsertLedgerRecord finds a record by the source-key field and writes only
 // supplied field IDs. It never changes records in the source or transaction table.
 func (c *LedgerClient) UpsertLedgerRecord(ctx context.Context, base, table, sourceKeyFieldID, sourceKey string, values map[string]any) (string, bool, error) {
+	return c.upsertLedgerRecord(ctx, base, table, sourceKeyFieldID, sourceKey, values, false)
+}
+
+// UpsertRecognizedInvoice fills newly available columns while preserving all
+// existing facts and original evidence, including human-edited empty values.
+func (c *LedgerClient) UpsertRecognizedInvoice(ctx context.Context, base, table, sourceKeyFieldID, sourceKey string, values map[string]any) (string, bool, error) {
+	return c.upsertLedgerRecord(ctx, base, table, sourceKeyFieldID, sourceKey, values, true)
+}
+
+func (c *LedgerClient) upsertLedgerRecord(ctx context.Context, base, table, sourceKeyFieldID, sourceKey string, values map[string]any, preserve bool) (string, bool, error) {
 	if base == "" || table == "" || sourceKeyFieldID == "" || sourceKey == "" {
 		return "", false, fmt.Errorf("ledger Base, table and source key are required")
 	}
@@ -126,7 +136,8 @@ func (c *LedgerClient) UpsertLedgerRecord(ctx context.Context, base, table, sour
 	filter := map[string]any{"filter": map[string]any{"conjunction": "and", "conditions": []map[string]any{{"field_name": keyName, "operator": "is", "value": []string{sourceKey}}}}}
 	var matches struct {
 		Items []struct {
-			ID string `json:"record_id"`
+			ID     string                     `json:"record_id"`
+			Fields map[string]json.RawMessage `json:"fields"`
 		} `json:"items"`
 		HasMore bool `json:"has_more"`
 	}
@@ -139,6 +150,27 @@ func (c *LedgerClient) UpsertLedgerRecord(ctx context.Context, base, table, sour
 	input := map[string]any{"fields": fields}
 	if len(matches.Items) == 1 {
 		id := matches.Items[0].ID
+		if preserve {
+			previous := matches.Items[0].Fields
+			if previous == nil {
+				var data struct {
+					Record struct {
+						Fields map[string]json.RawMessage `json:"fields"`
+					} `json:"record"`
+				}
+				if err := c.request(ctx, http.MethodGet, root+"/"+url.PathEscape(id), token, nil, &data); err != nil {
+					return "", false, err
+				}
+				previous = data.Record.Fields
+			}
+			for name := range fields {
+				if name != keyName {
+					if _, exists := previous[name]; exists {
+						delete(fields, name)
+					}
+				}
+			}
+		}
 		if err := c.request(ctx, http.MethodPut, root+"/"+url.PathEscape(id), token, input, &struct{}{}); err != nil {
 			return "", false, err
 		}
@@ -162,4 +194,37 @@ func (c *LedgerClient) UpsertLedgerRecord(ctx context.Context, base, table, sour
 		return "", false, fmt.Errorf("Feishu created ledger record without an ID")
 	}
 	return created.Record.ID, true, nil
+}
+
+// ReadMappedFields resolves configured stable IDs, preserving empty values.
+func (c *LedgerClient) ReadMappedFields(ctx context.Context, base, table, recordID string, mapping map[string]string) (map[string]string, error) {
+	result := make(map[string]string, len(mapping))
+	if len(mapping) == 0 {
+		return result, nil
+	}
+	token, err := c.accessToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names, err := c.fieldNames(ctx, token, base, table)
+	if err != nil {
+		return nil, err
+	}
+	endpoint := fmt.Sprintf("%s/bitable/v1/apps/%s/tables/%s/records/%s", feishuAPI, url.PathEscape(base), url.PathEscape(table), url.PathEscape(recordID))
+	var data struct {
+		Record struct {
+			Fields map[string]json.RawMessage `json:"fields"`
+		} `json:"record"`
+	}
+	if err := c.request(ctx, http.MethodGet, endpoint, token, nil, &data); err != nil {
+		return nil, err
+	}
+	for semantic, id := range mapping {
+		name := names[id]
+		if semantic == "" || name == "" {
+			return nil, fmt.Errorf("configured context field %s is missing", semantic)
+		}
+		result[semantic] = fieldText(data.Record.Fields, name)
+	}
+	return result, nil
 }

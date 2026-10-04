@@ -102,3 +102,22 @@ func TestLoadRejectsPartialFeishuCredentials(t *testing.T) {
 		t.Fatal("Load() error = nil, want partial credential error")
 	}
 }
+
+func TestSealReviewDoesNotRequireLocalRules(t *testing.T) {
+	t.Setenv("REVIEW_PROVIDER", "seal")
+	t.Setenv("REVIEW_RULES_FILE", "")
+	t.Setenv("RECEIPT_PROVIDER", "")
+	t.Setenv("FEISHU_APP_ID", "")
+	t.Setenv("FEISHU_APP_SECRET", "")
+	if _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRejectsOverlappingReviewContextAndResults(t *testing.T) {
+	t.Setenv("REVIEW_CONTEXT_FIELD_IDS", `{"amount":"field"}`)
+	t.Setenv("REVIEW_RESULT_FIELD_IDS", `{"decision":"field"}`)
+	if _, err := Load(); err == nil {
+		t.Fatal("review output would overwrite its own input")
+	}
+}

@@ -55,7 +55,7 @@ func TestHandleMapsRecognitionAndKeepsRawJSON(t *testing.T) {
 	if !ok || len(links) != 1 || links[0] != "rec" {
 		t.Fatalf("relation mapping is wrong: %v", store.fields["relation_field"])
 	}
-	if store.fields["title_field"] != "Dinner receipt" || store.fields["number_field"] != "INV-7" || store.fields["type_field"] != "invoice" || store.fields["category_field"] != "meals" || store.fields["seller_field"] != "Example Ltd" || store.fields["buyer_field"] != "Employee" || store.fields["currency_field"] != "USD" || store.fields["pretax_field"] != 1200.5 || store.fields["tax_field"] != 120.0 || store.fields["tax_rate_field"] != "10%" || store.fields["total_field"] != 1320.5 || store.fields["country_field"] != "US" || store.fields["summary_field"] != "receipt" {
+	if store.fields["title_field"] != "Dinner receipt" || store.fields["number_field"] != "INV-7" || store.fields["type_field"] != "invoice" || store.fields["category_field"] != "meals" || store.fields["seller_field"] != "Example Ltd" || store.fields["buyer_field"] != "Employee" || store.fields["currency_field"] != "USD" || store.fields["pretax_field"] != json.Number("1200.50") || store.fields["tax_field"] != json.Number("120") || store.fields["tax_rate_field"] != "10%" || store.fields["total_field"] != json.Number("1320.50") || store.fields["country_field"] != "US" || store.fields["summary_field"] != "receipt" {
 		t.Fatalf("OCR mapping is wrong: %v", store.fields)
 	}
 	date := time.Date(2026, 9, 29, 0, 0, 0, 0, time.FixedZone("CST", 8*3600)).UnixMilli()

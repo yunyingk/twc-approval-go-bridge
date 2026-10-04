@@ -27,5 +27,14 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Test without Anthropic
+        run: go test -tags no_anthropic ./...
+
+      - name: Vet without Anthropic
+        run: go vet -tags no_anthropic ./...
+
       - name: Build
         run: CGO_ENABLED=0 go build ./cmd/server
+
+      - name: Build without Anthropic
+        run: CGO_ENABLED=0 go build -tags no_anthropic ./cmd/server

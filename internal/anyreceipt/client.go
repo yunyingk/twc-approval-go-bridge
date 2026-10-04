@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/receiptcompat"
 )
 
 const summaryURL = "https://pi.anyreceipt.cn/api/ocr/summary"
@@ -80,6 +81,7 @@ func (c *Client) Recognize(ctx context.Context, attachment invoice.Attachment) (
 		ErrorCode    *int   `json:"errorCode"`
 		ErrorMessage string `json:"errorMessage"`
 		Summary      string `json:"summary"`
+		TraceID      string `json:"traceId"`
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
@@ -99,7 +101,8 @@ func (c *Client) Recognize(ctx context.Context, attachment invoice.Attachment) (
 		return invoice.Recognition{}, fmt.Errorf("Anyreceipt response has no outputs")
 	}
 
-	return invoice.Recognition{
+	return receiptcompat.Normalize(invoice.Recognition{
+		Origin:  invoice.Origin{Provider: "anyreceipt", TraceID: result.TraceID},
 		Title:   textValue(outputs["title"]),
 		Country: textValue(outputs["country"]),
 		Type:    textValue(outputs["type"]),
@@ -110,7 +113,7 @@ func (c *Client) Recognize(ctx context.Context, attachment invoice.Attachment) (
 		Summary: result.Summary,
 		Outputs: outputs,
 		Raw:     raw,
-	}, nil
+	}), nil
 }
 
 func textValue(raw json.RawMessage) string {
