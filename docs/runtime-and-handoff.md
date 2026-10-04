@@ -1,8 +1,10 @@
 # 当前业务实现与交接
 
-更新：2026-10-03。本文记录实际实现；[架构评审](architecture-review.md)保留为实施前的评审快照，[迁移任务](architecture-tasks.md)保留原有目标和后续验收依据。
+更新：2026-10-04。本文记录实际实现；[架构评审](architecture-review.md)保留为实施前的评审快照，[迁移任务](architecture-tasks.md)保留原有目标和后续验收依据。
 
 Seal 真实页面与项目应用身份核验见 [Seal 测试租户实地核验](seal-live-verification.md)。同日已建立[本机公网调试入口](public-debug.md)，更新 `test` 通道并验证真实回调和重复投递。测试通道目前为辅助模式；AI 结果是建议，不代表人工批准或结算。
+
+2026-10-04 已切换企业测试应用和新 Base，通过实际修改并恢复测试记录验证了两次 WebSocket 事件投递。表字段映射、双身份权限及 Base 订阅见[飞书事件验收](feishu-event-verification.md)；旧环境未收到事件的描述是历史记录。
 
 ## 已落地的业务边界
 

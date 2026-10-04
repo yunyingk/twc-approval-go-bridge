@@ -68,11 +68,11 @@ go run ./cmd/server
 
 `RECEIPT_TRIGGER_MODE` 可选 `event`、`poll` 或 `both`（默认）；两条路径共用附件读取、识别队列和持久化交付状态。`poll` 每隔 `RECEIPT_POLL_INTERVAL`（默认 `5m`）只扫描配置的 Base 中指定的「个人报销明细」Table，并按附件字段 ID 定位字段。`RECEIPT_POLL_STARTUP=baseline`（默认）表示首次扫描仅记录已有附件，后续只处理新增 token；设为 `process` 则首次扫描也处理已有附件。轮询不依赖事件投递，但仍需应用对目标 Base 的读取权限。当前基线、任务及识别结果保存到 `STATE_DIR`（默认 `data`）；重启保留原基线并恢复未交付任务，避免因回写失败重复 OCR。同一来源只允许一个识别 worker，当前文件状态库适用于单主机持久卷。识别失败的附件会由恢复任务或后续扫描重试。
 
-当前事件投递尚未验证成功，运行时可设 `RECEIPT_TRIGGER_MODE=poll` 只使用轮询。主线路径使用 `RECEIPT_PROVIDER=anyreceipt`，自有多模态模型是可选切换项。程序不自动加载 `.env`；须由运行环境注入飞书凭证、识别服务密钥和配置示例中的目标表/字段 ID。
+2026-10-04 已在新的企业测试应用和 Base 中验证真实 WebSocket 事件投递：通过 API 修改并恢复测试记录，服务收到两次记录变更事件。需同时开通后台应用身份和用户身份的 `bitable:app` 权限；服务仍只使用应用身份，不需要用户 OAuth。配置及验收见[飞书事件联调](docs/feishu-event-verification.md)。运行时也可设 `RECEIPT_TRIGGER_MODE=poll` 只使用轮询。主线路径使用 `RECEIPT_PROVIDER=anyreceipt`，自有多模态模型是可选切换项。程序不自动加载 `.env`；须由运行环境注入飞书凭证、识别服务密钥和配置示例中的目标表/字段 ID。
 
 订阅范围是整个 Base 的记录变更，并非单个字段：任意数据表的行新增、修改、删除都可能推送 `drive.file.bitable_record_changed_v1`。服务收到后才过滤 Base ID、数据表 ID 和附件字段 ID；修改「消费事由」或第三方「交易流水表」不会触发识别，只有「个人报销明细」的「发票附件」新增文件才进入识别队列。字段本身改名属于另一类字段变更事件。长连接方式无需配置事件加密策略；向开发者服务器推送的 Webhook 方式才涉及该配置。
 
-当前测试 Base `BgNkbW1RKavyaPsYD6acNZPFnUb` 的业务定位：`交易流水表`（`tbloRvQFZNLugLB0`）由第三方写入，本服务只读取；`个人报销明细`（`tblMC3p2Vm2Mwuh9`）是员工补充票据附件、触发识别的来源，附件字段是 `发票附件`（`fldnKx8Uzo`）；`发票台账`（`tblKwQ4NK6t4G69S`）接收识别结果。台账新增了「识别来源键」（`fldrkOhogY`）和「识别原始JSON」（`fldeECmr7u`）：按来源记录 ID 与附件 token 查找并新增或更新同一行，完整供应商响应保存在原始 JSON 字段。依照[测试流程](https://xcn4e0le81w4.feishu.cn/wiki/UF7ZwwdtKiwEEikHI19c2VkOndb)的 4.1 对照，「发票唯一键」写 Anyreceipt 的 `traceId`；可选模型结果无 `traceId` 时用 `OCR-` 加来源键哈希。台账已补齐发票摘要、票据类型、业务分类、买方、税率、国家、AI 消费概要；原有「税前金额」「应付金额」「GST税额」已原地改名为「不含税金额」「含税金额」「税额」，保留历史值。每张台账发票关联一条「个人报销明细」，明细一侧允许关联多张发票；字段 ID 映射见 `RECEIPT_LEDGER_FIELD_IDS`。汇率、人民币金额、白名单、报销状态、识别状态等待确认项不从 OCR 结果推断或覆盖。OCR 失败只记录错误并等待轮询重试，不创建「识别失败」台账行。
+旧个人版测试 Base `BgNkbW1RKavyaPsYD6acNZPFnUb` 的业务定位（2026-09-29 历史联调）：`交易流水表`（`tbloRvQFZNLugLB0`）由第三方写入，本服务只读取；`个人报销明细`（`tblMC3p2Vm2Mwuh9`）是员工补充票据附件、触发识别的来源，附件字段是 `发票附件`（`fldnKx8Uzo`）；`发票台账`（`tblKwQ4NK6t4G69S`）接收识别结果。台账新增了「识别来源键」（`fldrkOhogY`）和「识别原始JSON」（`fldeECmr7u`）：按来源记录 ID 与附件 token 查找并新增或更新同一行，完整供应商响应保存在原始 JSON 字段。依照[测试流程](https://xcn4e0le81w4.feishu.cn/wiki/UF7ZwwdtKiwEEikHI19c2VkOndb)的 4.1 对照，「发票唯一键」写 Anyreceipt 的 `traceId`；可选模型结果无 `traceId` 时用 `OCR-` 加来源键哈希。台账已补齐发票摘要、票据类型、业务分类、买方、税率、国家、AI 消费概要；原有「税前金额」「应付金额」「GST税额」已原地改名为「不含税金额」「含税金额」「税额」，保留历史值。每张台账发票关联一条「个人报销明细」，明细一侧允许关联多张发票；字段 ID 映射见 `RECEIPT_LEDGER_FIELD_IDS`。汇率、人民币金额、白名单、报销状态、识别状态等待确认项不从 OCR 结果推断或覆盖。OCR 失败只记录错误并等待轮询重试，不创建「识别失败」台账行。
 
 ## SealAI 审核提交
 
@@ -93,7 +93,7 @@ go run ./cmd/server submit-seal <个人报销明细记录ID>
 
 Anyreceipt 始终编入，启用识别时使用 `RECEIPT_PROVIDER=anyreceipt` 和 `ANYRECEIPT_API_KEY`，可识别图片和 PDF。自有模型是可选能力：默认构建包含 Anthropic Go SDK；`go build -tags no_anthropic ./cmd/server` 可在编译时排除模型适配器及 SDK。模型模式配置 `RECEIPT_PROVIDER=model`、`RECEIPT_MODEL_API_KEY`、`RECEIPT_MODEL_BASE_URL`、`RECEIPT_MODEL_NAME`；当前只接受图片，PDF/DOCX 转换留给后续独立模块。DeepSeek 测试模型实际返回过 Markdown 围栏 JSON，当前适配器已兼容纯 JSON 与单个 JSON 围栏，并拒绝被 token 上限截断的响应。附件下载还要求飞书应用身份具备 `docs:document.media:download` 或等价权限，并有目标 Base 的资源授权。当前任务按来源、配置范围、记录 ID 和附件 token 持久化；已识别结果可用于跨重启补交付。进程在外部成功与本地保存之间崩溃仍可能重复识别。
 
-事件载荷仍需要结合真实测试应用联调。测试 Base 已用项目应用身份订阅云文档事件；开放平台已添加「多维表格记录变更」事件并选用长连接。2026-09-29 在独立测试行 `reczz28HJVvAm8NM`（`明细ID=OCR-TEST-20260929-175848`）修改记录后，开发者后台事件日志暂无投递记录；应用发布新版本后再次通过 API 修改并恢复测试行，长连接已就绪但监听器仍未收到事件，仍需排查投递链路。该测试行保留了一张样本 JPEG 附件；同日已用真实 Anyreceipt 识别 21 个输出字段，并通过正式服务的轮询入口完成台账回写与双向关联验证。Anyreceipt 的完整输出键及接口见[业务资料](../doc/Anyreceipt-API与完整返回结构.md)。
+以下保留 2026-09-29 的旧环境排查记录；当前企业测试环境的成功投递证据见[飞书事件联调](docs/feishu-event-verification.md)。旧测试 Base 已用项目应用身份订阅云文档事件；开放平台已添加「多维表格记录变更」事件并选用长连接。2026-09-29 在独立测试行 `reczz28HJVvAm8NM`（`明细ID=OCR-TEST-20260929-175848`）修改记录后，开发者后台事件日志暂无投递记录；应用发布新版本后再次通过 API 修改并恢复测试行，长连接已就绪但监听器仍未收到事件，仍需排查投递链路。该测试行保留了一张样本 JPEG 附件；同日已用真实 Anyreceipt 识别 21 个输出字段，并通过正式服务的轮询入口完成台账回写与双向关联验证。Anyreceipt 的完整输出键及接口见[业务资料](../doc/Anyreceipt-API与完整返回结构.md)。
 
 ## 飞书审批模板初始化
 
@@ -112,7 +112,7 @@ go run ./cmd/approval-template -app personal -file configs/feishu/approval-templ
 | 目录 | 职责 | 当前状态 |
 | --- | --- | --- |
 | `internal/core/dedupe/` | 判断变化是否重复；由持久化实现提供原子领取 | 接口已定义，键规则和存储待定 |
-| `internal/feishu/base/events/` | 接收多维表格变更事件 | 长连接已实现，事件内容待验证 |
+| `internal/feishu/base/events/` | 接收多维表格变更事件 | 已在企业测试 Base 验证真实记录变更投递；新副本的附件识别需单独验收 |
 | `internal/feishu/base/records.go`、`ledger.go` | 多维表格记录边界与发票台账新增/更新 | 台账写入已实现，其他记录操作仍待业务映射 |
 | `internal/feishu/approval/` | 飞书原生审批模板与单据 | 模板创建/读取已实现；实例仍为接口草稿 |
 | `internal/feishu/base/permissions.go` | 多维表格记录权限分类与锁定 | 接口已定义，飞书能力待验证 |

@@ -51,6 +51,10 @@ python3 deploy/run-local-debug.py submit-review <报销明细记录ID>
 
 服务可用依赖本机开机、联网和用户登录。电脑睡眠或离线时，该调试域名不能到达本机服务；这是本机调试入口，不是全天候生产部署。
 
+## 企业测试应用切换（2026-10-04）
+
+本机服务已改用企业测试应用及新 Base，私有配置中的表和字段 ID 已重新核对。真实记录变更事件已收到，详见[飞书事件验收](feishu-event-verification.md)。原有公网地址、FRP、Seal 通道及状态目录继续使用；OCR 和 AI 结果回写仍关闭。原应用配置的私有备份保存在 `data/public-debug/feishu-before-enterprise.env`，不提交 Git。
+
 ## Seal 通道与验收
 
 已把 `wh_1790692906316_6z2eao6`（`test`）的回调从本机 mock 更新到公网密钥 URL，并刷新页面核对保存成功；其他测试通道未改动。审批模式仍为辅助模式，规则继续在 Seal 内维护。
