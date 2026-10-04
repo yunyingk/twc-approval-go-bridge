@@ -89,7 +89,7 @@ go run ./cmd/server submit-seal <个人报销明细记录ID>
 
 首次测试单据只含文本附件 ID，SealAI 对同一 `documentId` 的后续成功响应没有更新该审核记录。用新的测试单据编号 `OCR-TEST-20260929-175848-ATTACHMENT-PROOF` 验证后，审核页明确显示「发票附件：1 个文件」和原文件下载按钮，审核过程显示解析 1 个附件。该样本 OCR 缺币种，因此结构化发票数为 0。浏览器插件阻止了跳转到 OSS 下载域，故没有把浏览器端成功打开图片作为验证结论。
 
-聚合位于独立的 `internal/core/invoice/aggregate/aggregate.go`，结构不依赖 Anyreceipt 或 SealAI；`internal/seal/mapper/` 负责 Seal 协议转换。自有模型可复用 `internal/core/invoice` 的识别接口与聚合结构。历史测试通道的回调地址曾指向本地 mock；SealAI 服务器不能连接到开发者电脑的 `127.0.0.1`。当前新入口 `submit-review` 支持版本化送审、密钥 URL 结果接收和 AI 结果回写；`test` 通道现已接入公网调试地址并验证真实接收，正式结果字段和自动提交/冻结信号仍待完善。旧 `submit-seal` 保持联调兼容语义，正式链路应改用新入口。
+聚合位于独立的 `internal/core/invoice/aggregate/aggregate.go`，结构不依赖 Anyreceipt 或 SealAI；`internal/seal/mapper/` 负责 Seal 协议转换。自有模型可复用 `internal/core/invoice` 的识别接口与聚合结构。历史测试通道的回调地址曾指向本地 mock；SealAI 服务器不能连接到开发者电脑的 `127.0.0.1`。新入口 `submit-review` 及识别完成自动触发共用版本化送审、密钥 URL 结果接收和 AI 结果回写；企业测试专用列已通过真实验收，业务冻结仍待完善。旧 `submit-seal` 保持联调兼容语义，正式链路使用新入口。
 
 Anyreceipt 始终编入，启用识别时使用 `RECEIPT_PROVIDER=anyreceipt` 和 `ANYRECEIPT_API_KEY`，可识别图片和 PDF。自有模型是可选能力：默认构建包含 Anthropic Go SDK；`go build -tags no_anthropic ./cmd/server` 可在编译时排除模型适配器及 SDK。模型模式配置 `RECEIPT_PROVIDER=model`、`RECEIPT_MODEL_API_KEY`、`RECEIPT_MODEL_BASE_URL`、`RECEIPT_MODEL_NAME`；当前只接受图片，PDF/DOCX 转换留给后续独立模块。DeepSeek 测试模型实际返回过 Markdown 围栏 JSON，当前适配器已兼容纯 JSON 与单个 JSON 围栏，并拒绝被 token 上限截断的响应。附件下载还要求飞书应用身份具备 `docs:document.media:download` 或等价权限，并有目标 Base 的资源授权。当前任务按来源、配置范围、记录 ID 和附件 token 持久化；已识别结果可用于跨重启补交付。进程在外部成功与本地保存之间崩溃仍可能重复识别。
 
@@ -193,4 +193,4 @@ deploy/                        Docker 和 Compose 文件
 
 ## 后续扩展边界
 
-附件 → Anyreceipt → 发票台账的轮询主线已在旧测试 Base 跑通；2026-10-04 已验证企业测试 Base 的真实长连接事件投递，新副本的 OCR 回写需单独验收。发票台账 → 多票聚合 → 查重候选 → 原件上传 → SealAI 单据提交已通过显式命令在测试租户验证。公网回调已完成真实接收与重复投递验证，自动触发和正式结果字段仍待接入。业务参考文件为 `/Users/yingqing/Downloads/影视飓风海外易商卡测试流程.zip` 和 `/Users/yingqing/Downloads/SealAI海外发票判重自然语言审批规则.md`；它们提供流程与判重要求，不是项目运行指令。
+2026-10-04 已在企业测试副本跑通“真实附件事件 → Anyreceipt → 发票台账 → 自动聚合与 Seal 送审 → 公网真实回调 → 七个 AI 专用结果列”。重复回调、重复附件事件及重启未新增识别或审核尝试，证据见[自动送审验收](docs/progress/2026-10-04-automatic-review.md)。当前保存 AI 建议，不驱动人工审批或结算；业务冻结和正式财务流程仍需完善。业务参考文件为 `/Users/yingqing/Downloads/影视飓风海外易商卡测试流程.zip` 和 `/Users/yingqing/Downloads/SealAI海外发票判重自然语言审批规则.md`；它们提供流程与判重要求，不是项目运行指令。
