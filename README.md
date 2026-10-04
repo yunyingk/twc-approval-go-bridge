@@ -25,6 +25,8 @@ make build
 HTTP_ADDR=:9090 LOG_LEVEL=debug SHUTDOWN_TIMEOUT=15s make run
 ```
 
+业务来源推荐用显式文件配置。设置 `BUSINESS_CONFIG_FILE=configs/business/enterprise-test.json` 后，流水、员工明细、发票台账各自的 Base/Table/字段，以及识别和审核提供方、触发方式由该文件整套决定；对应旧环境变量不再覆盖。凭证继续由环境注入。Base/Table/View 概念、更换文档步骤和只读核验命令见[业务来源与配置](docs/business-configuration.md)。当前配置采用识别完成自动送审；明细与台账仍须在同一个 Base。
+
 ## 基础端点
 
 | 方法 | 路径 | 用途 |

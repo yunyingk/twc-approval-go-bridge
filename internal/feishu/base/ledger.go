@@ -45,8 +45,9 @@ func (c *LedgerClient) fieldNames(ctx context.Context, token, base, table string
 }
 
 type ledgerField struct {
-	Name string
-	Type int
+	Name           string
+	Type           int
+	RelatedTableID string
 }
 
 func (c *LedgerClient) fieldSchema(ctx context.Context, token, base, table string) (map[string]ledgerField, error) {
@@ -56,9 +57,12 @@ func (c *LedgerClient) fieldSchema(ctx context.Context, token, base, table strin
 	for {
 		var page struct {
 			Items []struct {
-				ID   string `json:"field_id"`
-				Name string `json:"field_name"`
-				Type int    `json:"type"`
+				ID       string `json:"field_id"`
+				Name     string `json:"field_name"`
+				Type     int    `json:"type"`
+				Property struct {
+					TableID string `json:"table_id"`
+				} `json:"property"`
 			} `json:"items"`
 			HasMore   bool   `json:"has_more"`
 			PageToken string `json:"page_token"`
@@ -71,7 +75,7 @@ func (c *LedgerClient) fieldSchema(ctx context.Context, token, base, table strin
 			return nil, err
 		}
 		for _, field := range page.Items {
-			fields[field.ID] = ledgerField{Name: field.Name, Type: field.Type}
+			fields[field.ID] = ledgerField{Name: field.Name, Type: field.Type, RelatedTableID: field.Property.TableID}
 		}
 		if !page.HasMore {
 			return fields, nil

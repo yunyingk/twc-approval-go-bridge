@@ -2,6 +2,8 @@
 
 更新：2026-10-04。本文记录实际实现；[架构评审](architecture-review.md)保留为实施前的评审快照，[迁移任务](architecture-tasks.md)保留原有目标和后续验收依据。
 
+业务来源已收敛到[显式业务配置文件](business-configuration.md)：本机选择 `configs/business/enterprise-test.json`，按角色声明流水、明细、台账及提供方和触发方式。以下环境变量说明保留给未选择 `BUSINESS_CONFIG_FILE` 的兼容模式；选中文件后，对应业务变量不再覆盖文件。凭证和运行参数继续由环境提供。
+
 Seal 真实页面与项目应用身份核验见 [Seal 测试租户实地核验](seal-live-verification.md)。同日已建立[本机公网调试入口](public-debug.md)，更新 `test` 通道并验证真实回调和重复投递。测试通道目前为辅助模式；AI 结果是建议，不代表人工批准或结算。
 
 2026-10-04 已切换企业测试应用和新 Base，通过实际修改并恢复测试记录验证了两次 WebSocket 事件投递。表字段映射、双身份权限及 Base 订阅见[飞书事件验收](feishu-event-verification.md)；旧环境未收到事件的描述是历史记录。此后已验证真实附件事件触发 Anyreceipt、完整识别输出、台账回写及双向关联，见[企业 OCR 验收](anyreceipt-enterprise-verification.md)。项目凭证统一保存在私有 `.env`，调试覆盖文件只保存运行参数。

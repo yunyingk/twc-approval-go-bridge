@@ -1,0 +1,178 @@
+package config
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+)
+
+// BusinessProfile binds business roles to physical tables. It contains no credentials.
+// A process selects one complete profile; display names never identify task state.
+type BusinessProfile struct {
+	Version     int                 `json:"version"`
+	Name        string              `json:"name"`
+	Tables      BusinessTables      `json:"tables"`
+	Recognition RecognitionSettings `json:"recognition"`
+	Review      ReviewSettings      `json:"review"`
+}
+
+type BusinessTables struct {
+	Transactions         TableBinding `json:"transactions"`
+	ReimbursementDetails TableBinding `json:"reimbursement_details"`
+	InvoiceLedger        TableBinding `json:"invoice_ledger"`
+}
+
+// Source describes who supplies records, not an HTTP endpoint or an authentication grant.
+// Access is the bridge's declared use; actual Feishu permissions still apply.
+type TableBinding struct {
+	Name      string            `json:"name"`
+	Source    string            `json:"source"`
+	Access    string            `json:"access"`
+	BaseToken string            `json:"base_token"`
+	TableID   string            `json:"table_id"`
+	Fields    map[string]string `json:"fields"`
+}
+
+type RecognitionSettings struct {
+	Provider    string `json:"provider"`
+	TriggerMode string `json:"trigger_mode"`
+}
+
+// ContextFields and ResultFields both belong to the reimbursement-details table.
+// Local rules are configured separately and used only by the model provider.
+type ReviewSettings struct {
+	Provider      string            `json:"provider"`
+	TriggerMode   string            `json:"trigger_mode"`
+	ContextFields map[string]string `json:"context_fields"`
+	ResultFields  map[string]string `json:"result_fields"`
+}
+
+func LoadBusinessProfile(path string) (*BusinessProfile, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("BUSINESS_CONFIG_FILE: %w", err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || info.Size() > 1<<20 {
+		return nil, fmt.Errorf("BUSINESS_CONFIG_FILE: cannot read file or file exceeds 1 MiB")
+	}
+	decoder := json.NewDecoder(io.LimitReader(file, 1<<20))
+	decoder.DisallowUnknownFields()
+	var profile BusinessProfile
+	if err := decoder.Decode(&profile); err != nil {
+		return nil, fmt.Errorf("BUSINESS_CONFIG_FILE: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, fmt.Errorf("BUSINESS_CONFIG_FILE: expected exactly one JSON object")
+	}
+	if err := profile.validate(); err != nil {
+		return nil, fmt.Errorf("BUSINESS_CONFIG_FILE: %w", err)
+	}
+	return &profile, nil
+}
+
+func (p *BusinessProfile) validate() error {
+	if p.Version != 1 || strings.TrimSpace(p.Name) == "" {
+		return fmt.Errorf("version must be 1 and name must be set")
+	}
+	roles := []struct {
+		role, access string
+		table        TableBinding
+	}{
+		{"transactions", "read_only", p.Tables.Transactions},
+		{"reimbursement_details", "read_write", p.Tables.ReimbursementDetails},
+		{"invoice_ledger", "read_write", p.Tables.InvoiceLedger},
+	}
+	usedTables := make(map[string]bool)
+	for _, binding := range roles {
+		table := binding.table
+		if strings.TrimSpace(table.Name) == "" || strings.TrimSpace(table.Source) == "" ||
+			strings.TrimSpace(table.BaseToken) == "" || strings.TrimSpace(table.TableID) == "" {
+			return fmt.Errorf("tables.%s requires name, source, base_token and table_id", binding.role)
+		}
+		if table.BaseToken != strings.TrimSpace(table.BaseToken) || table.TableID != strings.TrimSpace(table.TableID) {
+			return fmt.Errorf("tables.%s IDs must not contain surrounding whitespace", binding.role)
+		}
+		if table.Access != binding.access {
+			return fmt.Errorf("tables.%s access must be %s", binding.role, binding.access)
+		}
+		key := table.BaseToken + ":" + table.TableID
+		if usedTables[key] {
+			return fmt.Errorf("business roles must refer to distinct tables")
+		}
+		usedTables[key] = true
+		if err := validateFieldMapping("tables."+binding.role+".fields", table.Fields); err != nil {
+			return err
+		}
+	}
+	if p.Tables.ReimbursementDetails.BaseToken != p.Tables.InvoiceLedger.BaseToken {
+		// The current ledger adapter and native relationship use the source Base.
+		// Reject an unsupported split before any worker or external write starts.
+		return fmt.Errorf("reimbursement_details and invoice_ledger must currently use the same Base; cross-Base ledger delivery is not implemented")
+	}
+	if p.Tables.Transactions.Fields["transaction_id"] == "" ||
+		p.Tables.ReimbursementDetails.Fields["attachment"] == "" ||
+		p.Tables.InvoiceLedger.Fields["source_key"] == "" || p.Tables.InvoiceLedger.Fields["raw_json"] == "" {
+		return fmt.Errorf("transaction_id, attachment and ledger source_key/raw_json bindings are required")
+	}
+	switch p.Recognition.Provider {
+	case "disabled", "anyreceipt", "model":
+	default:
+		return fmt.Errorf("recognition.provider must be disabled, anyreceipt or model")
+	}
+	switch p.Recognition.TriggerMode {
+	case "event", "poll", "both":
+	default:
+		return fmt.Errorf("recognition.trigger_mode must be event, poll or both")
+	}
+	if p.Review.Provider != "seal" && p.Review.Provider != "model" {
+		return fmt.Errorf("review.provider must be seal or model")
+	}
+	if p.Review.TriggerMode != "manual" && p.Review.TriggerMode != "after_recognition" {
+		return fmt.Errorf("review.trigger_mode must be manual or after_recognition")
+	}
+	if err := validateFieldMapping("review.context_fields", p.Review.ContextFields); err != nil {
+		return err
+	}
+	if err := validateFieldMapping("review.result_fields", p.Review.ResultFields); err != nil {
+		return err
+	}
+	// Result fields must never overwrite any declared employee input, including
+	// the transaction relationship. Check all source bindings, not just attachments.
+	for _, id := range p.Review.ResultFields {
+		for _, sourceID := range p.Tables.ReimbursementDetails.Fields {
+			if id == sourceID {
+				return fmt.Errorf("review result fields must not overwrite reimbursement input fields")
+			}
+		}
+	}
+	return nil
+}
+
+func (p *BusinessProfile) apply(cfg *Config) {
+	detail, ledger := p.Tables.ReimbursementDetails, p.Tables.InvoiceLedger
+	cfg.ReceiptBaseToken, cfg.ReceiptTableID = detail.BaseToken, detail.TableID
+	cfg.ReceiptFieldID, cfg.ReceiptSourceDetailFieldID = detail.Fields["attachment"], detail.Fields["detail_id"]
+	cfg.ReceiptLedgerTableID, cfg.ReceiptLedgerFieldIDs = ledger.TableID, ledger.Fields
+	cfg.ReceiptProvider, cfg.ReceiptTriggerMode = p.Recognition.Provider, p.Recognition.TriggerMode
+	if cfg.ReceiptProvider == "disabled" {
+		cfg.ReceiptProvider = ""
+	}
+	cfg.ReviewProvider, cfg.ReviewTriggerMode = p.Review.Provider, p.Review.TriggerMode
+	cfg.ReviewContextFieldIDs, cfg.ReviewResultFieldIDs = p.Review.ContextFields, p.Review.ResultFields
+}
+
+func validateFieldMapping(label string, fields map[string]string) error {
+	used := make(map[string]bool)
+	for semantic, id := range fields {
+		if strings.TrimSpace(semantic) == "" || strings.TrimSpace(id) == "" ||
+			semantic != strings.TrimSpace(semantic) || id != strings.TrimSpace(id) || used[id] {
+			return fmt.Errorf("%s: empty, whitespace or duplicate field mapping", label)
+		}
+		used[id] = true
+	}
+	return nil
+}

@@ -1,4 +1,4 @@
-// Package config loads process configuration from environment variables.
+// Package config loads process configuration from environment variables and business files.
 package config
 
 import (
@@ -13,6 +13,8 @@ import (
 
 // Config contains runtime settings for the service shell.
 type Config struct {
+	BusinessConfigFile         string
+	Business                   *BusinessProfile
 	HTTPAddr                   string
 	LogLevel                   slog.Level
 	ShutdownTimeout            time.Duration
@@ -74,29 +76,33 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	var ledgerFieldIDs map[string]string
-	if raw := value("RECEIPT_LEDGER_FIELD_IDS", ""); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &ledgerFieldIDs); err != nil {
-			return Config{}, fmt.Errorf("RECEIPT_LEDGER_FIELD_IDS: %w", err)
+	businessFile := value("BUSINESS_CONFIG_FILE", "")
+	var business *BusinessProfile
+	var ledgerFieldIDs, contextFields, resultFields map[string]string
+	if businessFile != "" {
+		business, err = LoadBusinessProfile(businessFile)
+		if err != nil {
+			return Config{}, err
 		}
-	}
-
-	contextFields, err := fieldMapping("REVIEW_CONTEXT_FIELD_IDS")
-	if err != nil {
-		return Config{}, err
-	}
-	resultFields, err := fieldMapping("REVIEW_RESULT_FIELD_IDS")
-	if err != nil {
-		return Config{}, err
-	}
-	for semantic := range resultFields {
-		switch semantic {
-		case "decision", "comment", "document_id", "revision", "provider", "external_id", "url":
-		default:
-			return Config{}, fmt.Errorf("unsupported review result field %q", semantic)
+	} else {
+		// Legacy bindings remain available only when no complete profile is selected.
+		// Never mix field IDs from two environments, even when old variables remain set.
+		ledgerFieldIDs, err = fieldMapping("RECEIPT_LEDGER_FIELD_IDS")
+		if err != nil {
+			return Config{}, err
+		}
+		contextFields, err = fieldMapping("REVIEW_CONTEXT_FIELD_IDS")
+		if err != nil {
+			return Config{}, err
+		}
+		resultFields, err = fieldMapping("REVIEW_RESULT_FIELD_IDS")
+		if err != nil {
+			return Config{}, err
 		}
 	}
 	cfg := Config{
+		BusinessConfigFile:         businessFile,
+		Business:                   business,
 		HTTPAddr:                   value("HTTP_ADDR", ":8080"),
 		LogLevel:                   level,
 		ShutdownTimeout:            shutdownTimeout,
@@ -129,6 +135,17 @@ func Load() (Config, error) {
 		ReviewRulesFile:            value("REVIEW_RULES_FILE", ""),
 		ReviewContextFieldIDs:      contextFields, ReviewResultFieldIDs: resultFields,
 		SealBearerToken: value("SEAL_BEARER_TOKEN", ""),
+	}
+	if business != nil {
+		business.apply(&cfg)
+	}
+	contextFields, resultFields = cfg.ReviewContextFieldIDs, cfg.ReviewResultFieldIDs
+	for semantic := range resultFields {
+		switch semantic {
+		case "decision", "comment", "document_id", "revision", "provider", "external_id", "url":
+		default:
+			return Config{}, fmt.Errorf("unsupported review result field %q", semantic)
+		}
 	}
 	if cfg.ReceiptProvider != "" {
 		if cfg.ReceiptLedgerTableID != "" && (cfg.ReceiptLedgerFieldIDs["source_key"] == "" || cfg.ReceiptLedgerFieldIDs["raw_json"] == "") {
@@ -256,12 +273,8 @@ func fieldMapping(key string) (map[string]string, error) {
 		if err := json.Unmarshal([]byte(raw), &fields); err != nil {
 			return nil, fmt.Errorf("%s: invalid field mapping", key)
 		}
-		used := make(map[string]bool)
-		for semantic, id := range fields {
-			if strings.TrimSpace(semantic) == "" || strings.TrimSpace(id) == "" || used[id] {
-				return nil, fmt.Errorf("%s: empty or duplicate field mapping", key)
-			}
-			used[id] = true
+		if err := validateFieldMapping(key, fields); err != nil {
+			return nil, err
 		}
 	}
 	return fields, nil
