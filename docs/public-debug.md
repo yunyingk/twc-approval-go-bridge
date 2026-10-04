@@ -55,6 +55,10 @@ python3 deploy/run-local-debug.py submit-review <报销明细记录ID>
 
 本机服务已改用企业测试应用及新 Base，私有配置中的表和字段 ID 已重新核对。真实记录变更事件已收到，详见[飞书事件验收](feishu-event-verification.md)。原有公网地址、FRP、Seal 通道及状态目录继续使用；OCR 和 AI 结果回写仍关闭。原应用配置的私有备份保存在 `data/public-debug/feishu-before-enterprise.env`，不提交 Git。
 
+## Anyreceipt 凭证恢复（2026-10-04）
+
+Anyreceipt 的密钥已于 2026-10-04 从 2026-09-29 的历史联调会话恢复到私有 `.env.public-debug`（0600）。通过 `GET /api/getApiKeyUsage` 验证 HTTP 与业务状态均为 200，返回有效用量数据；本次没有调用 OCR。密钥不保存到文档或 Git。旧环境的真实 OCR 与台账回写已经验收，新企业副本仍需单独验收；当前 `RECEIPT_PROVIDER` 为空。
+
 ## Seal 通道与验收
 
 已把 `wh_1790692906316_6z2eao6`（`test`）的回调从本机 mock 更新到公网密钥 URL，并刷新页面核对保存成功；其他测试通道未改动。审批模式仍为辅助模式，规则继续在 Seal 内维护。
