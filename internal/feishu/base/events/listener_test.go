@@ -1,9 +1,11 @@
 package events
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -39,5 +41,24 @@ func TestLoggingSink(t *testing.T) {
 	sink := LoggingSink(slog.Default(), false)
 	if err := sink(context.Background(), Event{Type: "example.event", Payload: []byte(`{}`)}); err != nil {
 		t.Fatalf("LoggingSink() error = %v", err)
+	}
+}
+
+func TestLoggingSinkRecordsScopeWithoutSecretsOrFieldValues(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	payload := []byte(`{"header":{"token":"private-verification-token"},"event":{"file_token":"base-1","table_id":"table-1","action_list":[{"field_value":"private-business-value"}]}}`)
+	if err := LoggingSink(logger, false)(context.Background(), Event{ID: "evt-1", Type: DefaultEventType, Payload: payload}); err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(output.Bytes(), &fields); err != nil {
+		t.Fatal(err)
+	}
+	if fields["base_token"] != "base-1" || fields["table_id"] != "table-1" || fields["event_id"] != "evt-1" {
+		t.Fatalf("event scope missing from transport log: %#v", fields)
+	}
+	if strings.Contains(output.String(), "private-") {
+		t.Fatal("transport log exposed a token or business field value")
 	}
 }

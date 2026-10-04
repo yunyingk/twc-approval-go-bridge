@@ -31,7 +31,9 @@ func New(apiKey string, httpClient *http.Client) (*Client, error) {
 		return nil, fmt.Errorf("Anyreceipt API key is required")
 	}
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		// Synchronous OCR can exceed 30 seconds; allow room within the flow's
+		// two-minute job deadline for download, recognition and ledger delivery.
+		httpClient = &http.Client{Timeout: 90 * time.Second}
 	}
 	return &Client{apiKey: apiKey, httpClient: httpClient}, nil
 }

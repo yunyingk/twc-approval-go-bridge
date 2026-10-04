@@ -90,19 +90,26 @@ func fieldText(fields []fieldValue, id string) string {
 
 func attachmentTokens(value string) (map[string]bool, bool) {
 	var files []struct {
-		FileToken string `json:"file_token"`
-		Token     string `json:"token"`
+		FileToken       string `json:"file_token"`
+		Token           string `json:"token"`
+		AttachmentToken string `json:"attachmentToken"`
 	}
 	if err := json.Unmarshal([]byte(value), &files); err != nil {
 		return nil, false
 	}
 	tokens := make(map[string]bool)
 	for _, file := range files {
-		if file.FileToken != "" {
-			tokens[file.FileToken] = true
-		} else if file.Token != "" {
-			tokens[file.Token] = true
+		token := file.FileToken
+		if token == "" {
+			token = file.Token
 		}
+		if token == "" {
+			token = file.AttachmentToken
+		}
+		if token == "" {
+			return nil, false
+		}
+		tokens[token] = true
 	}
 	return tokens, true
 }

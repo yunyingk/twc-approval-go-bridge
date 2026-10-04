@@ -131,7 +131,14 @@ func main() {
 			scopeHash := sha256.Sum256(scopeData)
 			receiptFlow.WithCheckpoints(checkpoints, hex.EncodeToString(scopeHash[:]))
 			if cfg.ReceiptTriggerMode != "poll" {
-				sink = events.NewAttachmentSink(recognition.Config{BaseToken: cfg.ReceiptBaseToken, TableID: cfg.ReceiptTableID, FieldID: cfg.ReceiptFieldID}, receiptFlow).Sink
+				logEvent := sink
+				attachmentSink := events.NewAttachmentSink(recognition.Config{BaseToken: cfg.ReceiptBaseToken, TableID: cfg.ReceiptTableID, FieldID: cfg.ReceiptFieldID}, receiptFlow).Sink
+				sink = func(ctx context.Context, event events.Event) error {
+					if err := logEvent(ctx, event); err != nil {
+						return err
+					}
+					return attachmentSink(ctx, event)
+				}
 			}
 		}
 		if cfg.ReceiptProvider == "" || cfg.ReceiptTriggerMode != "poll" {

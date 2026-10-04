@@ -68,7 +68,7 @@ go run ./cmd/server
 
 `RECEIPT_TRIGGER_MODE` 可选 `event`、`poll` 或 `both`（默认）；两条路径共用附件读取、识别队列和持久化交付状态。`poll` 每隔 `RECEIPT_POLL_INTERVAL`（默认 `5m`）只扫描配置的 Base 中指定的「个人报销明细」Table，并按附件字段 ID 定位字段。`RECEIPT_POLL_STARTUP=baseline`（默认）表示首次扫描仅记录已有附件，后续只处理新增 token；设为 `process` 则首次扫描也处理已有附件。轮询不依赖事件投递，但仍需应用对目标 Base 的读取权限。当前基线、任务及识别结果保存到 `STATE_DIR`（默认 `data`）；重启保留原基线并恢复未交付任务，避免因回写失败重复 OCR。同一来源只允许一个识别 worker，当前文件状态库适用于单主机持久卷。识别失败的附件会由恢复任务或后续扫描重试。
 
-2026-10-04 已在新的企业测试应用和 Base 中验证真实 WebSocket 事件投递：通过 API 修改并恢复测试记录，服务收到两次记录变更事件。需同时开通后台应用身份和用户身份的 `bitable:app` 权限；服务仍只使用应用身份，不需要用户 OAuth。配置及验收见[飞书事件联调](docs/feishu-event-verification.md)。运行时也可设 `RECEIPT_TRIGGER_MODE=poll` 只使用轮询。主线路径使用 `RECEIPT_PROVIDER=anyreceipt`，自有多模态模型是可选切换项。程序不自动加载 `.env`；须由运行环境注入飞书凭证、识别服务密钥和配置示例中的目标表/字段 ID。
+2026-10-04 已在新的企业测试应用和 Base 中验证真实 WebSocket 事件投递，以及附件事件触发 Anyreceipt、21 个识别输出、台账回写与双向关联。需同时开通后台应用身份和用户身份的 `bitable:app` 权限；服务仍只使用应用身份，不需要用户 OAuth。配置及验收见[飞书事件联调](docs/feishu-event-verification.md)和[企业 OCR 验收](docs/anyreceipt-enterprise-verification.md)。运行时也可设 `RECEIPT_TRIGGER_MODE=poll` 只使用轮询。主线路径使用 `RECEIPT_PROVIDER=anyreceipt`，自有多模态模型是可选切换项。项目凭证统一放入私有 `.env`；程序本身不自动加载该文件，本机调试使用[运行包装器](deploy/run-local-debug.py)注入配置。
 
 订阅范围是整个 Base 的记录变更，并非单个字段：任意数据表的行新增、修改、删除都可能推送 `drive.file.bitable_record_changed_v1`。服务收到后才过滤 Base ID、数据表 ID 和附件字段 ID；修改「消费事由」或第三方「交易流水表」不会触发识别，只有「个人报销明细」的「发票附件」新增文件才进入识别队列。字段本身改名属于另一类字段变更事件。长连接方式无需配置事件加密策略；向开发者服务器推送的 Webhook 方式才涉及该配置。
 
@@ -112,7 +112,7 @@ go run ./cmd/approval-template -app personal -file configs/feishu/approval-templ
 | 目录 | 职责 | 当前状态 |
 | --- | --- | --- |
 | `internal/core/dedupe/` | 判断变化是否重复；由持久化实现提供原子领取 | 接口已定义，键规则和存储待定 |
-| `internal/feishu/base/events/` | 接收多维表格变更事件 | 已在企业测试 Base 验证真实记录变更投递；新副本的附件识别需单独验收 |
+| `internal/feishu/base/events/` | 接收多维表格变更事件 | 已在企业测试 Base 验证真实附件事件触发识别和台账回写 |
 | `internal/feishu/base/records.go`、`ledger.go` | 多维表格记录边界与发票台账新增/更新 | 台账写入已实现，其他记录操作仍待业务映射 |
 | `internal/feishu/approval/` | 飞书原生审批模板与单据 | 模板创建/读取已实现；实例仍为接口草稿 |
 | `internal/feishu/base/permissions.go` | 多维表格记录权限分类与锁定 | 接口已定义，飞书能力待验证 |

@@ -131,6 +131,15 @@ func LoggingSink(logger *slog.Logger, logRaw bool) Sink {
 			"event_type", event.Type,
 			"payload_bytes", len(event.Payload),
 		}
+		var scope struct {
+			Event struct {
+				Base  string `json:"file_token"`
+				Table string `json:"table_id"`
+			} `json:"event"`
+		}
+		if json.Unmarshal(event.Payload, &scope) == nil && scope.Event.Base != "" {
+			attrs = append(attrs, "base_token", scope.Event.Base, "table_id", scope.Event.Table)
+		}
 		if logRaw {
 			attrs = append(attrs, "payload", string(event.Payload))
 		}

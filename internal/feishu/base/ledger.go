@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+
+	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 )
 
 // LedgerClient writes only the configured invoice ledger using app identity.
@@ -31,14 +33,32 @@ func (c *LedgerClient) accessToken(ctx context.Context) (string, error) {
 }
 
 func (c *LedgerClient) fieldNames(ctx context.Context, token, base, table string) (map[string]string, error) {
+	fields, err := c.fieldSchema(ctx, token, base, table)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]string, len(fields))
+	for id, field := range fields {
+		names[id] = field.Name
+	}
+	return names, nil
+}
+
+type ledgerField struct {
+	Name string
+	Type int
+}
+
+func (c *LedgerClient) fieldSchema(ctx context.Context, token, base, table string) (map[string]ledgerField, error) {
 	root := fmt.Sprintf("%s/bitable/v1/apps/%s/tables/%s/fields?page_size=100", feishuAPI, url.PathEscape(base), url.PathEscape(table))
-	names := make(map[string]string)
+	fields := make(map[string]ledgerField)
 	next := ""
 	for {
 		var page struct {
 			Items []struct {
 				ID   string `json:"field_id"`
 				Name string `json:"field_name"`
+				Type int    `json:"type"`
 			} `json:"items"`
 			HasMore   bool   `json:"has_more"`
 			PageToken string `json:"page_token"`
@@ -51,10 +71,10 @@ func (c *LedgerClient) fieldNames(ctx context.Context, token, base, table string
 			return nil, err
 		}
 		for _, field := range page.Items {
-			names[field.ID] = field.Name
+			fields[field.ID] = ledgerField{Name: field.Name, Type: field.Type}
 		}
 		if !page.HasMore {
-			return names, nil
+			return fields, nil
 		}
 		if page.PageToken == "" || page.PageToken == next {
 			return nil, fmt.Errorf("Feishu field pagination did not advance")
@@ -115,17 +135,18 @@ func (c *LedgerClient) upsertLedgerRecord(ctx context.Context, base, table, sour
 	if err != nil {
 		return "", false, err
 	}
-	names, err := c.fieldNames(ctx, token, base, table)
+	schema, err := c.fieldSchema(ctx, token, base, table)
 	if err != nil {
 		return "", false, err
 	}
-	keyName := names[sourceKeyFieldID]
+	keyName := schema[sourceKeyFieldID].Name
 	if keyName == "" {
 		return "", false, fmt.Errorf("ledger source-key field %s does not exist", sourceKeyFieldID)
 	}
 	fields := make(map[string]any, len(values)+1)
 	for fieldID, value := range values {
-		name := names[fieldID]
+		field := schema[fieldID]
+		name := field.Name
 		if name == "" {
 			return "", false, fmt.Errorf("ledger field %s does not exist", fieldID)
 		}
@@ -171,10 +192,16 @@ func (c *LedgerClient) upsertLedgerRecord(ctx context.Context, base, table, sour
 				}
 			}
 		}
+		if err := convertLedgerNumbers(fields, schema); err != nil {
+			return "", false, err
+		}
 		if err := c.request(ctx, http.MethodPut, root+"/"+url.PathEscape(id), token, input, &struct{}{}); err != nil {
 			return "", false, err
 		}
 		return id, false, nil
+	}
+	if err := convertLedgerNumbers(fields, schema); err != nil {
+		return "", false, err
 	}
 	// A stable UUIDv4-shaped client token makes a retried create idempotent.
 	digest := sha256.Sum256([]byte(base + ":" + table + ":" + sourceKey))
@@ -194,6 +221,22 @@ func (c *LedgerClient) upsertLedgerRecord(ctx context.Context, base, table, sour
 		return "", false, fmt.Errorf("Feishu created ledger record without an ID")
 	}
 	return created.Record.ID, true, nil
+}
+
+// Convert only columns that will be written, after preserving existing human facts.
+func convertLedgerNumbers(values map[string]any, schema map[string]ledgerField) error {
+	for id, field := range schema {
+		text, ok := values[field.Name].(string)
+		if !ok || field.Type != 2 {
+			continue
+		}
+		number, valid := invoice.Decimal(text)
+		if !valid {
+			return fmt.Errorf("ledger number field %s requires an unambiguous decimal", id)
+		}
+		values[field.Name] = number
+	}
+	return nil
 }
 
 // ReadMappedFields resolves configured stable IDs, preserving empty values.

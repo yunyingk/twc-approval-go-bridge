@@ -4,13 +4,14 @@
 
 Seal 真实页面与项目应用身份核验见 [Seal 测试租户实地核验](seal-live-verification.md)。同日已建立[本机公网调试入口](public-debug.md)，更新 `test` 通道并验证真实回调和重复投递。测试通道目前为辅助模式；AI 结果是建议，不代表人工批准或结算。
 
-2026-10-04 已切换企业测试应用和新 Base，通过实际修改并恢复测试记录验证了两次 WebSocket 事件投递。表字段映射、双身份权限及 Base 订阅见[飞书事件验收](feishu-event-verification.md)；旧环境未收到事件的描述是历史记录。
+2026-10-04 已切换企业测试应用和新 Base，通过实际修改并恢复测试记录验证了两次 WebSocket 事件投递。表字段映射、双身份权限及 Base 订阅见[飞书事件验收](feishu-event-verification.md)；旧环境未收到事件的描述是历史记录。此后已验证真实附件事件触发 Anyreceipt、完整识别输出、台账回写及双向关联，见[企业 OCR 验收](anyreceipt-enterprise-verification.md)。项目凭证统一保存在私有 `.env`，调试覆盖文件只保存运行参数。
 
 ## 已落地的业务边界
 
 - `app/recognition` 共用附件任务、事件/轮询入队、识别结果交付和重启恢复。飞书事件 JSON 由 `feishu/base/events` 解码，台账映射在 `feishu/base/invoiceledger`。
 - `core/invoice.Facts` 统一票据事实；Anyreceipt、自有模型及历史台账在适配边界归一化。`Outputs` 与旧字段仍保留，`receiptcompat` 读取历史 `outputs` / `data.outputs` 及新 `facts`。
 - 金额使用十进制文本及 `json.Number`，避免经过浮点数损失精度；不把缺失值当零，不把 `1,23` 当作 `123`。
+- 台账写入核对线上字段类型：数字列中的明确十进制文本转为 JSON 数字，文本列保持文本；先保留已有人工事实，再校验待补字段。真实附件事件的 `attachmentToken` 在事件适配器转换，不把附件单元格 `id` 当作下载 token。
 - 送审读取台账有效列，人工修正优先于原始 OCR；原始 JSON 保留。识别再次交付保留台账已有字段，只补尚未出现在响应中的字段。此策略不提供显式重识别覆盖功能，也不能区分平台省略的空字段与尚未填写的字段。
 - `app/review` 读取完整票据集合、聚合查重证据、生成版本、控制提交及应用结果；`core/review` 定义共同契约。
 - `seal/review.Gateway` 只负责 Seal 上传、映射和提交。**Seal 主线不加载本地规则；规则仍在 SealAI 内维护。** `anthropic/review` 才读取本地规则，并调用独立 Messages 客户端。

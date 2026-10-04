@@ -16,7 +16,7 @@ DNS 已解析到 `118.31.4.210`。nginx 当前采用域名白名单，因此新�
 
 - [健康检查](https://twc-approval.ying-qing.cn/healthz)：`200 {"status":"ok"}`。
 - [就绪检查](https://twc-approval.ying-qing.cn/readyz)：`200 {"status":"ready"}`。
-- [构建版本](https://twc-approval.ying-qing.cn/version)：当前运行 `public-debug-20261003`。
+- [构建版本](https://twc-approval.ying-qing.cn/version)：当前运行 `public-debug-20261004`。
 - `POST /seal/callback/<密钥>`：密钥在本地私有配置及 Seal `test` 通道保存，不写入本文。
 
 公网根路径、mock 与其他路径返回 404；错误回调密钥返回 401；正确密钥搭配无效内容返回 400。nginx 限制请求体为 1 MiB，禁止记录该域名的访问 URL 和错误 URL；应用已有回调路径遮蔽。不要把完整回调 URL 复制到日志或公开文档。
@@ -30,11 +30,11 @@ DNS 已解析到 `118.31.4.210`。nginx 当前采用域名白名单，因此新�
 | 桥接服务 | `com.yingqing.twc-approval-debug` | `deploy/run-local-debug.py` |
 | 本机 FRP | `com.yingqing.twc-approval-frpc` | `data/public-debug/frpc.toml` |
 
-plist 位于 `~/Library/LaunchAgents/`。运行日志在 `data/public-debug/`，审核状态在 `data/public-debug/state/`。FRP 配置及 `.env.public-debug` 权限为 0600，均被 Git 忽略。FRP 复用已有服务器鉴权，未修改密钥。
+plist 位于 `~/Library/LaunchAgents/`。运行日志在 `data/public-debug/`，识别与审核状态在 `data/public-debug/state/`。FRP 配置、`.env` 及 `.env.public-debug` 权限为 0600，均被 Git 忽略。项目凭证统一保存在 `.env`；`.env.public-debug` 只保存调试参数，不重复或清空凭证。FRP 复用已有服务器鉴权，未修改密钥。
 
 [运行包装器](../deploy/run-local-debug.py)明确依次加载 `configs/config.example.env`、`.env`、`.env.public-debug`，后者覆盖前者；不执行 shell 展开。Go 程序本身仍不自动读取 `.env`。
 
-本调试进程启用 Seal 结果接收，关闭 OCR 提供方，`REVIEW_RESULT_FIELD_IDS={}`：真实结果保存到本地状态，不覆盖人工审批或结算字段。若要验收飞书 AI 结果回写，先核对专用字段，再配置该映射。当前二进制使用 `no_anthropic` 构建，调试外部系统主线。
+本调试进程启用 Seal 结果接收及 `RECEIPT_PROVIDER=anyreceipt`，`RECEIPT_TRIGGER_MODE=both`；首次扫描使用 `baseline`，已有附件不会因此批量识别。`REVIEW_RESULT_FIELD_IDS={}`：真实审核结果保存到本地状态，不覆盖人工审批或结算字段。若要验收飞书 AI 结果回写，先核对专用字段，再配置该映射。当前二进制使用 `no_anthropic` 构建，调试外部系统主线。
 
 ```bash
 # 查询进程
@@ -42,7 +42,7 @@ launchctl list com.yingqing.twc-approval-debug
 launchctl list com.yingqing.twc-approval-frpc
 
 # 修改 Go 代码后重新构建，再仅重启自己的服务
-go build -tags no_anthropic -ldflags '-X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version=public-debug-20261003' -o bin/twc-approval-public-debug ./cmd/server
+go build -tags no_anthropic -ldflags '-X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version=public-debug-20261004' -o bin/twc-approval-public-debug ./cmd/server
 launchctl kickstart -k gui/$(id -u)/com.yingqing.twc-approval-debug
 
 # 使用同一套私有配置与状态目录手动送审
@@ -53,11 +53,11 @@ python3 deploy/run-local-debug.py submit-review <报销明细记录ID>
 
 ## 企业测试应用切换（2026-10-04）
 
-本机服务已改用企业测试应用及新 Base，私有配置中的表和字段 ID 已重新核对。真实记录变更事件已收到，详见[飞书事件验收](feishu-event-verification.md)。原有公网地址、FRP、Seal 通道及状态目录继续使用；OCR 和 AI 结果回写仍关闭。原应用配置的私有备份保存在 `data/public-debug/feishu-before-enterprise.env`，不提交 Git。
+本机服务已改用企业测试应用及新 Base，私有配置中的表和字段 ID 已重新核对。真实记录变更事件已收到，详见[飞书事件验收](feishu-event-verification.md)。原有公网地址、FRP、Seal 通道及状态目录继续使用；OCR 已启用并完成[新副本验收](anyreceipt-enterprise-verification.md)，AI 审核结果回写仍关闭。原应用配置的私有备份保存在 `data/public-debug/feishu-before-enterprise.env`，不提交 Git。
 
 ## Anyreceipt 凭证恢复（2026-10-04）
 
-Anyreceipt 的密钥已于 2026-10-04 从 2026-09-29 的历史联调会话恢复到私有 `.env.public-debug`（0600）。通过 `GET /api/getApiKeyUsage` 验证 HTTP 与业务状态均为 200，返回有效用量数据；本次没有调用 OCR。密钥不保存到文档或 Git。旧环境的真实 OCR 与台账回写已经验收，新企业副本仍需单独验收；当前 `RECEIPT_PROVIDER` 为空。
+Anyreceipt 的密钥已于 2026-10-04 从 2026-09-29 的历史联调会话恢复，现与飞书、Seal 凭证统一保存在私有 `.env`（0600）。恢复时通过 `GET /api/getApiKeyUsage` 验证 HTTP 与业务状态均为 200；此后已启用识别并完成新企业副本的真实 OCR 和台账回写验收。密钥不保存到文档或 Git。
 
 ## Seal 通道与验收
 
