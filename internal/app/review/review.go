@@ -65,8 +65,11 @@ func (s *Service) Prepare(ctx context.Context, recordID string) (core.Request, e
 	if err != nil {
 		return core.Request{}, err
 	}
-	if detail.RecordID != recordID || len(detail.Files) == 0 {
-		return core.Request{}, fmt.Errorf("source detail does not match record or has no attachments")
+	if detail.RecordID != recordID {
+		return core.Request{}, fmt.Errorf("source detail does not match record")
+	}
+	if len(detail.Files) == 0 {
+		return core.Request{}, core.ErrNoAttachments
 	}
 	invoices := make([]aggregate.Invoice, 0, len(detail.Files))
 	for _, file := range detail.Files {
@@ -207,6 +210,9 @@ func (s *Service) deliver(ctx context.Context, attempt core.Attempt) error {
 	pinned.options.ProviderVersion = attempt.Request.ProviderVersion
 	pinned.options.RulesVersion = attempt.Request.RulesVersion
 	current, err := pinned.Prepare(ctx, attempt.Request.Document.RecordID)
+	if errors.Is(err, core.ErrNoAttachments) || errors.Is(err, core.ErrSourceRemoved) {
+		return ErrStale
+	}
 	if err != nil {
 		return err
 	}

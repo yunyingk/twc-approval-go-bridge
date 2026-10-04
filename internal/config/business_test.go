@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func testProfile() BusinessProfile {
@@ -19,6 +20,30 @@ func testProfile() BusinessProfile {
 		},
 		Recognition: RecognitionSettings{Provider: "disabled", TriggerMode: "both"},
 		Review:      ReviewSettings{Provider: "seal", TriggerMode: "manual", ContextFields: map[string]string{"reason": "reason"}, ResultFields: map[string]string{"decision": "decision", "document_id": "document", "revision": "revision"}},
+	}
+}
+
+func TestReviewChangeConfigurationRequiresAutomaticTriggerAndBoundedDebounce(t *testing.T) {
+	p := testProfile()
+	if p.Review.ResubmitOnDetailChange {
+		t.Fatal("changes should default off")
+	}
+	p.Review.ResubmitOnDetailChange = true
+	if err := p.validate(); err == nil {
+		t.Fatal("manual mode enabled background change submissions")
+	}
+	p.Review.TriggerMode = "after_recognition"
+	for _, value := range []string{"", "1s", "10s", "10m"} {
+		p.Review.ChangeDebounce = value
+		if err := p.validate(); err != nil {
+			t.Fatalf("valid debounce %s rejected: %v", value, err)
+		}
+	}
+	for _, value := range []string{"zero", "0s", "-1s", "500ms", (11 * time.Minute).String()} {
+		p.Review.ChangeDebounce = value
+		if err := p.validate(); err == nil {
+			t.Fatalf("invalid debounce accepted: %s", value)
+		}
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	app "github.com/yunyingk/twc-approval-go-bridge/internal/app/review"
 )
@@ -31,6 +32,40 @@ func (s *Files) QueueAutomaticReview(ctx context.Context, scope, recordID string
 		}
 		intent.Generation++
 		intent.Pending = true
+		return intent, nil
+	})
+}
+
+func (s *Files) QueueAutomaticReviewChange(ctx context.Context, scope, recordID, eventID string, notBefore time.Time) error {
+	if scope == "" || recordID == "" || eventID == "" || notBefore.IsZero() {
+		return fmt.Errorf("review change scope, record, event and deadline are required")
+	}
+	return s.Transaction(ctx, automaticReviewKey(scope, recordID), func(raw json.RawMessage) (any, error) {
+		intent := app.AutomaticIntent{SourceScope: scope, RecordID: recordID}
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &intent); err != nil {
+				return nil, err
+			}
+			if intent.SourceScope != scope || intent.RecordID != recordID {
+				return nil, fmt.Errorf("automatic review state identity mismatch")
+			}
+		}
+		for _, seen := range intent.ChangeEventIDs {
+			if seen == eventID {
+				return nil, nil
+			}
+		}
+		intent.ChangeEventIDs = append(intent.ChangeEventIDs, eventID)
+		// Bound event history per detail. Older replays remain protected against
+		// paid duplication by immutable review-attempt identity.
+		if len(intent.ChangeEventIDs) > 64 {
+			intent.ChangeEventIDs = intent.ChangeEventIDs[len(intent.ChangeEventIDs)-64:]
+		}
+		intent.Generation++
+		intent.Pending = true
+		if notBefore.After(intent.NotBefore) {
+			intent.NotBefore = notBefore
+		}
 		return intent, nil
 	})
 }
@@ -79,6 +114,7 @@ func (s *Files) AcknowledgeAutomaticReview(ctx context.Context, processed app.Au
 			return nil, nil
 		}
 		current.Pending = false
+		current.NotBefore = time.Time{}
 		return current, nil
 	})
 }

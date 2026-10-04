@@ -160,7 +160,7 @@ func (c *AttachmentClient) request(ctx context.Context, method, endpoint, token 
 		return err
 	}
 	if envelope.Code != 0 {
-		return fmt.Errorf("Feishu API code %d: %s", envelope.Code, envelope.Msg)
+		return &APIError{Code: envelope.Code, Message: envelope.Msg}
 	}
 	if len(envelope.Data) > 0 {
 		return json.Unmarshal(envelope.Data, output)

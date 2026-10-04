@@ -17,6 +17,11 @@ import (
 
 var ErrRequestRejected = errors.New("review request was explicitly rejected by provider")
 
+// These source lifecycle states stop pending submission without discarding
+// invoice history. Permission, network and incomplete-ledger errors are distinct.
+var ErrNoAttachments = errors.New("review source has no attachments")
+var ErrSourceRemoved = errors.New("review source record was removed")
+
 type File struct {
 	Token      string
 	Attachment invoice.Attachment

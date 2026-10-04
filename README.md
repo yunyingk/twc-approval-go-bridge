@@ -82,6 +82,8 @@ go run ./cmd/server
 
 `REVIEW_TRIGGER_MODE=after_recognition` 可在识别结果写台账后自动送审；`manual` 保留显式命令。两种路径都保证同一行所有附件识别并写入台账后，才聚合成一份审核单据。自动意图与版本状态持久化，重复触发复用已有版本；配置和恢复见[自动送审记录](docs/progress/2026-10-04-automatic-review.md)。显式 Seal 命令仍可使用：
 
+业务文件的 `review.resubmit_on_detail_change=true` 可启用明细修改重审，`change_debounce` 配置连续编辑的合并等待时间，默认 `10s`。企业文件当前关闭此开关。AI 回写不触发重审；全部附件清空或明细删除会结束待送审，旧结果仍保留。范围、费用和恢复边界见[配置说明](docs/business-configuration.md#可选的明细修改重审)。
+
 ```bash
 # 运行环境还需注入 FEISHU_APP_ID/SECRET、RECEIPT_* 表字段配置和 Seal Bearer 密钥
 SEAL_DOCUMENT_URL='https://mediastorm-test.sealai.cc/api/v1/integrations/webhook/wh_1790692906316_6z2eao6/document' \

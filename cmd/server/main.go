@@ -66,6 +66,8 @@ func main() {
 			"source_base", cfg.ReceiptBaseToken, "source_table", cfg.ReceiptTableID, "ledger_table", cfg.ReceiptLedgerTableID,
 			"receipt_provider", cfg.ReceiptProvider, "review_provider", cfg.ReviewProvider, "review_trigger", cfg.ReviewTriggerMode,
 			"include_transactions", cfg.Business.Review.IncludeTransactions)
+		logger.Info("review change settings", "resubmit_on_detail_change", cfg.Business.Review.ResubmitOnDetailChange,
+			"change_debounce", cfg.Business.Review.ChangeDebounce)
 	}
 	server := httpserver.New(cfg.HTTPAddr, logger, version.Version)
 	server.Register("POST /seal/callback/mock", seal.MockCallback(logger))
@@ -110,6 +112,16 @@ func main() {
 		if err != nil {
 			logger.Error("configure automatic review", "error", err)
 			os.Exit(1)
+		}
+		if cfg.Business != nil && cfg.Business.Review.ResubmitOnDetailChange {
+			debounce := 10 * time.Second
+			if cfg.Business.Review.ChangeDebounce != "" {
+				debounce, _ = time.ParseDuration(cfg.Business.Review.ChangeDebounce) // validated during configuration loading
+			}
+			if err := automaticReview.EnableChanges(debounce); err != nil {
+				logger.Error("configure review changes", "error", err)
+				os.Exit(1)
+			}
 		}
 	}
 	var feishuListener *events.Listener
@@ -185,7 +197,28 @@ func main() {
 				}
 			}
 		}
-		if cfg.ReceiptProvider == "" || cfg.ReceiptTriggerMode != "poll" {
+		if automaticReview != nil && cfg.Business != nil && cfg.Business.Review.ResubmitOnDetailChange {
+			fieldIDs := []string{cfg.ReceiptFieldID, cfg.ReceiptSourceDetailFieldID}
+			for _, id := range cfg.ReviewContextFieldIDs {
+				fieldIDs = append(fieldIDs, id)
+			}
+			if cfg.Business.Review.IncludeTransactions {
+				fieldIDs = append(fieldIDs, cfg.Business.Tables.ReimbursementDetails.Fields["transaction_relation"])
+			}
+			changeSink, changeErr := events.NewReviewChangeSink(cfg.ReceiptBaseToken, cfg.ReceiptTableID, fieldIDs, automaticReview)
+			if changeErr != nil {
+				logger.Error("configure review change events", "error", changeErr)
+				os.Exit(1)
+			}
+			previousSink := sink
+			sink = func(ctx context.Context, event events.Event) error {
+				if err := previousSink(ctx, event); err != nil {
+					return err
+				}
+				return changeSink.Sink(ctx, event)
+			}
+		}
+		if cfg.ReceiptProvider == "" || cfg.ReceiptTriggerMode != "poll" || (cfg.Business != nil && cfg.Business.Review.ResubmitOnDetailChange) {
 			feishuListener, err = events.New(
 				cfg.FeishuAppID,
 				cfg.FeishuAppSecret,

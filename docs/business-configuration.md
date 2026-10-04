@@ -50,6 +50,7 @@ BUSINESS_CONFIG_FILE=configs/business/enterprise-test.json
 - `recognition.provider=anyreceipt|model|disabled` 与 `trigger_mode=event|poll|both`。
 - `review.provider=seal|model` 与 `trigger_mode=manual|after_recognition`。
 - `review.include_transactions=true|false`，默认 `false` 保留原审核版本和读取行为；启用后要求明细的 `transaction_relation` 及流水的交易号、金额、币种、商户和时间字段。
+- `review.resubmit_on_detail_change=true|false`，默认关闭；启用需使用 `after_recognition`。`review.change_debounce` 默认 `10s`，允许 `1s` 至 `10m`，用于合并连续编辑。
 - `review.context_fields` 与 `review.result_fields`，两者均属于报销明细表。
 
 对应的旧 `RECEIPT_*` Base/Table/Field、提供方和触发方式，以及旧 `REVIEW_PROVIDER`、`REVIEW_TRIGGER_MODE`、上下文和结果映射全部忽略，防止把两套文档配置拼起来。未设置 `BUSINESS_CONFIG_FILE` 时，原环境变量模式继续兼容。
@@ -80,6 +81,27 @@ python3 deploy/run-local-debug.py preview-review <报销明细记录ID>
 预览需要已有完整 OCR 台账，读取并校验原件；输出不包含原件二进制、下载 URL 或原始 OCR，但包含业务上下文及流水事实，只适合私有调试。它不创建审核尝试，不调用 OCR、Seal 或模型。
 
 流水事实、来源和资料质量问题纳入审核版本。重复准备同一快照不重复送审；回写前读取当前事实，旧结果只归档，不覆盖新数据。启用开关会增加审核依据，因此在途旧版本可能失效，已识别任务和 OCR 基线不变。**流水字段变化本身暂不自动发起新审核**；当前自动触发仍为识别完成，其他修改需显式提交或后续业务触发能力。多次 API 读取与回写不是原子事务，也未建立业务冻结锁。
+
+## 可选的明细修改重审
+
+```json
+"review": {
+  "provider": "seal",
+  "trigger_mode": "after_recognition",
+  "resubmit_on_detail_change": true,
+  "change_debounce": "10s"
+}
+```
+
+以上为局部示例，需保留完整文件的上下文、结果字段及其他配置。企业测试文件当前显式关闭这个开关，维持已选择的识别完成触发方式。
+
+启用后监听明细附件、明细编号、已配置的审核上下文，以及启用流水时的流水关联。只有事件实际包含且发生变化的输入字段才触发；AI 专用结果、人工审批、锁定和派生关联列不触发。即使识别采用纯轮询，修改重审仍需要飞书长连接事件订阅。
+
+事件处理只保存意图，不读取附件或调用审核方；后台等到最后一次编辑的等待时间结束后，读取当前完整事实，复用共同版本化送审。期限、事件去重和任务代数持久化，重启保留等待时间，审核过程中出现的新编辑不会被旧任务确认丢弃。每条明细保留最近 64 个修改事件 ID；更旧事件重放仍受审核版本去重保护。事件相同或事实未变不会新增付费审核；确实形成新版本时可能再次计费。
+
+新附件仍须先完成 OCR 台账；删除部分附件会基于剩余附件准备新版本。附件全部清空或明细确已删除时，结束待送审意图，保留旧台账和审核历史；迟到结果保存后视为旧结果，不覆盖当前明细。权限或网络错误、关联流水不可读以及台账不齐不会被误判为删除。
+
+该开关只覆盖报销明细自己的修改事件。直接修改第三方流水或发票台账尚不联动排队；停机期间缺失的明细编辑事件也没有补扫机制。已显示的旧 AI 建议不会立即清空，须结合版本判断有效性。业务冻结、撤销供应商单据和人工审批仍是独立后续工作。
 
 ## 换企业或文档副本
 

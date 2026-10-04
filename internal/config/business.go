@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
 // BusinessProfile binds business roles to physical tables. It contains no credentials.
@@ -43,11 +44,13 @@ type RecognitionSettings struct {
 // ContextFields and ResultFields both belong to the reimbursement-details table.
 // Local rules are configured separately and used only by the model provider.
 type ReviewSettings struct {
-	IncludeTransactions bool              `json:"include_transactions,omitempty"`
-	Provider            string            `json:"provider"`
-	TriggerMode         string            `json:"trigger_mode"`
-	ContextFields       map[string]string `json:"context_fields"`
-	ResultFields        map[string]string `json:"result_fields"`
+	ResubmitOnDetailChange bool              `json:"resubmit_on_detail_change,omitempty"`
+	ChangeDebounce         string            `json:"change_debounce,omitempty"`
+	IncludeTransactions    bool              `json:"include_transactions,omitempty"`
+	Provider               string            `json:"provider"`
+	TriggerMode            string            `json:"trigger_mode"`
+	ContextFields          map[string]string `json:"context_fields"`
+	ResultFields           map[string]string `json:"result_fields"`
 }
 
 func LoadBusinessProfile(path string) (*BusinessProfile, error) {
@@ -147,6 +150,15 @@ func (p *BusinessProfile) validate() error {
 	}
 	if p.Review.TriggerMode != "manual" && p.Review.TriggerMode != "after_recognition" {
 		return fmt.Errorf("review.trigger_mode must be manual or after_recognition")
+	}
+	if p.Review.ResubmitOnDetailChange && p.Review.TriggerMode != "after_recognition" {
+		return fmt.Errorf("resubmit_on_detail_change requires after_recognition")
+	}
+	if p.Review.ChangeDebounce != "" {
+		wait, err := time.ParseDuration(p.Review.ChangeDebounce)
+		if err != nil || wait < time.Second || wait > 10*time.Minute {
+			return fmt.Errorf("review.change_debounce must be between 1s and 10m")
+		}
 	}
 	if err := validateFieldMapping("review.context_fields", p.Review.ContextFields); err != nil {
 		return err

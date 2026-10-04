@@ -81,6 +81,8 @@
     "provider": "seal",
     "trigger_mode": "after_recognition",
     "include_transactions": true,
+    "resubmit_on_detail_change": false,
+    "change_debounce": "10s",
     "context_fields": {
       "expense_reason": "fld7umxKAi",
       "expense_category": "fld4jWLNH0"

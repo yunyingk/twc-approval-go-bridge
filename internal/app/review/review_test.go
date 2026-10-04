@@ -19,11 +19,49 @@ type source struct {
 	missing           bool
 	detailReads       int
 	transactions      *core.TransactionEvidence
+	detailErr         error
+	noAttachments     bool
 }
 
 func (s *source) ReadDetail(context.Context, string) (core.Detail, error) {
 	s.detailReads++
-	return core.Detail{DocumentID: s.ReviewLogicalID("rec"), DocumentSN: "SN", RecordID: "rec", StartTime: time.Now(), Files: []core.File{{Token: "file", Attachment: invoice.Attachment{Data: []byte("image")}}}, Transactions: s.transactions}, nil
+	if s.detailErr != nil {
+		return core.Detail{}, s.detailErr
+	}
+	files := []core.File{{Token: "file", Attachment: invoice.Attachment{Data: []byte("image")}}}
+	if s.noAttachments {
+		files = nil
+	}
+	return core.Detail{DocumentID: s.ReviewLogicalID("rec"), DocumentSN: "SN", RecordID: "rec", StartTime: time.Now(), Files: files, Transactions: s.transactions}, nil
+}
+
+func TestRemovedOrEmptySourceArchivesLateOutcome(t *testing.T) {
+	for _, removed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "attachments cleared", true: "record removed"}[removed], func(t *testing.T) {
+			s, w := &source{amount: "10"}, &writer{}
+			svc, store := service(t, s, &reviewer{}, w)
+			ctx := context.Background()
+			result, err := svc.Submit(ctx, "rec")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if removed {
+				s.detailErr = core.ErrSourceRemoved
+			} else {
+				s.noAttachments = true
+			}
+			if err := svc.Complete(ctx, result.DocumentID, "seal", core.Outcome{Decision: "approve"}); !errors.Is(err, app.ErrStale) {
+				t.Fatalf("inactive source accepted late result: %v", err)
+			}
+			if err := svc.RetryWritebacks(ctx); err != nil || w.calls != 0 {
+				t.Fatalf("inactive result retried: %v", err)
+			}
+			attempt, err := store.Update(ctx, result.DocumentID, func(*core.Attempt) error { return nil })
+			if err != nil || attempt.State != "completed" || attempt.Delivered || attempt.Submission.Outcome == nil {
+				t.Fatal("inactive source lost its saved outcome")
+			}
+		})
+	}
 }
 func (s *source) ReviewLogicalID(string) string {
 	if s.logicalID != "" {

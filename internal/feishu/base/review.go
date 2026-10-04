@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -44,7 +45,14 @@ func (s *ReviewSource) ReviewLogicalID(recordID string) string {
 func (s *ReviewSource) ReadDetail(ctx context.Context, recordID string) (review.Detail, error) {
 	attachments, tokens, err := s.client.ReadAttachments(ctx, s.base, s.detailTable, recordID, s.attachmentFieldID, nil)
 	if err != nil {
+		var apiError *APIError
+		if errors.As(err, &apiError) && apiError.Code == 1254043 {
+			return review.Detail{}, fmt.Errorf("%w: %s", review.ErrSourceRemoved, recordID)
+		}
 		return review.Detail{}, err
+	}
+	if len(tokens) == 0 {
+		return review.Detail{RecordID: recordID}, nil
 	}
 	documentSN := recordID
 	if s.detailIDFieldID != "" {
