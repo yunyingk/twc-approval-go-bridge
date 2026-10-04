@@ -16,7 +16,7 @@ DNS 已解析到 `118.31.4.210`。nginx 当前采用域名白名单，因此新�
 
 - [健康检查](https://twc-approval.ying-qing.cn/healthz)：`200 {"status":"ok"}`。
 - [就绪检查](https://twc-approval.ying-qing.cn/readyz)：`200 {"status":"ready"}`。
-- [构建版本](https://twc-approval.ying-qing.cn/version)：当前运行 `public-debug-20261005-transaction-review`。
+- [构建版本](https://twc-approval.ying-qing.cn/version)：当前运行 `public-debug-20261005-review-recovery`。
 - `POST /seal/callback/<密钥>`：密钥在本地私有配置及 Seal `test` 通道保存，不写入本文。
 
 公网根路径、mock 与其他路径返回 404；错误回调密钥返回 401；正确密钥搭配无效内容返回 400。nginx 限制请求体为 1 MiB，禁止记录该域名的访问 URL 和错误 URL；应用已有回调路径遮蔽。不要把完整回调 URL 复制到日志或公开文档。
@@ -48,7 +48,7 @@ launchctl list com.yingqing.twc-approval-debug
 launchctl list com.yingqing.twc-approval-frpc
 
 # 修改 Go 代码后重新构建，再仅重启自己的服务
-go build -tags no_anthropic -ldflags '-X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version=public-debug-20261005-transaction-review' -o bin/twc-approval-public-debug ./cmd/server
+go build -tags no_anthropic -ldflags '-X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version=public-debug-20261005-review-recovery' -o bin/twc-approval-public-debug ./cmd/server
 launchctl kickstart -k gui/$(id -u)/com.yingqing.twc-approval-debug
 
 # 使用同一套私有配置与状态目录手动送审
@@ -59,6 +59,13 @@ python3 deploy/run-local-debug.py check-business-config
 
 # 使用实际准备入口预览快照；不创建审核任务、不调用付费提供方
 python3 deploy/run-local-debug.py preview-review <报销明细记录ID>
+
+# 查看当前来源的本地审核状态，或只读核对历史版本与当前事实
+python3 deploy/run-local-debug.py review-status all
+python3 deploy/run-local-debug.py check-review <报销明细记录ID>
+
+# 只恢复已保存结果的交付，不重新调用审核器
+python3 deploy/run-local-debug.py retry-writeback <document-id>
 ```
 
 服务可用依赖本机开机、联网和用户登录。电脑睡眠或离线时，该调试域名不能到达本机服务；这是本机调试入口，不是全天候生产部署。

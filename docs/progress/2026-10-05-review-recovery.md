@@ -55,6 +55,16 @@ python3 deploy/run-local-debug.py retry-writeback <document-id>
 
 私有报告为忽略的 `data/public-debug/review-recovery-validation.json`，只读验证程序保留于 `tmp/_review-recovery/`，不提交凭证及完整状态。后续运行更新的实际版本与验证另行追加。
 
+实现提交：`d9c2bd2 feat: inspect review versions and recover saved result delivery`。
+
+## 运行更新
+
+本机外部主线更新为 `public-debug-20261005-review-recovery`，仅重启 `com.yingqing.twc-approval-debug`。本地与公网的健康、就绪及版本接口返回预期；新增日志确认 WebSocket ready 与实际连接成功。两个修改触发开关仍关闭，10 秒编辑等待配置及原识别完成自动送审保留。
+
+正式状态仍 8 个 JSON：请求、审核状态、结果、交付事实及其他任务内容均未变化；仅 1 个旧租户结果新增 `superseded/source_mismatch` 归档元数据，退出后台补交付。不能将本次部署描述为全部文件字节未变。台账仍 7 行、Anyreceipt 余额仍 206。
+
+部署后的 `review-status all` 在移除审核提供方配置后成功读取状态；对已经交付的结果执行 `retry-writeback` 幂等成功，没有新审核、识别或线上写入。此项只验证已交付空操作，实际失败到成功的恢复与归档后精确版本恢复由前述隔离测试验证，未伪称新增真实回写样本。部署证据为忽略的 `review-recovery-runtime-{baseline,verification}.json`，私有文件权限为 0600。
+
 ## 后续边界
 
 诊断不是供应商对账查询，也不自动重发明确拒绝的请求。暂未新增真实付费审核样本；来源联动开关继续关闭，原识别完成自动送审保留。读取与写入仍有跨系统并发窗口，业务冻结、停机修改补偿、飞书分组审批、人工结果、历史占用及结算继续按计划推进。
