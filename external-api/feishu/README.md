@@ -11,6 +11,8 @@
 
 校验值见上一级 [`README.md`](../README.md)。项目编写的模板请求示例放在 `configs/feishu/`，不混入此原文目录。
 
+2026-10-05 另直接下载并保留三份官方 Markdown 原文：[`create-approval-instance.md`](create-approval-instance.md)、[`get-approval-instance.md`](get-approval-instance.md) 和 [`approval-instance-form-controls.md`](approval-instance-form-controls.md)。查询文档明确允许用创建时的 UUID 作为 `instance_id`；创建文档明确 UUID 冲突返回 `60012`，不能将该响应推断成“没有建单”。身份和审批状态也以这些原文为准。
+
 ## 当前企业模板
 
 [`approval-definition-9944A2AE-ED45-43F3-9B87-0F3902F09844.json`](approval-definition-9944A2AE-ED45-43F3-9B87-0F3902F09844.json) 是 2026-09-30 使用企业应用 `cli_aaea8d481d381bee` 调用飞书官方接口取得的完整响应，原始字节未改写。这是当前审批模板的资源快照，不是 OpenAPI 规范文件。

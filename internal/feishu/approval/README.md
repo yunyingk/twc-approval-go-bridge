@@ -2,7 +2,23 @@
 
 `definitions.go` 实现审批模板（审批定义）的创建和读取，复用飞书官方 Go SDK 的完整请求类型。`approvals.go` 继续定义分组草稿、创建审批实例和读取审批结果的接口；实例业务尚未实现。多维表格的记录和附件操作位于 `../base/`；SealAI 的审核单据位于 `internal/seal/`。
 
+2026-10-05 已新增实例传输客户端与明细表单映射，详见下方；旧 `approvals.go` 是保留的历史接口，不是当前实例实现。共用分组、持久化来源版本映射、实例业务接入和人工结果回写仍需继续实施。
+
 个人版多维表格与「云间未来」企业审批使用不同的应用身份。现有 `FEISHU_APP_ID` / `FEISHU_APP_SECRET` 继续用于个人版 Base；企业审批凭证单独记录为本机 `.env` 的 `FEISHU_APPROVAL_APP_ID` / `FEISHU_APPROVAL_APP_SECRET`，模板 Code 记录为 `FEISHU_APPROVAL_CODE`。模板工具显式选择凭证组；客户端自行获取该应用的 `tenant_access_token`，不切换用户身份。服务配置加载器尚未接入企业审批配置，模板创建也不进入服务启动流程。
+
+上段保留初次联调的身份安排。当前 Base 已改用新的企业测试应用；它读取旧企业模板返回 `1390002`，旧审批应用仍能读取同一 Code。两个应用的企业身份查询均缺少权限，不能据此确认同租户，也不能自动把 Base 的 `open_id` 用于旧审批应用。
+
+## 实例客户端与表单映射
+
+`NewInstanceClient` 复用同一显式应用的租户令牌管理。`CreateInstance` 需要调用方先保存 UUID 和来源版本映射，客户端不生成随机重试 UUID、不做应用层重发；`GetInstance` 支持原 UUID 或实例 Code。`60012` 为 `ErrUUIDConflict`，意味着必须查询原 UUID。失败只暴露安全操作名、HTTP 状态及数值错误码，不把响应体写入错误消息。
+
+`InstanceRequest.Form` 在 Go 中是 JSON 数组，向官方 SDK 发送时转换为 JSON 字符串。当前禁止原实例内重提及按原表单再次创建，以免在本地来源版本映射之外产生新提交。该限制不等于已经支持撤销、退回重提或业务冻结。
+
+`BuildDetailForm` 按显式 `DetailFormBinding` 将多条业务值映射为一个 `fieldList`：可选择系统 `id` 或唯一 `custom_id`，输出始终使用实时定义的系统 ID。按定义顺序输出，金额通过精确十进制写为 JSON 数字；币种显式提供，不猜默认值。联系人必须是审批应用的 open ID；附件必须是审批上传接口的 file code，不能拿 Base 文件 token 替代。
+
+支持基础文本、日期、金额/数字、联系人、附件及单层明细。缺必填项、空文本、歧义/重复控件、旧模板 ID、不兼容的值类型及未绑定数据会阻止本地准备；复杂控件和条件需独立实现。`ValidateTemplateForm` 是发送前必须执行的当前模板校验；传输客户端的通用请求校验不代替它。货币允许范围等模板业务限制仍由实际模板和正式接口校验。
+
+已通过隔离 HTTP 测试及真实旧企业模板读取、本地两行表单映射；未创建真实实例或上传文件，不能据此宣称完整人工审批闭环完成。阶段记录见[人工审批接口记录](../../../docs/progress/2026-10-05-native-approval-client.md)。
 
 2026-09-30 已通过企业应用读取「海外易商卡」的官方定义：`approval_code=9944A2AE-ED45-43F3-9B87-0F3902F09844`，状态 `ACTIVE`，一个 `fieldList` 明细及 14 个子控件。完整原始响应与字段索引见 [`external-api/feishu/`](../../../external-api/feishu/README.md)。旧业务资料中的 5 字段映射不能直接用于当前模板。
 

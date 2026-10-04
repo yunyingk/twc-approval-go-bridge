@@ -124,7 +124,7 @@ go run ./cmd/approval-template -app personal -file configs/feishu/approval-templ
 | `internal/core/dedupe/` | 判断变化是否重复；由持久化实现提供原子领取 | 接口已定义，键规则和存储待定 |
 | `internal/feishu/base/events/` | 接收多维表格变更事件 | 已在企业测试 Base 验证真实附件事件触发识别和台账回写 |
 | `internal/feishu/base/records.go`、`ledger.go` | 多维表格记录边界与发票台账新增/更新 | 台账写入已实现，其他记录操作仍待业务映射 |
-| `internal/feishu/approval/` | 飞书原生审批模板与单据 | 模板创建/读取已实现；实例仍为接口草稿 |
+| `internal/feishu/approval/` | 飞书原生审批模板与单据 | 模板创建/读取、实例创建/UUID 查询及明细映射已实现；实例业务接入仍未启用 |
 | `internal/feishu/base/permissions.go` | 多维表格记录权限分类与锁定 | 接口已定义，飞书能力待验证 |
 | `internal/seal/` | Seal Webhook 附件上传、单据提交和可选结果接收 | 已通过测试通道提交和公网真实回调验收 |
 | `internal/core/dupcheck/` | 从发票台账事实产生查重候选证据 | 首版按票号、开票方、票据类型比对 |
