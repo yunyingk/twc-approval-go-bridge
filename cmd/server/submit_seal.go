@@ -28,6 +28,13 @@ func newReviewService(cfg config.Config, provider string, versioned bool) (*appr
 		return nil, err
 	}
 	source.WithContextFields(cfg.ReviewContextFieldIDs)
+	if cfg.Business != nil && cfg.Business.Review.IncludeTransactions {
+		table := cfg.Business.Tables.Transactions
+		if _, err := source.WithTransactions(base.TransactionConfig{BaseToken: table.BaseToken, TableID: table.TableID,
+			RelationFieldID: cfg.Business.Tables.ReimbursementDetails.Fields["transaction_relation"], Fields: table.Fields}); err != nil {
+			return nil, err
+		}
+	}
 	options := appreview.Options{Provider: provider, Versioned: versioned}
 	var gateway appreview.Reviewer
 	switch provider {

@@ -43,10 +43,11 @@ type RecognitionSettings struct {
 // ContextFields and ResultFields both belong to the reimbursement-details table.
 // Local rules are configured separately and used only by the model provider.
 type ReviewSettings struct {
-	Provider      string            `json:"provider"`
-	TriggerMode   string            `json:"trigger_mode"`
-	ContextFields map[string]string `json:"context_fields"`
-	ResultFields  map[string]string `json:"result_fields"`
+	IncludeTransactions bool              `json:"include_transactions,omitempty"`
+	Provider            string            `json:"provider"`
+	TriggerMode         string            `json:"trigger_mode"`
+	ContextFields       map[string]string `json:"context_fields"`
+	ResultFields        map[string]string `json:"result_fields"`
 }
 
 func LoadBusinessProfile(path string) (*BusinessProfile, error) {
@@ -118,6 +119,19 @@ func (p *BusinessProfile) validate() error {
 		p.Tables.InvoiceLedger.Fields["source_key"] == "" || p.Tables.InvoiceLedger.Fields["raw_json"] == "" {
 		return fmt.Errorf("transaction_id, attachment and ledger source_key/raw_json bindings are required")
 	}
+	if p.Review.IncludeTransactions {
+		if p.Tables.Transactions.BaseToken != p.Tables.ReimbursementDetails.BaseToken {
+			return fmt.Errorf("linked transaction review currently requires transactions and reimbursement_details in the same Base")
+		}
+		if p.Tables.ReimbursementDetails.Fields["transaction_relation"] == "" {
+			return fmt.Errorf("linked transaction review requires reimbursement_details.transaction_relation")
+		}
+		for _, semantic := range []string{"transaction_id", "original_amount", "original_currency", "merchant", "transaction_time"} {
+			if p.Tables.Transactions.Fields[semantic] == "" {
+				return fmt.Errorf("linked transaction review requires transactions.%s", semantic)
+			}
+		}
+	}
 	switch p.Recognition.Provider {
 	case "disabled", "anyreceipt", "model":
 	default:
@@ -136,6 +150,11 @@ func (p *BusinessProfile) validate() error {
 	}
 	if err := validateFieldMapping("review.context_fields", p.Review.ContextFields); err != nil {
 		return err
+	}
+	for semantic := range p.Review.ContextFields {
+		if semantic == "bridge_revision" || strings.HasPrefix(semantic, "bridge_transaction_") {
+			return fmt.Errorf("review context uses reserved bridge evidence key")
+		}
 	}
 	if err := validateFieldMapping("review.result_fields", p.Review.ResultFields); err != nil {
 		return err

@@ -36,7 +36,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	if len(os.Args) > 1 {
 		if (os.Args[1] == "check-business-config" && len(os.Args) != 2) || (os.Args[1] != "check-business-config" && len(os.Args) != 3) {
-			logger.Error("usage: server check-business-config | {submit-seal|submit-review|apply-seal-result} <record-id-or-file>")
+			logger.Error("usage: server check-business-config | {preview-review|submit-seal|submit-review|apply-seal-result} <record-id-or-file>")
 			os.Exit(2)
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -44,6 +44,8 @@ func main() {
 		switch os.Args[1] {
 		case "check-business-config":
 			err = runBusinessCheck(ctx, cfg, os.Stdout)
+		case "preview-review":
+			err = runReviewPreview(ctx, cfg, os.Args[2], os.Stdout)
 		case "submit-seal":
 			err = runSealSubmit(ctx, cfg, os.Args[2], logger)
 		case "submit-review":
@@ -62,7 +64,8 @@ func main() {
 	if cfg.Business != nil {
 		logger.Info("business profile selected", "profile", cfg.Business.Name, "config_file", cfg.BusinessConfigFile,
 			"source_base", cfg.ReceiptBaseToken, "source_table", cfg.ReceiptTableID, "ledger_table", cfg.ReceiptLedgerTableID,
-			"receipt_provider", cfg.ReceiptProvider, "review_provider", cfg.ReviewProvider, "review_trigger", cfg.ReviewTriggerMode)
+			"receipt_provider", cfg.ReceiptProvider, "review_provider", cfg.ReviewProvider, "review_trigger", cfg.ReviewTriggerMode,
+			"include_transactions", cfg.Business.Review.IncludeTransactions)
 	}
 	server := httpserver.New(cfg.HTTPAddr, logger, version.Version)
 	server.Register("POST /seal/callback/mock", seal.MockCallback(logger))

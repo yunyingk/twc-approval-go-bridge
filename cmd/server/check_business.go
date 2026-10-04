@@ -109,6 +109,8 @@ func checkBusiness(ctx context.Context, profile *config.BusinessProfile, inspect
 func checkFieldType(role, semantic string, field base.TableField) error {
 	var types []int
 	switch role {
+	case "transactions":
+		return base.ValidateTransactionFieldType(semantic, field.Type)
 	case "reimbursement_details":
 		switch {
 		case semantic == "attachment":

@@ -149,3 +149,28 @@ func TestProfileRejectsUnknownKeysAndExtraObjects(t *testing.T) {
 		}
 	}
 }
+
+func TestLinkedTransactionReviewRequiresExplicitCompleteNativeBinding(t *testing.T) {
+	profile := testProfile()
+	profile.Review.IncludeTransactions = true
+	for _, semantic := range []string{"original_amount", "original_currency", "merchant", "transaction_time"} {
+		profile.Tables.Transactions.Fields[semantic] = semantic + "-field"
+	}
+	if _, err := LoadBusinessProfile(writeProfile(t, profile)); err != nil {
+		t.Fatal(err)
+	}
+	profile.Tables.Transactions.BaseToken = "other-base"
+	if _, err := LoadBusinessProfile(writeProfile(t, profile)); err == nil {
+		t.Fatal("native transaction relation accepted another Base")
+	}
+	profile.Tables.Transactions.BaseToken = "base"
+	delete(profile.Tables.Transactions.Fields, "original_currency")
+	if _, err := LoadBusinessProfile(writeProfile(t, profile)); err == nil {
+		t.Fatal("payment review accepted an incomplete currency binding")
+	}
+	profile.Review.IncludeTransactions = false
+	profile.Review.ContextFields["bridge_transaction_evidence"] = "input"
+	if _, err := LoadBusinessProfile(writeProfile(t, profile)); err == nil {
+		t.Fatal("source context can replace provider-generated payment evidence")
+	}
+}

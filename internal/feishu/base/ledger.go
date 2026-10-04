@@ -48,6 +48,7 @@ type ledgerField struct {
 	Name           string
 	Type           int
 	RelatedTableID string
+	Multiple       bool
 }
 
 func (c *LedgerClient) fieldSchema(ctx context.Context, token, base, table string) (map[string]ledgerField, error) {
@@ -61,7 +62,8 @@ func (c *LedgerClient) fieldSchema(ctx context.Context, token, base, table strin
 				Name     string `json:"field_name"`
 				Type     int    `json:"type"`
 				Property struct {
-					TableID string `json:"table_id"`
+					TableID  string `json:"table_id"`
+					Multiple bool   `json:"multiple"`
 				} `json:"property"`
 			} `json:"items"`
 			HasMore   bool   `json:"has_more"`
@@ -75,7 +77,7 @@ func (c *LedgerClient) fieldSchema(ctx context.Context, token, base, table strin
 			return nil, err
 		}
 		for _, field := range page.Items {
-			fields[field.ID] = ledgerField{Name: field.Name, Type: field.Type, RelatedTableID: field.Property.TableID}
+			fields[field.ID] = ledgerField{Name: field.Name, Type: field.Type, RelatedTableID: field.Property.TableID, Multiple: field.Property.Multiple}
 		}
 		if !page.HasMore {
 			return fields, nil

@@ -28,13 +28,13 @@ Table 类似普通表格的 Sheet；View 是同一张 Table 的另一种展示�
 
 | 配置角色 | 当前表 | 数据来源 | 桥接服务的实际行为 |
 | --- | --- | --- | --- |
-| `transactions` | 交易流水表 | 第三方 Webhook 导入 | 声明只读来源；核验结构，不写流水。交易事实参与审核尚未接入 |
+| `transactions` | 交易流水表 | 第三方 Webhook 导入 | 只读；启用 `review.include_transactions` 后按明细关联读取真实支付事实 |
 | `reimbursement_details` | 个人报销明细 | 员工填写 | 读取附件、明细编号和审核上下文；结果只写 `review.result_fields` 中的专用 AI 列 |
 | `invoice_ledger` | 发票台账 | 桥接服务识别结果 | 按来源键写入票据事实、完整原始 JSON 和明细关联；保留已有人工事实 |
 
 每个角色独立声明 `base_token`、`table_id`、`source`、`access` 和「业务语义 → 字段 ID」映射。`name` 是说明文字；`source` 记录谁供数，**不会自动创建 Webhook 接收接口**；`access` 表示服务的使用约定，飞书仍按应用权限和资源授权校验。
 
-当前三张业务表都位于同一个 Base。**报销明细与发票台账必须同 Base**，因为当前台账适配器与原生关联按此范围工作；配置加载器拒绝跨 Base 台账。流水表可以声明其他 Base 的只读来源，但当前不会跨表抓取流水事实。不能把声明来源理解成完整财务流程已经接通。
+当前三张业务表都位于同一个 Base。**报销明细与发票台账必须同 Base**，因为当前台账适配器与原生关联按此范围工作；配置加载器拒绝跨 Base 台账。流水表可以声明其他 Base 的只读来源；启用关联流水参与审核时，流水与明细也须同 Base，必须使用实际指向配置流水表的原生关联字段。来源声明不能替代事实读取开关，也不表示人工审批或结算已经接通。
 
 当前一个进程运行一份配置，编辑后重启生效；没有同时监听多套业务来源或热更新能力。未来接入更多来源时，继续增加角色适配和编排，不能把额外表 ID 塞入供应商模块。
 
@@ -49,6 +49,7 @@ BUSINESS_CONFIG_FILE=configs/business/enterprise-test.json
 - 三个表角色及其字段映射；`detail_id` 可省略，缺省使用飞书记录 ID。
 - `recognition.provider=anyreceipt|model|disabled` 与 `trigger_mode=event|poll|both`。
 - `review.provider=seal|model` 与 `trigger_mode=manual|after_recognition`。
+- `review.include_transactions=true|false`，默认 `false` 保留原审核版本和读取行为；启用后要求明细的 `transaction_relation` 及流水的交易号、金额、币种、商户和时间字段。
 - `review.context_fields` 与 `review.result_fields`，两者均属于报销明细表。
 
 对应的旧 `RECEIPT_*` Base/Table/Field、提供方和触发方式，以及旧 `REVIEW_PROVIDER`、`REVIEW_TRIGGER_MODE`、上下文和结果映射全部忽略，防止把两套文档配置拼起来。未设置 `BUSINESS_CONFIG_FILE` 时，原环境变量模式继续兼容。
@@ -58,6 +59,27 @@ BUSINESS_CONFIG_FILE=configs/business/enterprise-test.json
 当前配置保留用户选择：Anyreceipt 识别、Seal 审核、`after_recognition` 自动送审。以后改为人工提交，只改文件中的 `review.trigger_mode`；更换识别或审核提供方，各自改对应 `provider` 并提供凭证，模型路径还需支持 Anthropic 的构建。
 
 未知 JSON 属性、无效版本、重复物理表、重复字段映射、覆盖员工输入的 AI 结果列等会在启动前报错。基础结构校验并不替代线上权限、字段类型和关联目标核验。
+
+## 关联流水审核与预览
+
+启用流水后，审核请求包含独立的 `transactions` 证据：来源表范围、关联记录 ID、交易号、商户、UTC 交易时间、原币金额/币种及可选记账 CNY 金额、国家、交易类型、流水状态。原币金额和 CNY 金额分别保存，不推导汇率、不相加跨币种金额，也不创建发票占用或分摊。
+
+服务用关联中的 `record_ids` 定位记录，不使用显示流水号。金额保留精确十进制字符串，零和缺失不同；格式不明确的金额、非三字母币种或无效时间保存为资料问题及原值，不变成猜测事实。空关联会显式标注 `missing_transaction_relation`；原生单关联意外返回多条时保留各条并标注问题，不取第一条冒充完整依据。合法多关联保留各条，不推断费用分摊。
+
+权限错误、配置字段或关联目标错误、记录不可读和未知关联格式会阻止准备和提交，不能当成成功读取后的资料缺失。第三方流水始终不由桥接服务修改。
+
+Seal 接收完整证据 JSON 和以 `bridge_transaction_` 为前缀的文本字段，继续执行 Seal 系统发布的规则；不保证旧规则已采用新增字段。自有审核接收相同证据，资料质量存在问题时直接转人工复核，其余判断按本地规则进行。审核上下文不得使用生成证据的保留键。
+
+```bash
+# 注入运行环境后预览同一套真实读取、有效票据事实和版本；不送审、不回写
+go run ./cmd/server preview-review <报销明细记录ID>
+# 本机注入私有运行环境的入口
+python3 deploy/run-local-debug.py preview-review <报销明细记录ID>
+```
+
+预览需要已有完整 OCR 台账，读取并校验原件；输出不包含原件二进制、下载 URL 或原始 OCR，但包含业务上下文及流水事实，只适合私有调试。它不创建审核尝试，不调用 OCR、Seal 或模型。
+
+流水事实、来源和资料质量问题纳入审核版本。重复准备同一快照不重复送审；回写前读取当前事实，旧结果只归档，不覆盖新数据。启用开关会增加审核依据，因此在途旧版本可能失效，已识别任务和 OCR 基线不变。**流水字段变化本身暂不自动发起新审核**；当前自动触发仍为识别完成，其他修改需显式提交或后续业务触发能力。多次 API 读取与回写不是原子事务，也未建立业务冻结锁。
 
 ## 换企业或文档副本
 

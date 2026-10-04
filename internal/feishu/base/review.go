@@ -17,12 +17,14 @@ import (
 )
 
 // ReviewSource reads only the configured detail and invoice-ledger tables.
-// Transaction records are outside this adapter.
+// Transaction records are outside this adapter unless explicitly configured.
+// Explicit transaction configuration adds a read-only linked-payment source.
 type ReviewSource struct {
 	client                                                             *LedgerClient
 	base, detailTable, attachmentFieldID, detailIDFieldID, ledgerTable string
 	ledgerFields                                                       map[string]string
 	contextFields                                                      map[string]string
+	transactions                                                       *TransactionConfig
 }
 
 func NewReviewSource(appID, appSecret, base, detailTable, attachmentFieldID, detailIDFieldID, ledgerTable string, ledgerFields map[string]string) (*ReviewSource, error) {
@@ -66,7 +68,11 @@ func (s *ReviewSource) ReadDetail(ctx context.Context, recordID string) (review.
 	if err != nil {
 		return review.Detail{}, err
 	}
-	return review.Detail{Context: contextValues, DocumentID: s.ReviewLogicalID(recordID),
+	transactions, err := s.ReadTransactions(ctx, recordID)
+	if err != nil {
+		return review.Detail{}, err
+	}
+	return review.Detail{Context: contextValues, Transactions: transactions, DocumentID: s.ReviewLogicalID(recordID),
 		DocumentSN: documentSN, RecordID: recordID, StartTime: createdAt, Files: files}, nil
 }
 
