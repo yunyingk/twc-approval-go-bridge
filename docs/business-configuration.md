@@ -122,6 +122,8 @@ python3 deploy/run-local-debug.py preview-review <报销明细记录ID>
 
 ## 换企业或文档副本
 
+人工审批另有可选 `approval` 配置，字段绑定、目标身份、日期分组与 AI 结果门禁说明见[人工审批配置与预检](approval-configuration.md)。不配置时原识别/Seal 链路继续运行；它不替 Seal 维护规则，也不自动发起人工审批。
+
 1. 复制当前 JSON 为另一份，例如 `configs/business/company-b.json`，填写新的名称和三组 Base/Table/Field ID。配置文件允许入 Git，不能加入密钥或真实交易内容。
 2. 给当前应用授予新 Base 的资源访问，核对应用权限；换企业应用时也更换环境中的 App ID/Secret。长连接事件还需要新 Base 的订阅。
 3. 在准备运行的环境中选择新文件，执行只读核验：

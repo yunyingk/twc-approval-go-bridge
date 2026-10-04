@@ -40,3 +40,4 @@
 - 同日新增原生审批实例客户端及实时 `fieldList` 映射，官方 UUID 查询/冲突协议已归档。旧模板对当前桥接应用返回 `1390002`，旧审批应用仍可读取，两个应用缺少企业身份查询权限；不假定同租户，不自动回退，不复用跨应用 open ID。当前只做读取/本地映射，实例业务未启用，未发起真实审批。见 [实例接口记录](docs/progress/2026-10-05-native-approval-client.md)。
 - 同日新增 `core/approval` 与 `app/approval` 共用人工审批用例，计划保存精确值和当前 AI 版本，单来源状态库原子预约全部成员。重复、未知及保存失败通过原 UUID 恢复；已确认实例不可改绑，终态不回退 pending，财务释放尚未实现。配置/真实来源/人工交付仍未装配；本阶段仅隔离测试，见 [共用审批记录](docs/progress/2026-10-05-approval-workflow.md)。
 - 同日新增 Feishu `InstanceGateway`，用实时模板及本地绑定/自选审批人生成配置版本，准备及创建前核对必填表单、业务值类型和当前流程节点；`InstanceLookupGateway` 仅需原应用客户端和已存计划，不能建单。`60012`/内部错误/断连保留未知，仅已确认拒绝释放建单预约；隔离 HTTP 与共用状态联测通过，真实业务仍未启用，见 [gateway 记录](docs/progress/2026-10-05-approval-gateway.md)。
+- 同日新增可选 `approval` 配置及 `preview-approval` 预检，明确目标凭证组、分组/时区、AI 策略、来源输入与模板绑定；无默认身份回退。`app/approval.ReviewGate` 只读校验原审核 pin 下当前事实，多份当前版本不按排序选一个。真实三个样本返回两份 stale、一份 no_review，17 个状态文件未变；表单取值、上传及真实建单仍未启用，运行二进制未更新，见 [预检记录](docs/progress/2026-10-05-approval-preflight.md)。

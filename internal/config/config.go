@@ -20,6 +20,8 @@ type Config struct {
 	ShutdownTimeout            time.Duration
 	FeishuAppID                string
 	FeishuAppSecret            string
+	FeishuApprovalAppID        string
+	FeishuApprovalAppSecret    string
 	FeishuEventType            string
 	FeishuLogRawEvents         bool
 	ReceiptBaseToken           string
@@ -108,6 +110,8 @@ func Load() (Config, error) {
 		ShutdownTimeout:            shutdownTimeout,
 		FeishuAppID:                feishuAppID,
 		FeishuAppSecret:            feishuAppSecret,
+		FeishuApprovalAppID:        value("FEISHU_APPROVAL_APP_ID", ""),
+		FeishuApprovalAppSecret:    value("FEISHU_APPROVAL_APP_SECRET", ""),
 		FeishuEventType:            value("FEISHU_EVENT_TYPE", "drive.file.bitable_record_changed_v1"),
 		FeishuLogRawEvents:         logRawEvents,
 		ReceiptBaseToken:           value("RECEIPT_BASE_TOKEN", ""),

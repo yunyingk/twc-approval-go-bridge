@@ -133,6 +133,8 @@ go run ./cmd/server apply-seal-result /absolute/path/to/verified-callback.json
 
 Feishu gateway 已接共用用例，实时模板与绑定版本变化在发送前停止；需要发起人自选的节点必须配置当前 node ID、有效 open ID 及正确单/多选数量。应用范围为 `feishu-app:<app-id>`，这是显式身份边界，不代替企业或员工归属核验。创建与查询接口已分开，恢复可用无模板/字段配置的 `InstanceLookupGateway`，并查询保存的 UUID、模板和发起人；不能借恢复重新创建。隔离 HTTP 联测见[gateway 过程记录](progress/2026-10-05-approval-gateway.md)。
 
+后续已补 `approval` JSON 配置和 `preview-approval <记录ID[,记录ID...]>` 命令，前述“尚无服务命令”保留共用层阶段范围。预检读取已有状态及真实审核来源，不创建尝试，不调用审核方；原生目标配置完整时只读取模板元数据。它明确返回 `preview_kind=preflight`、`form_inputs_checked=false`、`creation_available=false`：完整原生字段取值、上传及计划预览尚未接入，也没有真实建单命令或自动建单。配置及企业三行只读验收见[预检记录](progress/2026-10-05-approval-preflight.md)，当前监督运行二进制仍为原版本，使用本阶段构建或 `go run` 验证。
+
 同一计划不会重复建单，原 UUID 可在来源/模板配置改变后独立对账。明确未建单的拒绝允许新计划取得成员；未知或已创建的计划继续预约，批准/拒绝/撤销/删除也不等于财务释放。只读查看不会创建新状态文件。当前没有远端条件更新、真实来源冻结、定时选择、审批附件上传、人工结果回写或 Seal 人工结果交付；此阶段未部署运行服务、未发起真实审批，验证见[共用审批过程记录](progress/2026-10-05-approval-workflow.md)。
 
 1. 业务冻结与撤回重提。已实现识别完成触发及可选的明细编辑重审，全部附件清空/来源删除可结束待送审并隔离迟到结果；不等于供应商单据撤销或财务锁定。停机期间未收到的业务修改事件仍需补偿机制。

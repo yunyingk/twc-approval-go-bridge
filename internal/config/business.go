@@ -17,6 +17,7 @@ type BusinessProfile struct {
 	Tables      BusinessTables      `json:"tables"`
 	Recognition RecognitionSettings `json:"recognition"`
 	Review      ReviewSettings      `json:"review"`
+	Approval    *ApprovalSettings   `json:"approval,omitempty"`
 }
 
 type BusinessTables struct {
@@ -188,6 +189,9 @@ func (p *BusinessProfile) validate() error {
 				return fmt.Errorf("review result fields must not overwrite reimbursement input fields")
 			}
 		}
+	}
+	if p.Approval != nil {
+		return p.Approval.validate(p)
 	}
 	return nil
 }

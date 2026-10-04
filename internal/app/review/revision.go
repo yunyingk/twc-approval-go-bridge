@@ -3,9 +3,23 @@ package review
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	core "github.com/yunyingk/twc-approval-go-bridge/internal/core/review"
 )
+
+// PreparePinned re-reads current facts with a saved implementation/rules pin.
+// It has no reviewer, writer or store and never submits or changes state.
+func PreparePinned(ctx context.Context, source Source, request core.Request) (core.Request, error) {
+	if source == nil || request.Provider == "" || request.Document.RecordID == "" {
+		return core.Request{}, fmt.Errorf("pinned preparation requires source and saved request identity")
+	}
+	if scoped, ok := source.(ScopedSource); ok && scoped.ReviewLogicalID(request.Document.RecordID) != request.LogicalID {
+		return core.Request{}, fmt.Errorf("pinned preparation source mismatch")
+	}
+	pinned := Service{source: source, options: Options{Provider: request.Provider, ProviderVersion: request.ProviderVersion, RulesVersion: request.RulesVersion, Versioned: true}}
+	return pinned.Prepare(ctx, request.Document.RecordID)
+}
 
 const (
 	RevisionNotChecked     = "not_checked"
@@ -25,8 +39,7 @@ func checkRevision(ctx context.Context, source Source, request core.Request) (st
 	}
 	// In-flight work keeps its original implementation and rules, even after
 	// configuration changes. Only changed business evidence invalidates its result.
-	pinned := Service{source: source, options: Options{Provider: request.Provider, ProviderVersion: request.ProviderVersion, RulesVersion: request.RulesVersion}}
-	current, err := pinned.Prepare(ctx, request.Document.RecordID)
+	current, err := PreparePinned(ctx, source, request)
 	switch {
 	case errors.Is(err, core.ErrSourceRemoved):
 		return RevisionSourceRemoved, nil

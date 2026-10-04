@@ -36,7 +36,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	if len(os.Args) > 1 {
 		if (os.Args[1] == "check-business-config" && len(os.Args) != 2) || (os.Args[1] != "check-business-config" && len(os.Args) != 3) {
-			logger.Error("usage: server check-business-config | {review-status|check-review|preview-review|submit-seal|submit-review|retry-writeback|apply-seal-result} <record-id-document-id-or-file>")
+			logger.Error("usage: server check-business-config | {review-status|check-review|preview-review|preview-approval|submit-seal|submit-review|retry-writeback|apply-seal-result} <record-id-document-id-or-file>")
 			os.Exit(2)
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -46,6 +46,8 @@ func main() {
 			err = runBusinessCheck(ctx, cfg, os.Stdout)
 		case "preview-review":
 			err = runReviewPreview(ctx, cfg, os.Args[2], os.Stdout)
+		case "preview-approval":
+			err = runApprovalPreview(ctx, cfg, os.Args[2], os.Stdout)
 		case "review-status":
 			err = runReviewInspection(ctx, cfg, os.Args[2], false, os.Stdout)
 		case "check-review":
