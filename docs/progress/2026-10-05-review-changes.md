@@ -17,6 +17,18 @@
 
 `go test ./...`、`go vet ./...`、`go test -tags no_anthropic ./...`、默认与 `no_anthropic` 构建通过；相关审核、事件、飞书来源和配置的 `-race` 检查通过。最终到期调度调整后也已完成上述完整复核，真实读取和运行部署结果另行记录。
 
+实现提交：`c496578 feat: persist configurable detail edits for versioned review`。提交正文包含兼容性、测试及未覆盖范围。
+
+## 真实只读验证与运行更新
+
+- 使用当前应用身份和正式业务配置读取已识别明细 `reczz28JNpKh1Mk4`，通过真实来源准备完整审核快照；审核器使用隔离的 fake，状态保存在独立的私有验证目录。
+- 对适配器注入重复的合成修改事件，重新准备后复用同一版本；fake 共调用 1 次用于建立验证基线，真实 OCR/Seal/模型调用为 0，线上记录写入为 0。该验证不等于已开启开关后的真实编辑事件/付费回调验收。
+- 对不存在的明细通知修改，后台按实际飞书 `1254043` 结束意图，最终无待处理任务。原正式状态目录 8 个业务 JSON 文件内容未变。
+- 构建并部署本机 `public-debug-20261005-detail-review`，仅重启项目自己的 LaunchAgent。启动日志确认 `after_recognition`、流水启用、明细修改开关关闭及 10 秒等待配置；新日志出现长连接 ready 和连接成功。
+- 本地与公网 `/healthz`、`/readyz`、`/version` 均返回 200、版本一致。部署后正式状态文件仍为 8 个且内容一致；台账仍 7 行，Anyreceipt 余额仍为 206，没有新增付费任务。
+
+证据保存于忽略的 `data/public-debug/review-change-validation.json`、`review-change-validation/state/`、`detail-review-runtime-baseline.json` 和 `detail-review-runtime-verification.json`；私有读取诊断程序保留在 `tmp/_review-change-preview/`。验证输出与状态文件为 0600，敏感配置没有进入 Git。
+
 ## 边界与下一阶段
 
 明细原生 `record_deleted` 类型由当前飞书 SDK 的事件模型确认；本次没有删除线上记录、清空线上附件或新增付费送审。直接编辑交易流水或台账不联动排队，停机丢失的修改事件也没有补扫。AI 已显示结果不立即清空；版本检查不是业务冻结锁。不冒充完成供应商撤单、发票占用、分摊或飞书人工审批。

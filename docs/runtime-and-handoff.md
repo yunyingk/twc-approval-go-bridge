@@ -37,6 +37,8 @@ Seal 真实页面与项目应用身份核验见 [Seal 测试租户实地核验](
 
 业务文件另支持 `review.resubmit_on_detail_change` 和 `change_debounce`，可合并明细有效输入的连续修改并重新准备审核；企业测试配置目前关闭。持久化意图先于事件确认，等待时间和事件去重可跨重启，AI 回写不会触发循环。全部附件删除或来源明细删除会结束待送审，迟到结果保留为旧结果。权限失败和台账未齐继续待处理。具体范围和未覆盖的流水原表/台账联动见[配置说明](business-configuration.md#可选的明细修改重审)及[修改重审过程记录](progress/2026-10-05-review-changes.md)。
 
+本机运行版本已更新为 `public-debug-20261005-detail-review`；公网和本地端点、长连接恢复及正式状态未变已核验。新增修改触发只进行了真实来源读取与隔离审核器验证，尚未开启企业开关做真实修改送审。
+
 ```bash
 # 默认 REVIEW_PROVIDER=seal；凭证及原有 RECEIPT_* 配置由环境注入。
 go run ./cmd/server submit-review <个人报销明细记录ID>
