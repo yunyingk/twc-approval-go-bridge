@@ -16,7 +16,7 @@ DNS 已解析到 `118.31.4.210`。nginx 当前采用域名白名单，因此新�
 
 - [健康检查](https://twc-approval.ying-qing.cn/healthz)：`200 {"status":"ok"}`。
 - [就绪检查](https://twc-approval.ying-qing.cn/readyz)：`200 {"status":"ready"}`。
-- [构建版本](https://twc-approval.ying-qing.cn/version)：当前运行 `public-debug-20261004-business-config`。
+- [构建版本](https://twc-approval.ying-qing.cn/version)：当前运行 `public-debug-20261005-transaction-review`。
 - `POST /seal/callback/<密钥>`：密钥在本地私有配置及 Seal `test` 通道保存，不写入本文。
 
 公网根路径、mock 与其他路径返回 404；错误回调密钥返回 401；正确密钥搭配无效内容返回 400。nginx 限制请求体为 1 MiB，禁止记录该域名的访问 URL 和错误 URL；应用已有回调路径遮蔽。不要把完整回调 URL 复制到日志或公开文档。
@@ -36,6 +36,8 @@ plist 位于 `~/Library/LaunchAgents/`。运行日志在 `data/public-debug/`，
 
 本机已在 `.env.public-debug` 选择 `BUSINESS_CONFIG_FILE=configs/business/enterprise-test.json`，三张业务表、字段、提供方和触发方式统一由[业务配置文件](business-configuration.md)决定；对应旧业务覆盖项已移出调试文件。当前有效设置与迁移前一致，状态目录继续使用。
 
+2026-10-05 在同一业务文件启用 `review.include_transactions=true`。新审核准备和回写前核验会读取关联流水，事实和资料质量问题纳入审核版本；第三方流水只读，识别基线、已有任务和状态目录保持不变。真实读取及快照预览见[过程记录](progress/2026-10-05-transaction-review.md)。
+
 本调试进程启用 Seal 结果接收及 `RECEIPT_PROVIDER=anyreceipt`，`RECEIPT_TRIGGER_MODE=both`；首次扫描使用 `baseline`，已有附件不会因此批量识别。`REVIEW_RESULT_FIELD_IDS` 已映射七个专用文本列，真实审核结果保存到本地状态并回写 AI 建议，不覆盖人工审批或结算字段。字段映射与验收见[阶段过程记录](progress/2026-10-04-seal-review.md)。当前二进制使用 `no_anthropic` 构建，调试外部系统主线。
 
 按用户选择，本机有效送审方式为 `after_recognition`：识别并交付完整台账后自动送审。现在修改 JSON 的 `review.trigger_mode` 为 `manual` 并重启即可恢复仅手动提交；旧 `REVIEW_TRIGGER_MODE` 不覆盖选中的文件。规则和提供方选择保持独立。持久化意图及验收见[自动送审过程记录](progress/2026-10-04-automatic-review.md)。
@@ -46,7 +48,7 @@ launchctl list com.yingqing.twc-approval-debug
 launchctl list com.yingqing.twc-approval-frpc
 
 # 修改 Go 代码后重新构建，再仅重启自己的服务
-go build -tags no_anthropic -ldflags '-X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version=public-debug-20261004-business-config' -o bin/twc-approval-public-debug ./cmd/server
+go build -tags no_anthropic -ldflags '-X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version=public-debug-20261005-transaction-review' -o bin/twc-approval-public-debug ./cmd/server
 launchctl kickstart -k gui/$(id -u)/com.yingqing.twc-approval-debug
 
 # 使用同一套私有配置与状态目录手动送审
@@ -54,6 +56,9 @@ python3 deploy/run-local-debug.py submit-review <报销明细记录ID>
 
 # 只读核验选中的业务文件、字段类型和关联目标
 python3 deploy/run-local-debug.py check-business-config
+
+# 使用实际准备入口预览快照；不创建审核任务、不调用付费提供方
+python3 deploy/run-local-debug.py preview-review <报销明细记录ID>
 ```
 
 服务可用依赖本机开机、联网和用户登录。电脑睡眠或离线时，该调试域名不能到达本机服务；这是本机调试入口，不是全天候生产部署。

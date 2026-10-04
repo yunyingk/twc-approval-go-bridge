@@ -27,6 +27,8 @@ HTTP_ADDR=:9090 LOG_LEVEL=debug SHUTDOWN_TIMEOUT=15s make run
 
 业务来源推荐用显式文件配置。设置 `BUSINESS_CONFIG_FILE=configs/business/enterprise-test.json` 后，流水、员工明细、发票台账各自的 Base/Table/字段，以及识别和审核提供方、触发方式由该文件整套决定；对应旧环境变量不再覆盖。凭证继续由环境注入。Base/Table/View 概念、更换文档步骤和只读核验命令见[业务来源与配置](docs/business-configuration.md)。当前配置采用识别完成自动送审；明细与台账仍须在同一个 Base。
 
+企业配置已启用 `review.include_transactions=true`：按明细原生关联只读获取交易流水，精确金额、币种、商户、时间及资料质量问题供 Seal 与自有审核共同使用并参与审核版本。`preview-review <明细记录ID>` 可预览实际快照，复用已有 OCR 台账而不送审或回写。真实读取、两份完整快照预览及启用验证见[交易流水开发记录](docs/progress/2026-10-05-transaction-review.md)；本次没有新增付费审核验收。
+
 ## 基础端点
 
 | 方法 | 路径 | 用途 |

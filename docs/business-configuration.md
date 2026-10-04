@@ -56,7 +56,7 @@ BUSINESS_CONFIG_FILE=configs/business/enterprise-test.json
 
 凭证、HTTP 地址、日志、状态目录、轮询间隔/首次扫描策略、模型端点和名称、Seal 通道 URL、本地规则路径继续由运行环境提供。程序不自动读取 `.env`；本机 [`deploy/run-local-debug.py`](../deploy/run-local-debug.py)负责注入。Seal 规则仍维护在 SealAI；`REVIEW_RULES_FILE` 只用于自有审核。
 
-当前配置保留用户选择：Anyreceipt 识别、Seal 审核、`after_recognition` 自动送审。以后改为人工提交，只改文件中的 `review.trigger_mode`；更换识别或审核提供方，各自改对应 `provider` 并提供凭证，模型路径还需支持 Anthropic 的构建。
+当前配置保留用户选择：Anyreceipt 识别、Seal 审核、`after_recognition` 自动送审，并于 2026-10-05 启用 `review.include_transactions=true`。以后改为人工提交，只改文件中的 `review.trigger_mode`；更换识别或审核提供方，各自改对应 `provider` 并提供凭证，模型路径还需支持 Anthropic 的构建。
 
 未知 JSON 属性、无效版本、重复物理表、重复字段映射、覆盖员工输入的 AI 结果列等会在启动前报错。基础结构校验并不替代线上权限、字段类型和关联目标核验。
 

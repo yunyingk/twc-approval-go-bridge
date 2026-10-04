@@ -80,6 +80,7 @@
   "review": {
     "provider": "seal",
     "trigger_mode": "after_recognition",
+    "include_transactions": true,
     "context_fields": {
       "expense_reason": "fld7umxKAi",
       "expense_category": "fld4jWLNH0"

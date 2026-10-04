@@ -26,3 +26,20 @@
 - 新增来源测试覆盖原生空关联、稳定字段改名、真实记录定位、读权限失败、关联目标错误、多关联、精确金额及格式异常。
 
 线上已核验的带流水明细与已有 OCR 测试台账暂不重合；优先分别验证真实关联读取及已有票据快照，避免为补测试而修改第三方流水或重复识别。真实只读验收和启用结果随后记录。
+
+第二阶段提交：`84c46cd feat: read configured Feishu payment links for audit snapshots`。`go test ./...`、`go vet ./...`、`go test -tags no_anthropic ./...` 和两种构建通过；补充的币种/时间原值保留测试也通过。
+
+## 第三阶段：真实读取、预览与启用
+
+- 读取真实明细 `reczz28HBeFn4GdB` 的关联流水，得到 1 条有效支付记录、0 个资料质量问题。金额与源数字字符串完全一致，币种匹配，生成 11 个 Seal 文本证据字段。没有调用 Seal 送审，也没有修改明细或流水。
+- 对已完成 OCR 的两份测试明细 `reczz28JNpKh1Mk4`、`reczz28JGJx5y6y8` 执行完整 `preview-review`，均正确读取 1 张有效台账票据；两行原本未关联流水，均显式输出 `missing_transaction_relation`，没有把它们与别人的支付记录拼接。
+- 在已选择的企业 JSON 中启用 `include_transactions=true`。新旧识别参数不变，启动 `public-debug-20261005-transaction-review`；启动日志确认开关及 `after_recognition`，WebSocket 已重新连接。本地与公网健康、就绪、版本均返回 200。
+- 使用本机正式运行包装器再次预览已有票据成功。全程 8 个持久化业务 JSON 文件内容保持一致，发票台账仍 7 行，Anyreceipt 余额仍为 206；没有产生额外识别或审核任务。
+
+只读证据分别保存在忽略的 `data/public-debug/transaction-review-live-evidence.json`、`transaction-review-preview-<record-id>.json`、`transaction-review-runtime-preview.json`、`transaction-review-validation-state.json` 和 `transaction-review-runtime-verification.json`。私有读取诊断源代码留于忽略的 `tmp/_transaction-preview/`，以免临时程序被 `go test ./...` 当作正式包扫描。
+
+## 边界与后续
+
+本次已验证真实流水读取、实际审核准备入口和供应商契约转换；没有新增「带流水的 Seal 付费送审与真实回调」样本，自有审核只做受控接口测试。现有 Seal 通道的规则发布状态不由桥接代码推断，也未修改规则。
+
+本次不把金额差异、跨币种、退款或多笔支付自行判为审批结论；没有发票占用、费用分摊或汇率推导。流水变更会使回写前的版本核验不一致，但暂不自动产生新审核；用户选择的自动触发仍是识别完成。没有新增业务冻结锁，多次读取和回写之间仍存在并发窗口。下一步优先处理修改、撤回重提与飞书人工审批闭环。
