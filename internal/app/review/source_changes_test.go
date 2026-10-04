@@ -22,6 +22,7 @@ func dependencyAttempt(scope, id, version, ledgerID, number string, candidates .
 
 func TestSourceDependenciesCoverOwnInvoicesOldAndNewCandidatesAndPayments(t *testing.T) {
 	a := dependencyAttempt("scope", "a", "v1", "own-a", "INV-A", dupcheck.Invoice{RecordID: "candidate"})
+	a.Request.Transactions = &core.TransactionEvidence{Source: "payments"}
 	b := dependencyAttempt("scope", "b", "v1", "own-b", "INV-B")
 	b.Request.Transactions = &core.TransactionEvidence{Source: "payments", LinkedRecordIDs: []string{"payment"}}
 	c := dependencyAttempt("scope", "c", "v1", "own-c", "INV-C")
@@ -52,6 +53,64 @@ func TestSourceDependenciesCoverOwnInvoicesOldAndNewCandidatesAndPayments(t *tes
 				}
 			}
 		})
+	}
+}
+
+func TestLegacyReviewWithoutPaymentSnapshotIsRepreparedUntilEvidenceExists(t *testing.T) {
+	legacy := dependencyAttempt("scope", "legacy", "v1", "own", "INV")
+	foreign := dependencyAttempt("another-tenant", "foreign", "v1", "other", "INV")
+	change := app.SourceChange{Scope: "scope", Source: "payments", Kind: app.TransactionSource, RecordID: "payment"}
+	ids := app.AffectedDetails(change, []core.Attempt{legacy, foreign})
+	if len(ids) != 1 || ids[0] != "legacy" {
+		t.Fatal("legacy review was assumed to have no payment relationship")
+	}
+	current := legacy
+	current.Request.Transactions = &core.TransactionEvidence{Source: "payments", LinkedRecordIDs: []string{"other-payment"}}
+	if ids := app.AffectedDetails(change, []core.Attempt{legacy, current, foreign}); len(ids) != 0 {
+		t.Fatal("old unknown history caused repeated broad invalidation after evidence was captured")
+	}
+	current.Request.Transactions.LinkedRecordIDs = []string{"payment"}
+	if ids := app.AffectedDetails(change, []core.Attempt{legacy, current}); len(ids) != 1 {
+		t.Fatal("captured relationship was not used")
+	}
+}
+
+func TestSourceChangesMigrateLegacyReviewThroughCurrentPreparation(t *testing.T) {
+	s := &source{amount: "10", logicalID: "scope:rec"}
+	r := &reviewer{}
+	svc, store := service(t, s, r, nil)
+	ctx := context.Background()
+	if _, err := svc.Submit(ctx, "rec"); err != nil {
+		t.Fatal(err)
+	}
+	s.transactions = &core.TransactionEvidence{Source: "payments", LinkedRecordIDs: []string{"payment"}, Transactions: []core.Transaction{{RecordID: "payment", OriginalAmount: "10"}}}
+	auto, _ := app.NewAutomatic(svc, store, "scope", slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	if err := auto.EnableChanges(time.Nanosecond); err != nil {
+		t.Fatal(err)
+	}
+	flow, err := app.NewSourceChanges("scope", map[app.SourceKind]string{app.TransactionSource: "payments"}, store, auto, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	change := app.SourceChange{Scope: "scope", Source: "payments", Kind: app.TransactionSource, RecordID: "payment", EventID: "migrate"}
+	if err := flow.EnqueueSourceChange(ctx, change); err != nil {
+		t.Fatal(err)
+	}
+	if err := flow.ProcessPending(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := auto.ProcessPending(ctx); err != nil || r.calls != 2 {
+		t.Fatalf("legacy payment evidence was not captured: %v", err)
+	}
+	change.RecordID, change.EventID = "unrelated-payment", "after-migration"
+	if err := flow.EnqueueSourceChange(ctx, change); err != nil {
+		t.Fatal(err)
+	}
+	if err := flow.ProcessPending(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := auto.ProcessPending(ctx); err != nil || r.calls != 2 {
+		t.Fatal("old empty snapshot repeatedly caused provider calls")
 	}
 }
 

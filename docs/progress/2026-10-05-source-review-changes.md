@@ -21,6 +21,18 @@
 
 `go test ./...`、`go vet ./...`、`go test -tags no_anthropic ./...`、默认与外部主线构建通过；审核、事件、配置及装配的 `-race` 检查通过。真实只读依赖/准备及运行更新另行记录。
 
+实现提交：`e3c87a7 feat: persist source changes and schedule affected review versions`。真实状态核验发现现有两份审核形成于流水启用之前，没有支付快照；追加兼容处理：首次支付通知重新准备尚无明确支付依赖的历史明细，不能将快照缺失当作无关联。一旦保存了支付证据，旧空快照不再造成扩大读取。补充测试覆盖迁移前、迁移后及来源隔离。
+
+## 真实只读验证与部署
+
+- 使用当前项目应用身份读取已识别明细，完整准备实际台账、附件及支付证据，审核器为隔离 fake。重复合成的台账修改事件经过收件队列、依赖定位和自动任务，再读取当前事实后复用原版本。
+- 对同票号的新候选通知也完成同一验证；只发送合成通知，没有新增线上发票。真实状态目录可读取 2 份当前范围的审核快照，本票台账 ID 定位到 1 条明细；两份尚无支付证据的旧快照均被迁移兼容逻辑正确识别为待重新准备范围。
+- 私有验证各建立一份 fake 基线，共用实际准备入口；每次 fake 调用计数为 1，真实 OCR/Seal/模型调用为 0、线上写入为 0，收件与明细待处理均清空。正式 8 个状态文件内容全程不变。
+- 运行先更新为 `public-debug-20261005-source-review`，兼容修复后为 `public-debug-20261005-source-review-legacy`。只重启项目自己的 LaunchAgent；最终两个修改开关均关闭，10 秒等待配置保留，原 `after_recognition` 不变。
+- 两次运行更新均核验本地与公网的健康、就绪、版本端点为 200，并从新增日志确认 WebSocket ready/连接成功。最终台账仍 7 行、Anyreceipt 余额仍 206、正式状态仍 8 文件且内容不变。
+
+私有证据为忽略的 `data/public-debug/source-review-validation.json`、`source-review-legacy-validation.json`、`source-review-validation/` 及 `source-review[-legacy]-runtime-{baseline,verification}.json`。实际读取诊断程序保留于 `tmp/_review-source-preview/`。输出与状态为 0600，密钥及原始业务载荷不进入 Git。上述事件为合成输入，不能据此宣称已开启企业修改触发或新增真实付费回调样本。
+
 ## 边界
 
 本阶段不宣称已经开启企业开关或完成真实编辑后的付费审核回调。开关关闭时不接收修改任务；停机丢失的事件仍未补扫。历史依赖和未知票号可能增加读取，但实际事实未变时不新增审核版本。

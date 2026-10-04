@@ -105,6 +105,15 @@ func (s *SourceChanges) EnqueueSourceChange(ctx context.Context, change SourceCh
 // candidates. An old snapshot can cause an extra read, never a guessed result.
 func AffectedDetails(change SourceChange, attempts []core.Attempt) []string {
 	matched := make(map[string]bool)
+	knownPayments := make(map[string]bool)
+	if change.Kind == TransactionSource {
+		for _, attempt := range attempts {
+			r := attempt.Request
+			if r.Document.RecordID != "" && r.LogicalID == change.Scope+":"+r.Document.RecordID && r.Transactions != nil {
+				knownPayments[r.Document.RecordID] = true
+			}
+		}
+	}
 	numbers := make(map[string]bool)
 	for _, number := range change.InvoiceNumbers {
 		if number != "" {
@@ -120,7 +129,13 @@ func AffectedDetails(change SourceChange, attempts []core.Attempt) []string {
 		hit := false
 		switch change.Kind {
 		case TransactionSource:
-			if r.Transactions == nil || r.Transactions.Source != change.Source {
+			if r.Transactions == nil {
+				// Before payment evidence was enabled, absence of a snapshot did
+				// not prove absence of a native link. Re-read legacy details once.
+				hit = !knownPayments[id]
+				break
+			}
+			if r.Transactions.Source != change.Source {
 				continue
 			}
 			for _, id := range r.Transactions.LinkedRecordIDs {

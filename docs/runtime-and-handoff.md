@@ -41,6 +41,8 @@ Seal 真实页面与项目应用身份核验见 [Seal 测试租户实地核验](
 
 业务文件另支持独立的 `review.resubmit_on_source_change`：流水事实及台账的修改、新增、删除先进入持久化收件队列，再依据历史审核依赖和当前自动任务向受影响明细排队；包括新增同票号候选。部分排队失败可跨重启恢复，旧来源不重定向，事件不作为新的业务事实。企业配置仍关闭两个修改开关；具体字段、费用及修正冲突边界见[来源修改配置](business-configuration.md#可选的来源修改联动)和[过程记录](progress/2026-10-05-source-review-changes.md)。
 
+来源阶段的当前本机版本为 `public-debug-20261005-source-review-legacy`。已核验真实读取、历史依赖、旧支付快照迁移范围及隔离审核器的合成事件联动，正式状态未变，公网和长连接已恢复；仍未开启企业修改开关做真实编辑付费送审。
+
 ```bash
 # 默认 REVIEW_PROVIDER=seal；凭证及原有 RECEIPT_* 配置由环境注入。
 go run ./cmd/server submit-review <个人报销明细记录ID>
