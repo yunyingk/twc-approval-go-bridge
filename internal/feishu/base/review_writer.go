@@ -39,7 +39,7 @@ func (w *ReviewWriter) WriteReviewResult(ctx context.Context, request core.Reque
 	if err != nil {
 		return err
 	}
-	names, err := w.client.fieldNames(ctx, token, w.base, w.table)
+	schema, err := w.client.fieldSchema(ctx, token, w.base, w.table)
 	if err != nil {
 		return err
 	}
@@ -50,11 +50,14 @@ func (w *ReviewWriter) WriteReviewResult(ctx context.Context, request core.Reque
 		if !ok {
 			return fmt.Errorf("unsupported review field %s", semantic)
 		}
-		name := names[id]
-		if name == "" {
+		field := schema[id]
+		if field.Name == "" {
 			return fmt.Errorf("configured review result field %s is missing", semantic)
 		}
-		fields[name] = value
+		if field.Type != 1 {
+			return fmt.Errorf("configured review result field %s must be a text column", semantic)
+		}
+		fields[field.Name] = value
 	}
 	endpoint := fmt.Sprintf("%s/bitable/v1/apps/%s/tables/%s/records/%s", feishuAPI, url.PathEscape(w.base), url.PathEscape(w.table), url.PathEscape(request.Document.RecordID))
 	return w.client.request(ctx, http.MethodPut, endpoint, token, map[string]any{"fields": fields}, &struct{}{})

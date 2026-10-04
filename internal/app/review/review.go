@@ -20,6 +20,12 @@ type Source interface {
 	ReadLedgerEntry(context.Context, string) (core.LedgerEntry, error)
 	FindInvoiceCandidates(context.Context, string) ([]dupcheck.Invoice, error)
 }
+
+// ScopedSource lets a configured adapter reject another source's saved outcome
+// before reading attachments or records from its current tenant.
+type ScopedSource interface {
+	ReviewLogicalID(string) string
+}
 type Reviewer interface {
 	Review(context.Context, core.Request) (core.Submission, error)
 }
@@ -190,6 +196,9 @@ func (s *Service) Complete(ctx context.Context, documentID, provider string, out
 func (s *Service) deliver(ctx context.Context, attempt core.Attempt) error {
 	if attempt.Delivered || attempt.Submission == nil || attempt.Submission.Outcome == nil || s.options.Writer == nil {
 		return nil
+	}
+	if source, ok := s.source.(ScopedSource); ok && source.ReviewLogicalID(attempt.Request.Document.RecordID) != attempt.Request.LogicalID {
+		return ErrStale
 	}
 	// In-flight work keeps its original implementation and rules, even after
 	// configuration changes. Only changed business evidence invalidates its result.

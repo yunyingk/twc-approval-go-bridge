@@ -34,6 +34,11 @@ func NewReviewSource(appID, appSecret, base, detailTable, attachmentFieldID, det
 		attachmentFieldID: attachmentFieldID, detailIDFieldID: detailIDFieldID, ledgerTable: ledgerTable, ledgerFields: ledgerFields}, nil
 }
 
+// ReviewLogicalID identifies the configured source without making an API call.
+func (s *ReviewSource) ReviewLogicalID(recordID string) string {
+	return "feishu:" + s.base + ":" + s.detailTable + ":" + recordID
+}
+
 func (s *ReviewSource) ReadDetail(ctx context.Context, recordID string) (review.Detail, error) {
 	attachments, tokens, err := s.client.ReadAttachments(ctx, s.base, s.detailTable, recordID, s.attachmentFieldID, nil)
 	if err != nil {
@@ -61,7 +66,7 @@ func (s *ReviewSource) ReadDetail(ctx context.Context, recordID string) (review.
 	if err != nil {
 		return review.Detail{}, err
 	}
-	return review.Detail{Context: contextValues, DocumentID: "feishu:" + s.base + ":" + s.detailTable + ":" + recordID,
+	return review.Detail{Context: contextValues, DocumentID: s.ReviewLogicalID(recordID),
 		DocumentSN: documentSN, RecordID: recordID, StartTime: createdAt, Files: files}, nil
 }
 

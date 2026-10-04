@@ -15,12 +15,20 @@ import (
 )
 
 type source struct {
-	amount  string
-	missing bool
+	amount, logicalID string
+	missing           bool
+	detailReads       int
 }
 
 func (s *source) ReadDetail(context.Context, string) (core.Detail, error) {
-	return core.Detail{DocumentID: "logical", DocumentSN: "SN", RecordID: "rec", StartTime: time.Now(), Files: []core.File{{Token: "file", Attachment: invoice.Attachment{Data: []byte("image")}}}}, nil
+	s.detailReads++
+	return core.Detail{DocumentID: s.ReviewLogicalID("rec"), DocumentSN: "SN", RecordID: "rec", StartTime: time.Now(), Files: []core.File{{Token: "file", Attachment: invoice.Attachment{Data: []byte("image")}}}}, nil
+}
+func (s *source) ReviewLogicalID(string) string {
+	if s.logicalID != "" {
+		return s.logicalID
+	}
+	return "logical"
 }
 func (s *source) ReadLedgerEntry(context.Context, string) (core.LedgerEntry, error) {
 	if s.missing {
@@ -140,6 +148,28 @@ func TestStaleCompletionIsStoredButNotWritten(t *testing.T) {
 	attempt, err := store.Update(ctx, result.DocumentID, func(*core.Attempt) error { return nil })
 	if err != nil || attempt.State != "completed" || attempt.Delivered || w.calls != 0 {
 		t.Fatal("stale outcome was lost or applied")
+	}
+}
+func TestPreviousTenantOutcomeIsArchivedBeforeReadingCurrentSource(t *testing.T) {
+	s := &source{amount: "10", logicalID: "old-tenant:rec"}
+	w := &writer{}
+	svc, store := service(t, s, &reviewer{}, w)
+	ctx := context.Background()
+	result, err := svc.Submit(ctx, "rec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reads := s.detailReads
+	s.logicalID = "new-tenant:rec"
+	if err := svc.Complete(ctx, result.DocumentID, "seal", core.Outcome{Decision: "approve"}); !errors.Is(err, app.ErrStale) {
+		t.Fatalf("old tenant result: %v", err)
+	}
+	if err := svc.RetryWritebacks(ctx); err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := store.Update(ctx, result.DocumentID, func(*core.Attempt) error { return nil })
+	if err != nil || attempt.State != "completed" || attempt.Delivered || w.calls != 0 || s.detailReads != reads {
+		t.Fatal("another tenant's result read or changed the current source, or was lost")
 	}
 }
 func TestWritebackRecoveryDoesNotRepeatModelAndRejectsConflict(t *testing.T) {
