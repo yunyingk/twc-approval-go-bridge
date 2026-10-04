@@ -18,6 +18,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("RECEIPT_TRIGGER_MODE", "")
 	t.Setenv("RECEIPT_POLL_STARTUP", "")
 	t.Setenv("RECEIPT_POLL_INTERVAL", "")
+	t.Setenv("REVIEW_TRIGGER_MODE", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -40,6 +41,45 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.ReceiptTriggerMode != "both" || cfg.ReceiptPollStartup != "baseline" || cfg.ReceiptPollInterval != 5*time.Minute {
 		t.Errorf("unexpected receipt trigger defaults: mode=%q startup=%q interval=%s", cfg.ReceiptTriggerMode, cfg.ReceiptPollStartup, cfg.ReceiptPollInterval)
+	}
+	if cfg.ReviewTriggerMode != "manual" {
+		t.Errorf("ReviewTriggerMode = %q, want manual", cfg.ReviewTriggerMode)
+	}
+}
+
+func TestAutomaticReviewRequiresRecognitionDeliveryAndResults(t *testing.T) {
+	t.Setenv("FEISHU_APP_ID", "cli_test")
+	t.Setenv("FEISHU_APP_SECRET", "secret")
+	t.Setenv("RECEIPT_BASE_TOKEN", "base")
+	t.Setenv("RECEIPT_TABLE_ID", "details")
+	t.Setenv("RECEIPT_ATTACHMENT_FIELD_ID", "attachment")
+	t.Setenv("ANYRECEIPT_API_KEY", "test")
+	t.Setenv("RECEIPT_LEDGER_FIELD_IDS", `{"source_key":"source","raw_json":"raw"}`)
+	t.Setenv("REVIEW_PROVIDER", "seal")
+	t.Setenv("REVIEW_TRIGGER_MODE", "after_recognition")
+	t.Setenv("RECEIPT_PROVIDER", "")
+	t.Setenv("RECEIPT_LEDGER_TABLE_ID", "")
+	t.Setenv("REVIEW_RESULT_FIELD_IDS", "")
+	t.Setenv("SEAL_CALLBACK_TOKEN", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("automatic review accepted disabled receipt recognition")
+	}
+	t.Setenv("RECEIPT_PROVIDER", "anyreceipt")
+	t.Setenv("RECEIPT_LEDGER_TABLE_ID", "ledger")
+	if _, err := Load(); err == nil {
+		t.Fatal("automatic review accepted missing result columns")
+	}
+	t.Setenv("REVIEW_RESULT_FIELD_IDS", `{"decision":"decision","document_id":"document","revision":"revision"}`)
+	if _, err := Load(); err == nil {
+		t.Fatal("automatic Seal review accepted a missing result callback")
+	}
+	t.Setenv("SEAL_CALLBACK_TOKEN", "abcdefghijklmnopqrstuvwxyz012345")
+	if _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("REVIEW_TRIGGER_MODE", "unknown")
+	if _, err := Load(); err == nil {
+		t.Fatal("unknown review trigger accepted")
 	}
 }
 

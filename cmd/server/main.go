@@ -61,6 +61,7 @@ func main() {
 	server.Register("POST /seal/callback/mock", seal.MockCallback(logger))
 
 	var reviewService *appreview.Service
+	var reviewServiceProvider string
 	if cfg.SealCallbackToken != "" {
 		reviewService, err = newReviewService(cfg, "seal", true)
 		if err != nil {
@@ -68,11 +69,36 @@ func main() {
 			os.Exit(1)
 		}
 		server.Register("POST /seal/callback/{token}", seal.CallbackHandler(cfg.SealCallbackToken, reviewService))
+		reviewServiceProvider = "seal"
 	}
 	if reviewService == nil && len(cfg.ReviewResultFieldIDs) > 0 {
 		reviewService, err = newReviewService(cfg, cfg.ReviewProvider, true)
 		if err != nil {
 			logger.Error("configure review writeback", "error", err)
+			os.Exit(1)
+		}
+		reviewServiceProvider = cfg.ReviewProvider
+	}
+	var automaticReview *appreview.Automatic
+	if cfg.ReviewTriggerMode == "after_recognition" {
+		// Automatic submissions follow REVIEW_PROVIDER independently of a Seal
+		// callback receiver that may still finish older in-flight Seal requests.
+		submitter := reviewService
+		if submitter == nil || cfg.ReviewProvider != reviewServiceProvider {
+			submitter, err = newReviewService(cfg, cfg.ReviewProvider, true)
+			if err != nil {
+				logger.Error("configure automatic review provider", "error", err)
+				os.Exit(1)
+			}
+		}
+		triggers, storeErr := state.NewFiles(cfg.StateDir)
+		if storeErr != nil {
+			logger.Error("configure automatic review state", "error", storeErr)
+			os.Exit(1)
+		}
+		automaticReview, err = appreview.NewAutomatic(submitter, triggers, "feishu:"+cfg.ReceiptBaseToken+":"+cfg.ReceiptTableID, logger)
+		if err != nil {
+			logger.Error("configure automatic review", "error", err)
 			os.Exit(1)
 		}
 	}
@@ -106,7 +132,15 @@ func main() {
 					logger.Error("configure invoice ledger", "error", ledgerErr)
 					os.Exit(1)
 				}
-				resultHandler = ledgerHandler.Handle
+				resultHandler = func(ctx context.Context, result recognition.Result) error {
+					if err := ledgerHandler.Handle(ctx, result); err != nil {
+						return err
+					}
+					if automaticReview != nil {
+						return automaticReview.NotifyRecognition(ctx, result.RecordID)
+					}
+					return nil
+				}
 			}
 			receiptFlow, err = recognition.New(recognition.Config{BaseToken: cfg.ReceiptBaseToken, TableID: cfg.ReceiptTableID, FieldID: cfg.ReceiptFieldID}, attachmentClient, recognizer, resultHandler, logger)
 			if err != nil {
@@ -160,6 +194,9 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if automaticReview != nil {
+		go automaticReview.Run(ctx)
+	}
 	if reviewService != nil {
 		go func() {
 			ticker := time.NewTicker(30 * time.Second)

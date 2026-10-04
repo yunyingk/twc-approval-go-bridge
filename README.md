@@ -2,7 +2,7 @@
 
 影视飓风的飞书、Seal 与海外票据识别桥接服务。基础服务、飞书事件长连接、票据识别回写和独立的 SealAI 审核提交路径已有可运行代码。
 
-配置加载、结构化日志、HTTP 生命周期、健康检查、持久化识别任务、版本化审核提交和 AI 结果接收/回写已经具备。企业副本已通过真实 Anyreceipt 识别、显式 Seal 送审、公网回调及七个专用 AI 字段回写验收，见[开发与验收记录](docs/progress/2026-10-04-seal-review.md)。自动提交时机、飞书审批实例、跨单据历史占用与高级权限能力仍待完善。
+配置加载、结构化日志、HTTP 生命周期、健康检查、持久化识别任务、版本化审核提交和 AI 结果接收/回写已经具备。企业副本已通过真实 Anyreceipt 识别、显式 Seal 送审、公网回调及七个专用 AI 字段回写验收，见[开发与验收记录](docs/progress/2026-10-04-seal-review.md)。送审时机已配置化；业务冻结、飞书审批实例、跨单据历史占用与高级权限能力仍待完善。
 
 Anyreceipt、SealAI 与飞书审批的接口原文保存在仓库顶层的 [`external-api/`](external-api/README.md)，由 Git 管理；该目录只保存官方原始资料，不承载运行配置。
 
@@ -76,7 +76,7 @@ go run ./cmd/server
 
 ## SealAI 审核提交
 
-当前用显式命令触发一条报销明细的审核，保证同一行所有附件都识别并写入台账后才聚合成一份 SealAI 单据：
+`REVIEW_TRIGGER_MODE=after_recognition` 可在识别结果写台账后自动送审；`manual` 保留显式命令。两种路径都保证同一行所有附件识别并写入台账后，才聚合成一份审核单据。自动意图与版本状态持久化，重复触发复用已有版本；配置和恢复见[自动送审记录](docs/progress/2026-10-04-automatic-review.md)。显式 Seal 命令仍可使用：
 
 ```bash
 # 运行环境还需注入 FEISHU_APP_ID/SECRET、RECEIPT_* 表字段配置和 Seal Bearer 密钥

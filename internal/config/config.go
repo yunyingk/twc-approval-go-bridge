@@ -38,6 +38,7 @@ type Config struct {
 	StateDir                   string
 	SealCallbackToken          string
 	ReviewProvider             string
+	ReviewTriggerMode          string
 	ReviewModelAPIKey          string
 	ReviewModelBaseURL         string
 	ReviewModelName            string
@@ -121,6 +122,7 @@ func Load() (Config, error) {
 		SealCallbackToken:          value("SEAL_CALLBACK_TOKEN", ""),
 		StateDir:                   value("STATE_DIR", "data"),
 		ReviewProvider:             strings.ToLower(value("REVIEW_PROVIDER", "seal")),
+		ReviewTriggerMode:          strings.ToLower(value("REVIEW_TRIGGER_MODE", "manual")),
 		ReviewModelAPIKey:          value("REVIEW_MODEL_API_KEY", ""),
 		ReviewModelBaseURL:         value("REVIEW_MODEL_BASE_URL", ""),
 		ReviewModelName:            value("REVIEW_MODEL_NAME", ""),
@@ -160,6 +162,20 @@ func Load() (Config, error) {
 	}
 	if cfg.ReviewProvider != "seal" && cfg.ReviewProvider != "model" {
 		return Config{}, fmt.Errorf("REVIEW_PROVIDER must be seal or model")
+	}
+	if cfg.ReviewTriggerMode != "manual" && cfg.ReviewTriggerMode != "after_recognition" {
+		return Config{}, fmt.Errorf("REVIEW_TRIGGER_MODE must be manual or after_recognition")
+	}
+	if cfg.ReviewTriggerMode == "after_recognition" {
+		if cfg.ReceiptProvider == "" || cfg.ReceiptLedgerTableID == "" {
+			return Config{}, fmt.Errorf("automatic review requires receipt recognition and invoice-ledger delivery")
+		}
+		if resultFields["decision"] == "" || resultFields["document_id"] == "" || resultFields["revision"] == "" {
+			return Config{}, fmt.Errorf("automatic review requires dedicated decision, document_id and revision result fields")
+		}
+		if cfg.ReviewProvider == "seal" && cfg.SealCallbackToken == "" {
+			return Config{}, fmt.Errorf("automatic Seal review requires the configured result callback")
+		}
 	}
 	if cfg.SealCallbackToken != "" && !regexp.MustCompile(`^[A-Za-z0-9_-]{32,}$`).MatchString(cfg.SealCallbackToken) {
 		return Config{}, fmt.Errorf("SEAL_CALLBACK_TOKEN must have at least 32 URL-safe characters")

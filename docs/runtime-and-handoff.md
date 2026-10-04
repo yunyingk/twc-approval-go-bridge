@@ -31,6 +31,8 @@ Seal 真实页面与项目应用身份核验见 [Seal 测试租户实地核验](
 
 ### 版本化审核
 
+`REVIEW_TRIGGER_MODE=manual|after_recognition` 控制送审时机，独立于 `REVIEW_PROVIDER=seal|model`。默认配置为 `manual`；本机采用用户选择的 `after_recognition`，每次成功写入台账后保存送审意图，后台等待同一明细全部附件齐备，再执行共用的版本化提交。配置切换需重启；显式命令仍可用。实现与恢复边界见[自动送审过程记录](progress/2026-10-04-automatic-review.md)。
+
 ```bash
 # 默认 REVIEW_PROVIDER=seal；凭证及原有 RECEIPT_* 配置由环境注入。
 go run ./cmd/server submit-review <个人报销明细记录ID>
@@ -96,7 +98,7 @@ go run ./cmd/server apply-seal-result /absolute/path/to/verified-callback.json
 
 ## 仍需明确的业务工作
 
-1. 业务提交/冻结信号；自动送审时机、撤回重提和附件删除后的生命周期。
+1. 业务冻结、撤回重提和附件删除后的生命周期。当前已按用户选择实现可配置的识别完成自动送审；上传时间错开的新附件可形成新版本并再次调用审核方。
 2. 交易流水的关联与事实映射。当前上下文映射只读取报销明细；没有实现跨表交易、授权、汇率或历史结算事实查询。
 3. Seal 发票修正协议。官方备份明确：同一 `sourceInvoiceId` 改核心事实会 conflict，不同来源 ID 提交相同票号也会 conflict。因此保留稳定来源 ID，不能靠更换 ID 绕过冲突；新单据版本并不提供 Seal 发票事实原地更新能力。
 4. 飞书分组审批实例、跨租户人员映射、人工结果及 Seal `manual-result` 同步；当前仍只有模板工具和实例接口草稿。
