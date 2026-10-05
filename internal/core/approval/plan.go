@@ -47,11 +47,12 @@ type ReviewRef struct {
 	Decision        string `json:"decision"`
 }
 type Row struct {
-	SourceScope string            `json:"source_scope"`
-	RecordID    string            `json:"record_id"`
-	GroupValues map[string]string `json:"group_values"`
-	Review      ReviewRef         `json:"review"`
-	Fields      map[string]Value  `json:"fields"`
+	SourceScope   string            `json:"source_scope"`
+	SourceVersion string            `json:"source_version,omitempty"` // Pins typed source bindings; absent on older plans.
+	RecordID      string            `json:"record_id"`
+	GroupValues   map[string]string `json:"group_values"`
+	Review        ReviewRef         `json:"review"`
+	Fields        map[string]Value  `json:"fields"`
 }
 type Options struct {
 	SourceScope, TargetScope, Template, ConfigurationVersion, DepartmentID string
@@ -160,6 +161,12 @@ func BuildPlans(options Options, rows []Row) ([]Plan, error) {
 			return nil, fmt.Errorf("approval source rows are duplicated or belong to another scope")
 		}
 		seen[row.RecordID] = true
+		if row.SourceVersion != "" {
+			version, err := hex.DecodeString(row.SourceVersion)
+			if err != nil || len(version) != sha256.Size {
+				return nil, fmt.Errorf("approval row source binding version is invalid")
+			}
+		}
 		ref := row.Review
 		revision, err := hex.DecodeString(ref.Revision)
 		if err != nil || len(revision) != sha256.Size || ref.State != "completed" || ref.CurrentRevision != ref.Revision ||

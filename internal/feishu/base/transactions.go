@@ -104,7 +104,14 @@ func (s *ReviewSource) ReadTransactions(ctx context.Context, recordID string) (*
 }
 
 func (c *LedgerClient) recordFields(ctx context.Context, token, base, table, recordID string) (map[string]json.RawMessage, error) {
+	return c.recordFieldsQuery(ctx, token, base, table, recordID, "")
+}
+
+func (c *LedgerClient) recordFieldsQuery(ctx context.Context, token, base, table, recordID, query string) (map[string]json.RawMessage, error) {
 	endpoint := fmt.Sprintf("%s/bitable/v1/apps/%s/tables/%s/records/%s", feishuAPI, url.PathEscape(base), url.PathEscape(table), url.PathEscape(recordID))
+	if query != "" {
+		endpoint += "?" + query
+	}
 	var data struct {
 		Record struct {
 			ID     string                     `json:"record_id"`

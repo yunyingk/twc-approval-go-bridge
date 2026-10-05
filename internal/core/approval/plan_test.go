@@ -39,7 +39,7 @@ func TestPlanStableAcrossReadOrderAndTracksEveryBusinessInput(t *testing.T) {
 	if original.Rows[0].Fields["amount"].Decimal != "9007199254740993.12" || len(original.ID) != 36 {
 		t.Fatal("amount precision or stable UUID format lost")
 	}
-	for _, input := range []string{"business amount", "group", "template", "submitter", "configuration", "review revision"} {
+	for _, input := range []string{"business amount", "group", "template", "submitter", "configuration", "review revision", "source binding"} {
 		t.Run(input, func(t *testing.T) {
 			opts, changed := fixture()
 			switch input {
@@ -55,6 +55,8 @@ func TestPlanStableAcrossReadOrderAndTracksEveryBusinessInput(t *testing.T) {
 				opts.Submitter.ID = "another-submitter"
 			case "configuration":
 				opts.ConfigurationVersion = "another-version"
+			case "source binding":
+				changed[0].SourceVersion = strings.Repeat("c", 64)
 			case "review revision":
 				ref := &changed[0].Review
 				ref.Revision, ref.CurrentRevision = strings.Repeat("b", 64), strings.Repeat("b", 64)
@@ -73,7 +75,7 @@ func TestPlanStableAcrossReadOrderAndTracksEveryBusinessInput(t *testing.T) {
 }
 
 func TestPlanRejectsStaleReviewAndForeignIdentityBeforeGrouping(t *testing.T) {
-	for _, scenario := range []string{"stale", "pending", "foreign record review", "foreign source", "foreign person", "foreign file", "missing currency", "ambiguous decimal", "missing group", "duplicate row", "excluded decision"} {
+	for _, scenario := range []string{"stale", "pending", "foreign record review", "foreign source", "foreign person", "foreign file", "missing currency", "ambiguous decimal", "missing group", "duplicate row", "excluded decision", "invalid source version"} {
 		t.Run(scenario, func(t *testing.T) {
 			opts, rows := fixture()
 			switch scenario {
@@ -85,6 +87,8 @@ func TestPlanRejectsStaleReviewAndForeignIdentityBeforeGrouping(t *testing.T) {
 				rows[0].Review.DocumentID = rows[1].Review.DocumentID
 			case "foreign source":
 				rows[0].SourceScope = "another-source"
+			case "invalid source version":
+				rows[0].SourceVersion = "unverified-binding"
 			case "foreign person", "foreign file":
 				kind := "people"
 				if scenario == "foreign file" {

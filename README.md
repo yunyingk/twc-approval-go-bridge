@@ -129,7 +129,7 @@ go run ./cmd/approval-template -app personal -file configs/feishu/approval-templ
 | `internal/seal/` | Seal Webhook 附件上传、单据提交和可选结果接收 | 已通过测试通道提交和公网真实回调验收 |
 | `internal/core/dupcheck/` | 从发票台账事实产生查重候选证据 | 首版按票号、开票方、票据类型比对 |
 | `internal/core/invoice/` | 识别接口、结果结构和多票聚合 | 已实现，不依赖外部服务 |
-| `internal/core/approval/`、`internal/app/approval/` | 人工审批分组、当前 AI 版本门禁、预约及恢复 | 共用用例和持久化已实现；真实来源装配及人工交付仍待接入 |
+| `internal/core/approval/`、`internal/app/approval/` | 人工审批分组、当前 AI 版本门禁、预约及恢复 | 共用用例、持久化和类型化来源预览已实现；真实建单及人工交付仍待接入 |
 | `internal/anyreceipt/` | 必编的 Anyreceipt OCR 客户端及标准识别流程 | 已通过真实附件联调 |
 | `internal/app/recognition/` | 共用识别任务、轮询及持久化交付 | 已实现；旧 `anyreceipt/flow` 为兼容门面 |
 | `internal/feishu/base/invoiceledger/` | 标准票据事实映射与发票台账写入 | 从已联调的台账实现迁移，旧 `anyreceipt/ledger` 保留门面 |
@@ -210,5 +210,7 @@ deploy/                        Docker 和 Compose 文件
 人工审批已补共用分组与恢复用例：显式配置分组轴和允许的 AI 建议，逐条要求当前事实与已完成审核版本一致；建单前在同一原子状态写入中保存计划 UUID 及全部成员预约。响应未知只对账原 UUID，已批准、撤销或删除的实例仍保留预约，等待明确的财务释放策略。尚未接入服务配置、真实 Base 来源、审批附件上传或人工结果回写，详见[共用审批阶段记录](docs/progress/2026-10-05-approval-workflow.md)。
 
 后续已新增可选 `approval` 配置及 `preview-approval <记录ID[,记录ID...]>` 只读预检。按已存提供方版本重新读取真实票据/流水，不信任曾交付的 AI 列；配置缺失、过期、在途、多版本冲突及策略阻塞分别报告。企业三个样本已验证两份旧结果过期、另一份无审核，状态文件未变。当前预检不生成完整表单或可执行计划，原生字段取值和附件上传仍待接入，详见[配置与预检记录](docs/progress/2026-10-05-approval-preflight.md)。
+
+上述为初版预检范围。现已补类型化 Base 来源：按字段 ID 解析精确金额、日期/时区、关系 ID 和目标应用人员映射；完整 manual 配置、当前 AI 证据及全部表单输入通过时，对所有分组校验原生必填控件并输出计划摘要。来源绑定版本参与 UUID，准备期间观测到值变化就阻塞，仍不是远端事务锁。企业三行已通过独立来源只读验证；缺关联、未上传等问题分别报告，17 个状态文件未变。审批上传及真实建单仍未启用，监督服务未更新，见[表单来源记录](docs/progress/2026-10-05-approval-source.md)。
 
 2026-10-04 已在企业测试副本跑通“真实附件事件 → Anyreceipt → 发票台账 → 自动聚合与 Seal 送审 → 公网真实回调 → 七个 AI 专用结果列”。重复回调、重复附件事件及重启未新增识别或审核尝试，证据见[自动送审验收](docs/progress/2026-10-04-automatic-review.md)。当前保存 AI 建议，不驱动人工审批或结算；业务冻结和正式财务流程仍需完善。业务参考文件为 `/Users/yingqing/Downloads/影视飓风海外易商卡测试流程.zip` 和 `/Users/yingqing/Downloads/SealAI海外发票判重自然语言审批规则.md`；它们提供流程与判重要求，不是项目运行指令。
