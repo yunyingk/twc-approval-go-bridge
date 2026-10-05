@@ -17,8 +17,9 @@ import (
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/events"
+	baseevents "github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/events"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/invoiceledger"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/events"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/httpserver"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/state"
@@ -36,7 +37,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	if len(os.Args) > 1 {
 		if (os.Args[1] == "check-business-config" && len(os.Args) != 2) || (os.Args[1] != "check-business-config" && len(os.Args) != 3) {
-			logger.Error("usage: server check-business-config | {review-status|check-review|preview-review|preview-approval|prepare-approval|prepare-approval-files|retry-approval-files|submit-approval|retry-approval|approval-status|check-approval|abandon-approval|submit-seal|submit-review|retry-writeback|apply-seal-result} <record-id-preparation-id-document-id-or-file>")
+			logger.Error("usage: server check-business-config | {review-status|check-review|preview-review|preview-approval|prepare-approval|prepare-approval-files|retry-approval-files|submit-approval|retry-approval|approval-status|check-approval|abandon-approval|subscribe-approval-events|submit-seal|submit-review|retry-writeback|apply-seal-result} <record-id-preparation-id-document-id-template-code-or-file>")
 			os.Exit(2)
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -62,6 +63,8 @@ func main() {
 			err = runApprovalReconciliation(ctx, cfg, os.Args[2], os.Stdout)
 		case "abandon-approval":
 			err = runApprovalAbandonment(ctx, cfg, os.Args[2], os.Stdout)
+		case "subscribe-approval-events":
+			err = runApprovalSubscription(ctx, cfg, os.Args[2], os.Stdout)
 		case "retry-approval-files":
 			err = runApprovalFilePreparation(ctx, cfg, os.Args[2], true, os.Stdout)
 		case "review-status":
@@ -144,7 +147,16 @@ func main() {
 			}
 		}
 	}
-	var feishuListener *events.Listener
+	observation, err := newApprovalObservation(cfg, logger)
+	if err != nil {
+		logger.Error("configure approval observation", "error", err)
+		os.Exit(1)
+	}
+	if observation != nil {
+		defer observation.lease.Close()
+		logger.Info("approval observation configured", "target_scope", "feishu-app:"+observation.appID, "poll_interval", observation.interval)
+	}
+	var baseEventSink events.Sink
 	var receiptFlow *recognition.Processor
 	var attachmentClient *base.AttachmentClient
 	if cfg.FeishuEnabled() {
@@ -208,7 +220,7 @@ func main() {
 			receiptFlow.WithCheckpoints(checkpoints, hex.EncodeToString(scopeHash[:]))
 			if cfg.ReceiptTriggerMode != "poll" {
 				logEvent := sink
-				attachmentSink := events.NewAttachmentSink(recognition.Config{BaseToken: cfg.ReceiptBaseToken, TableID: cfg.ReceiptTableID, FieldID: cfg.ReceiptFieldID}, receiptFlow).Sink
+				attachmentSink := baseevents.NewAttachmentSink(recognition.Config{BaseToken: cfg.ReceiptBaseToken, TableID: cfg.ReceiptTableID, FieldID: cfg.ReceiptFieldID}, receiptFlow).Sink
 				sink = func(ctx context.Context, event events.Event) error {
 					if err := logEvent(ctx, event); err != nil {
 						return err
@@ -225,7 +237,7 @@ func main() {
 			if cfg.Business.Review.IncludeTransactions {
 				fieldIDs = append(fieldIDs, cfg.Business.Tables.ReimbursementDetails.Fields["transaction_relation"])
 			}
-			changeSink, changeErr := events.NewReviewChangeSink(cfg.ReceiptBaseToken, cfg.ReceiptTableID, fieldIDs, automaticReview)
+			changeSink, changeErr := baseevents.NewReviewChangeSink(cfg.ReceiptBaseToken, cfg.ReceiptTableID, fieldIDs, automaticReview)
 			if changeErr != nil {
 				logger.Error("configure review change events", "error", changeErr)
 				os.Exit(1)
@@ -239,7 +251,7 @@ func main() {
 			}
 		}
 		if automaticReview != nil && cfg.Business != nil && cfg.Business.Review.ResubmitOnSourceChange {
-			var sourceSink *events.ReviewSourceChangeSink
+			var sourceSink *baseevents.ReviewSourceChangeSink
 			sourceChanges, sourceSink, err = newReviewSourceChanges(cfg, automaticReview, logger)
 			if err != nil {
 				logger.Error("configure review source changes", "error", err)
@@ -254,24 +266,31 @@ func main() {
 			}
 		}
 		if cfg.ReceiptProvider == "" || cfg.ReceiptTriggerMode != "poll" || reviewChangesEnabled(cfg) {
-			feishuListener, err = events.New(
-				cfg.FeishuAppID,
-				cfg.FeishuAppSecret,
-				cfg.FeishuEventType,
-				sink,
-				logger,
-			)
-			if err != nil {
-				logger.Error("create Feishu listener", "error", err)
-				os.Exit(1)
-			}
+			baseEventSink = sink
 		}
 	} else {
 		logger.Info("Feishu long connection disabled", "reason", "credentials not configured")
 	}
+	registrations, err := feishuRegistrations(cfg, baseEventSink, observation)
+	if err != nil {
+		logger.Error("configure Feishu event registrations", "error", err)
+		os.Exit(1)
+	}
+	listeners := make([]*events.Listener, 0, len(registrations))
+	for _, registration := range registrations {
+		listener, err := events.NewForEvents(registration.appID, registration.secret, registration.sinks, logger)
+		if err != nil {
+			logger.Error("create Feishu listener", "error", err)
+			os.Exit(1)
+		}
+		listeners = append(listeners, listener)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if observation != nil {
+		go observation.observer.Run(ctx, observation.interval)
+	}
 	if automaticReview != nil {
 		go automaticReview.Run(ctx)
 	}
@@ -308,23 +327,26 @@ func main() {
 	}()
 
 	var feishuErr <-chan error
-	if feishuListener != nil {
-		listenerErr := make(chan error, 1)
+	if len(listeners) > 0 {
+		listenerErr := make(chan error, len(listeners))
 		feishuErr = listenerErr
-		go func() {
-			logger.Info("starting Feishu long connection", "event_type", cfg.FeishuEventType)
-			listenerErr <- feishuListener.Start(ctx)
-		}()
+		for _, listener := range listeners {
+			go func() {
+				logger.Info("starting Feishu long connection")
+				listenerErr <- listener.Start(ctx)
+			}()
+		}
 	}
 
 	shutdown := func() {
+		stop()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Error("graceful shutdown failed", "error", err)
 		}
-		if feishuListener != nil {
-			if err := feishuListener.CloseAndWait(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {
+		for _, listener := range listeners {
+			if err := listener.CloseAndWait(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {
 				logger.Error("Feishu listener shutdown failed", "error", err)
 			}
 		}

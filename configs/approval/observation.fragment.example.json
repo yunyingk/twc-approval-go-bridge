@@ -1,0 +1,10 @@
+{
+  "approval": {
+    "mode": "disabled",
+    "target_identity": "bridge",
+    "observation": {
+      "enabled": true,
+      "poll_interval": "5m"
+    }
+  }
+}

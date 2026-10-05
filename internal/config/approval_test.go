@@ -7,6 +7,58 @@ import (
 	"testing"
 )
 
+func TestApprovalObservationIsIndependentFromCreationAndUsesSelectedCredentials(t *testing.T) {
+	p := testProfile()
+	p.Approval = &ApprovalSettings{Mode: "disabled", TargetIdentity: "approval", Observation: &ApprovalObservation{Enabled: true, PollInterval: "5m"}}
+	if err := p.validate(); err != nil {
+		t.Fatal("observer required active creation form or AI policy")
+	}
+	cfg := Config{Business: &p, FeishuAppID: "bridge", FeishuAppSecret: "bridge-secret", FeishuApprovalAppID: "original", FeishuApprovalAppSecret: "original-secret"}
+	id, secret, err := cfg.ApprovalObservationCredentials()
+	if err != nil || id != "original" || secret != "original-secret" {
+		t.Fatal("observer selected wrong original application")
+	}
+	cfg.FeishuApprovalAppSecret = ""
+	if _, _, err := cfg.ApprovalObservationCredentials(); err == nil {
+		t.Fatal("missing selected credentials fell back to bridge")
+	}
+	for _, interval := range []string{"1s", "59s", "25h", "invalid"} {
+		p.Approval.Observation.PollInterval = interval
+		if p.validate() == nil {
+			t.Fatal("unbounded or invalid observer interval accepted")
+		}
+	}
+	p.Approval.Observation.PollInterval = "1m"
+	p.Approval.TargetIdentity = ""
+	if p.validate() == nil {
+		t.Fatal("observer target was implicit")
+	}
+	p.Approval.Observation.Enabled = false
+	if p.validate() != nil || cfg.ApprovalObservationEnabled() {
+		t.Fatal("inactive observer draft was not ignored")
+	}
+	if _, _, err := cfg.ApprovalObservationCredentials(); err == nil {
+		t.Fatal("inactive observer selected credentials")
+	}
+}
+
+func TestLoadRejectsMissingObserverCredentialsBeforeServiceAssembly(t *testing.T) {
+	p := testProfile()
+	p.Approval = &ApprovalSettings{Mode: "disabled", TargetIdentity: "approval", Observation: &ApprovalObservation{Enabled: true}}
+	t.Setenv("BUSINESS_CONFIG_FILE", writeProfile(t, p))
+	t.Setenv("FEISHU_APP_ID", "bridge")
+	t.Setenv("FEISHU_APP_SECRET", "bridge-secret")
+	t.Setenv("FEISHU_APPROVAL_APP_ID", "original")
+	t.Setenv("FEISHU_APPROVAL_APP_SECRET", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("configuration load allowed missing selected observer secret")
+	}
+	t.Setenv("FEISHU_APPROVAL_APP_SECRET", "original-secret")
+	if cfg, err := Load(); err != nil || !cfg.ApprovalObservationEnabled() {
+		t.Fatalf("valid independent observer config failed: %v", err)
+	}
+}
+
 func approvalProfile() BusinessProfile {
 	p := testProfile()
 	p.Tables.ReimbursementDetails.Fields["employee"] = "employee-field"

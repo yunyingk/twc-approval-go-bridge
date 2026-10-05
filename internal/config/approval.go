@@ -23,6 +23,11 @@ type ApprovalSettings struct {
 	DetailControl      ApprovalSelector            `json:"detail_control,omitempty"`
 	FormFields         map[string]ApprovalSelector `json:"form_fields,omitempty"`
 	NodeApprovers      map[string][]string         `json:"node_approvers,omitempty"`
+	Observation        *ApprovalObservation        `json:"observation,omitempty"`
+}
+type ApprovalObservation struct {
+	Enabled      bool   `json:"enabled"`
+	PollInterval string `json:"poll_interval,omitempty"`
 }
 type ApprovalSelector struct {
 	ID       string `json:"id,omitempty"`
@@ -61,6 +66,17 @@ func approvalRole(p *BusinessProfile, role string) (TableBinding, bool) {
 	return TableBinding{}, false
 }
 func (a *ApprovalSettings) validate(p *BusinessProfile) error {
+	if a.Observation != nil && a.Observation.Enabled {
+		if a.TargetIdentity != "bridge" && a.TargetIdentity != "approval" {
+			return fmt.Errorf("approval observation requires explicit target_identity")
+		}
+		if a.Observation.PollInterval != "" {
+			interval, err := time.ParseDuration(a.Observation.PollInterval)
+			if err != nil || interval < time.Minute || interval > 24*time.Hour {
+				return fmt.Errorf("approval observation poll_interval must be between 1m and 24h")
+			}
+		}
+	}
 	if a.Mode == "disabled" {
 		return nil
 	} // An inactive draft may be incomplete.
@@ -169,6 +185,28 @@ func (a *ApprovalSettings) validate(p *BusinessProfile) error {
 		}
 	}
 	return nil
+}
+
+func (c Config) ApprovalObservationEnabled() bool {
+	return c.Business != nil && c.Business.Approval != nil && c.Business.Approval.Observation != nil && c.Business.Approval.Observation.Enabled
+}
+
+// Observation remains available with creation disabled. It never needs current
+// form/people/AI bindings, but must use one unambiguous selected application.
+func (c Config) ApprovalObservationCredentials() (string, string, error) {
+	if !c.ApprovalObservationEnabled() {
+		return "", "", fmt.Errorf("approval observation is not explicitly enabled")
+	}
+	var appID string
+	switch c.Business.Approval.TargetIdentity {
+	case "bridge":
+		appID = c.FeishuAppID
+	case "approval":
+		appID = c.FeishuApprovalAppID
+	default:
+		return "", "", fmt.Errorf("approval observation requires explicit target identity")
+	}
+	return c.SavedApprovalCredentials("feishu-app:" + appID)
 }
 
 // ApprovalCredentials never falls back to a different application identity.

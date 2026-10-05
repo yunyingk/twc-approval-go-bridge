@@ -123,12 +123,15 @@ go run ./cmd/approval-template -app personal -file configs/feishu/approval-templ
 
 现已新增 `retry-approval <preparation_id>`：修复明确拒绝后，重核原整批并保留同 UUID/审计请求显式再试，原失败证据及每轮历史不被查询错误覆盖。确切同调用方的未发送证明可恢复保存错误；未知、冲突或证明保存失败仍先对账。隔离 SDK、并发及故障测试通过，企业配置/监督服务尚未启用；人工结果闭环继续后续实施，见[重试说明](docs/approval-configuration.md#显式重试原请求)和[过程记录](docs/progress/2026-10-05-approval-retry.md)。
 
+可选 `approval.observation` 现已接服务：原生审批事件先持久化查询意图，再按原应用/UUID 保存真实状态，定时补查离线变化和后续撤销。同应用共用一条长连接，独立审批应用不回退；显式 `subscribe-approval-events` 订阅已配置模板，启动不会自动订阅。关闭创建仍可监听历史单。当前企业配置/监督服务未启用，未验收真实审批事件；Base/Seal 人工结果交付仍待实现。配置见[监听说明](docs/approval-configuration.md#原生审批结果监听)，验证见[监听记录](docs/progress/2026-10-05-approval-observation.md)。
+
 ## 业务边界
 
 | 目录 | 职责 | 当前状态 |
 | --- | --- | --- |
 | `internal/core/dedupe/` | 判断变化是否重复；由持久化实现提供原子领取 | 接口已定义，键规则和存储待定 |
 | `internal/feishu/base/events/` | 接收多维表格变更事件 | 已在企业测试 Base 验证真实附件事件触发识别和台账回写 |
+| `internal/feishu/events/` | 共用 SDK 长连接、事件格式与原生审批通知适配 | 支持同应用多个事件注册；审批查询意图可持久化恢复，真实审批事件尚未验收 |
 | `internal/feishu/base/records.go`、`ledger.go` | 多维表格记录边界与发票台账新增/更新 | 台账写入已实现，其他记录操作仍待业务映射 |
 | `internal/feishu/approval/` | 飞书原生审批模板与单据 | 模板、实例、实时明细映射及共用用例 gateway 已实现；真实业务接入仍未启用 |
 | `internal/feishu/base/permissions.go` | 多维表格记录权限分类与锁定 | 接口已定义，飞书能力待验证 |
@@ -167,6 +170,8 @@ app/approval ──> core/approval, state, 来源/创建/查询接口（尚未�
 feishu/approval.InstanceGateway ──> 实时模板、原生表单、同 UUID 创建/查询
 core/dedupe, feishu/base/{records,permissions} ──> 待后续业务编排接入
 ```
+
+上述示意保留前期装配范围。当前共用 SDK 连接由 `feishu/events` 持有，Base 筛选消费其 Event/Sink；`app/approval` 已通过显式命令接请求准备/建单/原 UUID 恢复，并通过可选观察 worker 保存真实人工状态。监听只依赖已存计划、查询端口与状态库，Base/Seal 人工结果交付尚未装配。
 
 Go 固定为 `1.24.13`；直接依赖固定为 Feishu SDK `v3.12.0` 和 Anthropic SDK `v1.46.0`。传递依赖由 `go.mod` 和 `go.sum` 锁定，构建工具及容器镜像也使用明确版本。
 

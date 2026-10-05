@@ -35,7 +35,7 @@ type Instance struct {
 	TargetScope string `json:"target_scope"`
 	Template    string `json:"template"`
 	SubmitterID string `json:"submitter_id"`
-	Status      string `json:"status"` // pending, approved, rejected, canceled, deleted
+	Status      string `json:"status"` // pending, approved, rejected, canceled, deleted, reverted
 	Verified    bool   `json:"verified"`
 }
 
@@ -46,7 +46,7 @@ func (i Instance) Validate(plan Plan) error {
 	switch i.Status {
 	case "pending":
 		return nil
-	case "approved", "rejected", "canceled", "deleted":
+	case "approved", "rejected", "canceled", "deleted", "reverted":
 		if i.Verified {
 			return nil
 		}

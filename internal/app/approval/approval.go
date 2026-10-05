@@ -214,6 +214,12 @@ func phaseFor(status string) string {
 // Reconcile always queries the saved UUID and checks its full target identity.
 // A failed/not-found lookup retains the original reservation, never re-creates.
 func (s *Service) Reconcile(ctx context.Context, id string) (core.Attempt, error) {
+	return s.ReconcileExpected(ctx, id, "")
+}
+
+// ReconcileExpected checks a notice's native code against the authoritative UUID
+// lookup before persisting any mapping. The notice itself cannot supply a status.
+func (s *Service) ReconcileExpected(ctx context.Context, id, instanceID string) (core.Attempt, error) {
 	attempt, err := s.store.ReadApproval(ctx, s.options.SourceScope, id)
 	if err != nil {
 		return core.Attempt{}, err
@@ -230,6 +236,9 @@ func (s *Service) Reconcile(ctx context.Context, id string) (core.Attempt, error
 	if callErr == nil {
 		callErr = validateInstance(attempt.Plan, instance)
 		if callErr == nil && !instance.Verified {
+			callErr = core.ErrConflict
+		}
+		if callErr == nil && instanceID != "" && instance.ID != instanceID {
 			callErr = core.ErrConflict
 		}
 	}

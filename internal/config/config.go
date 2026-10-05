@@ -143,6 +143,11 @@ func Load() (Config, error) {
 	if business != nil {
 		business.apply(&cfg)
 	}
+	if cfg.ApprovalObservationEnabled() {
+		if _, _, err := cfg.ApprovalObservationCredentials(); err != nil {
+			return Config{}, err
+		}
+	}
 	contextFields, resultFields = cfg.ReviewContextFieldIDs, cfg.ReviewResultFieldIDs
 	for semantic := range resultFields {
 		switch semantic {

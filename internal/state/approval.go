@@ -22,6 +22,7 @@ type approvalRegistry struct {
 	Version  int                     `json:"native_approval_version"`
 	Scope    string                  `json:"native_approval_scope"`
 	Attempts map[string]core.Attempt `json:"attempts"`
+	Notices  map[string]core.Notice  `json:"notices,omitempty"`
 }
 
 func approvalRegistryKey(scope string) string { return "native-approval-scope:" + scope }
@@ -43,6 +44,11 @@ func decodeApprovalRegistry(raw []byte, scope string) (approvalRegistry, error) 
 		}
 		if err := attempt.Validate(); err != nil {
 			return registry, fmt.Errorf("invalid saved native approval attempt: %w", err)
+		}
+	}
+	for key, notice := range registry.Notices {
+		if notice.Validate() != nil || notice.ReceivedAt.IsZero() || key != approvalNoticeKey(notice) || !noticeMatchesAttempt(notice, registry.Attempts[notice.PlanID]) {
+			return registry, fmt.Errorf("invalid saved native approval notice")
 		}
 	}
 	return registry, nil

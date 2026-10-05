@@ -15,6 +15,8 @@
 
 同日从 `llms-approval.txt` 的文件目录取得 [`upload-approval-file.md`](upload-approval-file.md)，并跟随原文链接取得 [`common-errors.md`](common-errors.md)。上传使用 `www.feishu.cn/approval/openapi/v2/file/upload`，不是 v4 实例端点；multipart 的 name/type/content 及目标应用 tenant token 以原文为准。文档中 12 小时期限指下载 URL，没有给出 file code 的 TTL、幂等上传或查询上传结果协议。两份原文按字节保存，保留供应商原始排版。
 
+同日通过官方 llms.txt → llms-approval.txt 直接取得 [`approval-event-overview.md`](approval-event-overview.md)、[`approval-instance-event.md`](approval-instance-event.md) 和 [`subscribe-approval-events.md`](subscribe-approval-events.md)，按字节保存，SHA-256 见上一级表格。原生 approval_instance 事件使用 1.0 envelope，顶层 uuid 是事件 ID，event.uuid 是创建 UUID；官方同时给出 SDK 长连接例子。REVERTED 的 operate_time 与其他状态类型不同，事件数据不能替代实际查询。开发者后台注册/权限以外还需调用模板订阅接口；1390007 同时描述已订阅或已取消，不能推断当前有效。获取实例原文的 reverted 是独立 boolean，而不是上述五个 GET status 的新枚举。
+
 ## 当前企业模板
 
 [`approval-definition-9944A2AE-ED45-43F3-9B87-0F3902F09844.json`](approval-definition-9944A2AE-ED45-43F3-9B87-0F3902F09844.json) 是 2026-09-30 使用企业应用 `cli_aaea8d481d381bee` 调用飞书官方接口取得的完整响应，原始字节未改写。这是当前审批模板的资源快照，不是 OpenAPI 规范文件。

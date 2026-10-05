@@ -360,6 +360,16 @@ func (g *InstanceLookupGateway) Lookup(ctx context.Context, plan core.Plan) (cor
 		return core.Instance{}, core.ErrConflict
 	}
 	status := map[string]string{"PENDING": "pending", "APPROVED": "approved", "REJECTED": "rejected", "CANCELED": "canceled", "DELETED": "deleted"}[*data.Status]
+	// The query contract exposes revocation separately from its five statuses.
+	// A historical APPROVED must not stay approved after reverted becomes true.
+	if data.Reverted != nil && *data.Reverted {
+		if status == "pending" {
+			return core.Instance{}, core.ErrConflict
+		}
+		if status == "approved" {
+			status = "reverted"
+		}
+	}
 	instance := core.Instance{ID: *data.InstanceCode, UUID: *data.Uuid, TargetScope: g.TargetScope(), Template: *data.ApprovalCode, SubmitterID: *data.OpenId, Status: status, Verified: true}
 	return instance, instance.Validate(plan)
 }

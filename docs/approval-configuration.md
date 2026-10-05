@@ -158,3 +158,37 @@ go run ./cmd/server retry-approval <preparation_id>
 领取发送意图报错、但同调用方确实尚未调用 RPC 时，程序可凭完全匹配的 audit/run/私有发送标记保存 persistence/not_sent。证明保存失败继续保持 submitting，重启不能自行认定未发送；远端请求已经调用后绝不使用此分支。本地状态及 stdout 不输出发送标记或私有表单。该证明和本地 abandoned 不需要远端查询；明确拒绝仍可 check-approval。
 
 隔离 SDK、并发、旧轮次迟到和保存失败验证见[重试过程记录](progress/2026-10-05-approval-retry.md)。原请求、来源或模板发生实际变化时本命令停止；部分成功后的批次拆分/审计重关联仍待独立实现。当前企业未启用 approval，监督服务未更新，没有真实建单或人工结果交付。
+
+## 原生审批结果监听
+
+可选的 `approval.observation` 与创建开关独立。监听已建实例可以关闭创建，不需要当前表单、人员映射或 AI 配置：
+
+```json
+"approval": {
+  "mode": "disabled",
+  "target_identity": "bridge",
+  "observation": { "enabled": true, "poll_interval": "5m" }
+}
+```
+
+[监听片段](../configs/approval/observation.fragment.example.json)必须合并进完整业务来源文件；不是可直接选中的 BUSINESS_CONFIG_FILE。省略 observation 或 enabled=false 不装配监听 worker。poll_interval 默认 5m，启用时范围 1m～24h；target_identity 必须明确选择 bridge/approval，所选原应用须有完整且唯一的凭证组，不能回退。每个进程只观察当前来源 Base/Table 下该应用的历史计划；切换来源/应用不会自动观察其他 registry，原批次仍可 check-approval 对账。
+
+同一应用的 Base 与审批事件共用一条 SDK 长连接，独立审批应用另建连接。Base 仅轮询时也可以启用审批长连接。共用传输位于 `internal/feishu/events`，Base 附件与来源筛选留在 `internal/feishu/base/events`。审批事件不经过 Base 原始载荷日志，即使 FEISHU_LOG_RAW_EVENTS=true；没有新增公网 HTTP 接收端点。
+
+飞书开发者后台需要为**所选应用**添加原生 `approval_instance` 事件，并申请 approval:approval:readonly 或 approval:approval。官方事件版本为 1.0：顶层 uuid 是事件 ID，event.uuid 才是创建 UUID；不是人员/任务范围的 approval.instance.status_changed_v4。还须订阅每个审批定义；配置监听不会代替平台事件/资源授权或自动写订阅。
+
+```bash
+# 先在业务文件指定已核对的 approval.template_code，并明确启用 observation。
+# 仅显式执行才向所选应用订阅该模板，服务启动不执行此命令。
+go run ./cmd/server subscribe-approval-events <与配置一致的审批Code>
+```
+
+命令先读取该模板，再调用一次官方 Subscribe；模板不可读、所选凭证缺失、参数不一致时停止，不创建状态目录、实例或附件。成功仅输出 subscription=accepted、event_delivery_verified=false；不代表已经收到事件。官方 1390007 同时描述“已订阅或已取消”，因此保留失败和 HTTP/code 诊断，不能据此确认订阅仍有效；不自动重发不确定请求。
+
+收到应用身份匹配的事件后，先绑定本地已保存的 UUID/模板/实例 Code，在 2 秒队列上下文内持久化查询意图，再返回 SDK。没有 UUID 时只匹配已确认的实例 Code；建单响应尚未知时不猜关联，定时原 UUID 查询仍可补查。无关实例不建状态；同一事件重复不重新打开已处理意图，冲突 ID/实例映射不改绑。
+
+后台只按原 UUID 查询并核对应用、模板和发起人，保存 verified 实例及追加历史，再确认意图。事件中的 status、时间和评论不作权威结果，token/原始载荷不入状态。查询失败、实例 Code 冲突或保存失败会保留 pending，重启/下一轮恢复；不建单、不重新 AI 审核。持久化确认与实例保存之间崩溃，只会再次查询。旧 registry 没有 notices 仍可读取，损坏关联则停止；状态文件保持 0600。
+
+启动和定时轮询覆盖原应用全部已发送尝试，包括 finished，补查停机修改及迟到撤销；reserved、本地 abandoned/not_sent 不查询。原生 GET 的 APPROVED 加 reverted=true 保存为 reverted，PENDING 加 reverted=true 视为冲突；不会用事件的 OVERTIME 状态扩展官方 GET 枚举。终态不回退 pending，批准/拒绝/撤销/删除均不自动释放财务占用。每来源/应用有 OS worker 锁；当前单主机文件库保存全部历史意图并逐条查询，规模扩大时需要另行设计清理、限流和分页。
+
+`approval-status <preparation_id>` 可以查看最新原实例状态及 verified/last_observed_at，仍不能当作 Base 或 Seal 交付成功。当前只持久化已核对状态，没有审批人/评论完整快照、Base 人工结果列、Seal manual-result 交付或结算释放。企业测试文件未启用此配置，监督服务未更新，未真实订阅或验收审批事件；实现与测试见[监听过程记录](progress/2026-10-05-approval-observation.md)。
