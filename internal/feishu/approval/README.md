@@ -46,6 +46,8 @@
 
 `prepare-approval` 保存整个显式选择的私有审计批次，尚无真实建单命令或人工结果交付装配。详见[完整请求准备](../../../docs/approval-configuration.md#完整请求准备)和[过程记录](../../../docs/progress/2026-10-05-approval-requests.md)。
 
+后续已接 `app/approval.BatchService` 及显式 `submit-approval`：整批原子预约与审计关联、逐组发送意图、实际 SDK body 核对、部分失败和原 UUID 恢复已有联测。`check-approval` 使用原身份的 `InstanceLookupGateway`，不读取当前模板、不重建；本地状态/未发送预约放弃独立于平台客户端。企业配置及监督服务未更新，未真实创建或通知，人工结果交付尚待实施；命令及验收见[建单说明](../../../docs/approval-configuration.md#显式建单与恢复)和[阶段记录](../../../docs/progress/2026-10-05-approval-submit.md)。
+
 ## 一次性创建模板
 
 独立入口为 [`cmd/approval-template`](../../../cmd/approval-template/main.go)，不依赖 Anyreceipt、SealAI 或轮询任务。

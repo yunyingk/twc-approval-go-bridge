@@ -109,6 +109,10 @@ type PreparedPlan struct {
 	Request RequestArtifact `json:"request"`
 }
 
+func (p PreparedPlan) AuditReference(batchID string) AuditReference {
+	return AuditReference{PreparationID: batchID, RequestFormat: p.Request.Format, RequestHash: p.Request.Hash}
+}
+
 // PreparedBatch is an immutable, private audit of the whole explicit selection.
 // It is neither a member reservation nor evidence that an instance was created.
 type PreparedBatch struct {

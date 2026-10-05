@@ -1,10 +1,33 @@
 package approval
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
 )
+
+// AuditReference binds one send intent to the private, immutable prepared body.
+// It is optional only for attempts from the earlier unaudited API.
+type AuditReference struct {
+	PreparationID string `json:"preparation_id"`
+	RequestFormat string `json:"request_format"`
+	RequestHash   string `json:"request_sha256"`
+}
+
+func (a AuditReference) Validate() error {
+	for _, digest := range []string{a.PreparationID, a.RequestHash} {
+		bytes, err := hex.DecodeString(digest)
+		if err != nil || len(bytes) != sha256.Size || digest != hex.EncodeToString(bytes) {
+			return ErrConflict
+		}
+	}
+	if !validID(a.RequestFormat) {
+		return ErrConflict
+	}
+	return nil
+}
 
 type Instance struct {
 	ID          string `json:"id"`
@@ -43,14 +66,21 @@ type Observation struct {
 	At       time.Time `json:"at"`
 }
 type Attempt struct {
-	Plan           Plan          `json:"plan"`
-	Phase          string        `json:"phase"` // submitting, unknown, failed, pending, finished
-	Instance       *Instance     `json:"instance,omitempty"`
-	Failure        *Failure      `json:"failure,omitempty"`
-	History        []Observation `json:"history,omitempty"`
-	LastObservedAt time.Time     `json:"last_observed_at,omitempty"`
-	CreatedAt      time.Time     `json:"created_at"`
-	UpdatedAt      time.Time     `json:"updated_at"`
+	Plan           Plan            `json:"plan"`
+	Audit          *AuditReference `json:"audit,omitempty"`
+	Phase          string          `json:"phase"` // reserved, submitting, unknown, failed, pending, finished
+	Instance       *Instance       `json:"instance,omitempty"`
+	Failure        *Failure        `json:"failure,omitempty"`
+	History        []Observation   `json:"history,omitempty"`
+	LastObservedAt time.Time       `json:"last_observed_at,omitempty"`
+	CreatedAt      time.Time       `json:"created_at"`
+	UpdatedAt      time.Time       `json:"updated_at"`
+}
+
+// NotSent is based on a reserved phase or explicit local abandonment proof.
+// A later query failure must never turn a previously sent request into unsent.
+func (a Attempt) NotSent() bool {
+	return a.Phase == "reserved" || (a.Phase == "failed" && a.Failure != nil && a.Failure.Phase == "preparation" && a.Failure.Code == "abandoned")
 }
 
 // Validate rejects inconsistent saved states before they can release members
@@ -62,7 +92,14 @@ func (a Attempt) Validate() error {
 	if a.CreatedAt.IsZero() || a.UpdatedAt.Before(a.CreatedAt) {
 		return fmt.Errorf("invalid approval attempt timestamps")
 	}
+	if a.Audit != nil && a.Audit.Validate() != nil {
+		return ErrConflict
+	}
 	switch a.Phase {
+	case "reserved":
+		if a.Audit == nil || a.Instance != nil || a.Failure != nil || len(a.History) != 0 {
+			return ErrConflict
+		}
 	case "submitting", "unknown", "failed":
 		if a.Instance != nil || (a.Phase == "failed" && a.Failure == nil) {
 			return ErrConflict

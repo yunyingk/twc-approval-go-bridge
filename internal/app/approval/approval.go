@@ -158,11 +158,15 @@ func (s *Service) Submit(ctx context.Context, plan core.Plan) (core.Attempt, err
 	if !created {
 		return existingAttempt(attempt)
 	}
+	return s.send(ctx, plan)
+}
+
+func (s *Service) send(ctx context.Context, plan core.Plan) (core.Attempt, error) {
 	instance, callErr := s.gateway.Create(ctx, plan)
 	if callErr == nil {
 		callErr = validateInstance(plan, instance)
 	}
-	attempt, err = s.store.UpdateApproval(context.WithoutCancel(ctx), plan.SourceScope, plan.ID, func(a *core.Attempt) error {
+	attempt, err := s.store.UpdateApproval(context.WithoutCancel(ctx), plan.SourceScope, plan.ID, func(a *core.Attempt) error {
 		// A query/callback may confirm the instance before create returns.
 		if a.Instance != nil {
 			if callErr == nil && a.Instance.ID != instance.ID {
@@ -210,6 +214,9 @@ func (s *Service) Reconcile(ctx context.Context, id string) (core.Attempt, error
 	}
 	if err := s.checkScope(attempt.Plan); err != nil {
 		return core.Attempt{}, err
+	}
+	if attempt.NotSent() {
+		return attempt, core.ErrNotSubmitted
 	}
 	started := time.Now().UTC()
 	instance, callErr := s.lookup.Lookup(ctx, attempt.Plan)

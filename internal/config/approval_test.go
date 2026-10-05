@@ -18,6 +18,27 @@ func approvalProfile() BusinessProfile {
 	return p
 }
 
+func TestSavedApprovalCredentialsUseExactOriginalIdentityWithoutCurrentApproval(t *testing.T) {
+	cfg := Config{FeishuAppID: "new-bridge", FeishuAppSecret: "new-secret", FeishuApprovalAppID: "original", FeishuApprovalAppSecret: "original-secret"}
+	id, secret, err := cfg.SavedApprovalCredentials("feishu-app:original")
+	if err != nil || id != "original" || secret != "original-secret" {
+		t.Fatal("saved target depended on current approval/template configuration")
+	}
+	for _, scope := range []string{"", "original", "feishu-app:missing", "feishu-app:original "} {
+		if _, _, err := cfg.SavedApprovalCredentials(scope); err == nil {
+			t.Fatal("unknown saved identity fell back to another credential group")
+		}
+	}
+	cfg.FeishuApprovalAppSecret = ""
+	if _, _, err := cfg.SavedApprovalCredentials("feishu-app:original"); err == nil {
+		t.Fatal("missing original secret fell back to the bridge")
+	}
+	cfg.FeishuAppID, cfg.FeishuAppSecret, cfg.FeishuApprovalAppSecret = "original", "same-secret", "same-secret"
+	if _, _, err := cfg.SavedApprovalCredentials("feishu-app:original"); err == nil {
+		t.Fatal("ambiguous duplicate credential groups were implicitly selected")
+	}
+}
+
 func TestApprovalConfigurationRequiresExplicitIdentityPolicyAndBindings(t *testing.T) {
 	if p := approvalProfile(); p.validate() != nil {
 		t.Fatal("valid manual approval rejected")

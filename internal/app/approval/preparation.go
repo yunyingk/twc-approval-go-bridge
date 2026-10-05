@@ -94,6 +94,35 @@ func (p *RequestPreparer) candidate(ctx context.Context, ids []string) (Preparat
 // before atomically saving one private batch. No partial audit, upload, member
 // reservation or creation can occur through these ports.
 func (p *RequestPreparer) Prepare(ctx context.Context, ids []string) (PreparationResult, error) {
+	second, err := p.observe(ctx, ids)
+	if err != nil || second.Batch == nil {
+		return second, err
+	}
+	saved, err := p.store.SaveApprovalPreparation(ctx, *second.Batch)
+	if err != nil {
+		second.Batch = nil
+		second.Issue = "preparation_save_failed"
+		return second, err
+	}
+	second.Batch = &saved
+	return second, nil
+}
+
+// Check re-observes the saved selection under the caller's current configuration
+// without saving a replacement audit or invoking any upload/creation method.
+func (p *RequestPreparer) Check(ctx context.Context, saved core.PreparedBatch) (PreparationResult, error) {
+	if err := saved.Validate(); err != nil {
+		return PreparationResult{}, err
+	}
+	result, err := p.observe(ctx, saved.RecordIDs())
+	if err == nil && result.Batch != nil && result.Batch.ID != saved.ID {
+		result.Batch = nil
+		result.Issue = "preparation_changed"
+	}
+	return result, err
+}
+
+func (p *RequestPreparer) observe(ctx context.Context, ids []string) (PreparationResult, error) {
 	first, err := p.candidate(ctx, ids)
 	if err != nil || first.Batch == nil {
 		return first, err
@@ -107,13 +136,6 @@ func (p *RequestPreparer) Prepare(ctx context.Context, ids []string) (Preparatio
 		second.Issue = "preparation_changed"
 		return second, nil
 	}
-	saved, err := p.store.SaveApprovalPreparation(ctx, *second.Batch)
-	if err != nil {
-		second.Batch = nil
-		second.Issue = "preparation_save_failed"
-		return second, err
-	}
-	second.Batch = &saved
 	return second, nil
 }
 

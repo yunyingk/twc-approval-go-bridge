@@ -190,3 +190,20 @@ func (c Config) ApprovalCredentials() (string, string, error) {
 	}
 	return "", "", fmt.Errorf("unknown approval target identity")
 }
+
+// SavedApprovalCredentials resolves only the exact application pinned by an old
+// plan. It does not require current template/business configuration or fall back
+// to a newly selected application when the original credentials are unavailable.
+func (c Config) SavedApprovalCredentials(scope string) (string, string, error) {
+	var id, secret string
+	matches := 0
+	for _, pair := range [][2]string{{c.FeishuAppID, c.FeishuAppSecret}, {c.FeishuApprovalAppID, c.FeishuApprovalAppSecret}} {
+		if pair[0] != "" && scope == "feishu-app:"+pair[0] {
+			id, secret, matches = pair[0], pair[1], matches+1
+		}
+	}
+	if matches != 1 || secret == "" {
+		return "", "", fmt.Errorf("saved approval target requires one unambiguous original application credential group")
+	}
+	return id, secret, nil
+}

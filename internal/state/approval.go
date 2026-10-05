@@ -146,6 +146,7 @@ func (s *Files) UpdateApproval(ctx context.Context, scope, id string, update fun
 			return nil, core.ErrUnknown
 		}
 		before, _ := json.Marshal(attempt.Plan)
+		beforeAudit, _ := json.Marshal(attempt.Audit)
 		createdAt, lastObservedAt, oldPhase := attempt.CreatedAt, attempt.LastObservedAt, attempt.Phase
 		oldHistory, _ := json.Marshal(attempt.History)
 		oldHistoryLen := len(attempt.History)
@@ -158,7 +159,8 @@ func (s *Files) UpdateApproval(ctx context.Context, scope, id string, update fun
 			return nil, err
 		}
 		after, err := json.Marshal(attempt.Plan)
-		if err != nil || string(before) != string(after) {
+		afterAudit, auditErr := json.Marshal(attempt.Audit)
+		if err != nil || auditErr != nil || string(before) != string(after) || string(beforeAudit) != string(afterAudit) {
 			return nil, fmt.Errorf("native approval frozen plan cannot be modified")
 		}
 		// A late update cannot turn an uncertain external call into a proven
@@ -182,6 +184,9 @@ func (s *Files) UpdateApproval(ctx context.Context, scope, id string, update fun
 		if attempt.Phase == "failed" && oldPhase == "submitting" && (attempt.Failure == nil || attempt.Failure.Phase != "creation" || attempt.Failure.Code != "failed") {
 			return nil, core.ErrConflict
 		}
+		if attempt.Phase == "failed" && oldPhase == "reserved" && (attempt.Failure == nil || attempt.Failure.Phase != "preparation" || attempt.Failure.Code != "abandoned") {
+			return nil, core.ErrConflict
+		}
 		attempt.UpdatedAt = time.Now().UTC()
 		if err := attempt.Validate(); err != nil {
 			return nil, err
@@ -197,6 +202,8 @@ func validApprovalTransition(from, to string) bool {
 		return true
 	}
 	switch from {
+	case "reserved":
+		return to == "submitting" || to == "failed"
 	case "submitting":
 		return to == "unknown" || to == "failed" || to == "pending" || to == "finished"
 	case "unknown", "failed":

@@ -119,6 +119,8 @@ go run ./cmd/approval-template -app personal -file configs/feishu/approval-templ
 
 人工审批准备现已支持 `preview-approval`、显式 `prepare-approval-files`/`retry-approval-files` 和 `prepare-approval`。最后一个命令核对整组选中行、全部原生表单和当前 AI，将实际 SDK 请求、精确业务值、来源版本及审核证据原子保存为 0600 私有审计文件，便于建单前 review；输出只有摘要，不上传或创建实例。完整配置、命令及限制见[审批配置](docs/approval-configuration.md#完整请求准备)和[阶段记录](docs/progress/2026-10-05-approval-requests.md)。当前企业配置和监督服务未启用原生审批，真实建单与人工结果闭环仍待完成。
 
+后续已补 `submit-approval <preparation_id>` 显式建单、`approval-status` 本地查看、`check-approval` 原 UUID 对账及 `abandon-approval` 放弃未发送预约。先整批重核并原子预约，再逐组领取发送；每份尝试固定原审计和请求摘要，部分失败后保留已创建与未发送状态，未知不重发。隔离官方 SDK HTTP 联测通过；企业配置/监督服务仍未启用，未真实建单、未接人工结果交付。命令与边界见[建单与恢复](docs/approval-configuration.md#显式建单与恢复)和[阶段记录](docs/progress/2026-10-05-approval-submit.md)。
+
 ## 业务边界
 
 | 目录 | 职责 | 当前状态 |

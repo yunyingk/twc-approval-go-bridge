@@ -24,6 +24,7 @@ var (
 	ErrPlanChanged      = errors.New("approval plan no longer matches current business facts or configuration")
 	ErrUnknown          = errors.New("unknown approval plan")
 	ErrConflict         = errors.New("approval instance conflicts with saved mapping")
+	ErrNotSubmitted     = errors.New("approval reservation has not been sent")
 )
 
 // Identity scopes distinguish application/tenant identities, even when their

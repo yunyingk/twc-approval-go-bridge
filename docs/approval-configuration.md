@@ -8,6 +8,8 @@
 
 [关闭示例](../configs/approval/disabled.fragment.example.json)是配置片段，不是完整业务文件。`disabled` 允许保留不完整草稿；未知 JSON 属性仍拒绝。`manual` 表示显式人工选择的配置口径，**本阶段没有建单命令或自动建单装配**，不会仅因改此值创建审批。
 
+上述“没有建单命令”保留初版预检阶段范围。后续已新增显式 `submit-approval` 与状态/恢复命令，见[建单与恢复](#显式建单与恢复)。仍无自动建单，仅配置 manual 不触发实例创建；当前企业配置未启用 approval。
+
 ## 显式契约
 
 | 字段 | 口径 |
@@ -102,3 +104,40 @@ go run ./cmd/server prepare-approval <记录ID[,记录ID...]>
 `issues` 包括 source_not_ready、plan_inputs_invalid、target_request_invalid、review_proof_missing、review_proof_invalid、preparation_invalid、preparation_changed；具体来源原因仍在 records/source_inputs。状态读取/保存或上下文取消失败会返回非零退出码，不输出成功报告；已有空/损坏快照不会当作缺失记录覆盖。
 
 底层 `AuditedGateway` 已在隔离测试中将已保存的具体请求接到共用 Submit，用同一原生 body 构建器逐字节核对后发送，仍执行来源重核、成员预约及原 UUID 恢复。本阶段没有真实建单命令，尚未将批次 ID 关联进实际建单尝试或接人工结果交付；完整请求准备不能代替这部分验收。验证及下一步见[请求审计记录](progress/2026-10-05-approval-requests.md)。
+
+## 显式建单与恢复
+
+```bash
+# 先 review prepare-approval 给出的私有文件；参数是整批 SHA-256，不是记录 ID。
+go run ./cmd/server submit-approval <preparation_id>
+# 只读本地审计/实例映射，零网络、零状态写入，不需应用凭证。
+go run ./cmd/server approval-status <preparation_id>
+# 只按已存 UUID 查询原应用实例，并保存核对结果；不重建、不重新审核。
+go run ./cmd/server check-approval <preparation_id>
+# 本地放弃尚未发送的 reserved 组；不会撤销或释放已发送的实例。
+go run ./cmd/server abandon-approval <preparation_id>
+```
+
+仅接受一个已保存的、小写 64 位 SHA-256 批次 ID，不接受 all、记录列表、UUID 或外部 JSON 文件。建单入口需要当前选中完整 manual 配置及显式目标凭证，物理来源与目标应用须等于审计；缺配置在状态/网络装配前失败。来源/分组/人员/AI 策略/绑定/模板/精确值或实际请求变化，都不能把旧审计重新解释为新请求；需重新准备并 review。
+
+首次提交先重新核对整批来源、当前 AI 证明、所有原生请求，然后在来源 registry 的一个原子替换中预约全部新组和成员、保存固定 audit `{preparation_id,request_format,request_sha256}`。后一组成员已被另一计划占用时，前面的空闲组也不预约、不发送。已存相同计划但来自另一批审计，或早期没有 audit 的尝试，不能静默改绑。审批 UUID 保持计划原值。
+
+逐组发送前再核对该组完整审核证明/业务值和实时表单，并原子领取发送意图，只有领取者发送一次。每个 HTTP body 必须与具体审计一致。任何组失败停止后续发送，保存已确认实例及后面的未发送预约；外部 API 没有整批事务，因此不能保证多个实例全部创建或全部不创建。
+
+| phase | 含义及下一步 |
+| --- | --- |
+| not_started | 没有本地尝试；已审阅批次可显式提交 |
+| reserved | 全组已预约，此组尚未领取发送；重核后可继续，或显式放弃 |
+| submitting/unknown | 已持久化发送意图，可能已创建；先 check-approval，禁止重发或本地放弃 |
+| pending/finished | 已确认原实例映射；重复提交仅返回原映射，不重核或重新创建该实例 |
+| failed | 已证明拒绝或本地放弃未发送预约；同一 UUID 不自动重发 |
+
+同一批中有 submitting/unknown/failed 时，提交入口先停止，返回 reconciliation_required。响应丢失但原 UUID 查询成功后，重新提交只处理仍 reserved 的组。查询失败、权限不足或未找到，保持原预约与不确定性；不能换 UUID 绕过。若领取意图的原子保存已发生但调用方收到错误，即使这次实际未 POST，也保留 submitting，下一次不能据此重发。专门的明确拒绝重试及未发送证明修复协议仍待实现；单纯修复权限后，若仍为同一 UUID，当前也不会重发。
+
+`approval-status` 只读本地。`check-approval` 使用审计/已存计划的原目标 `feishu-app:<app-id>`，只允许现有 bridge/approval 凭证组中恰好一组匹配这个 ID；缺原密钥、匹配不到或两组重复声明同 ID 都停止，不回退新应用。无需当前审批模板、表单映射、Base 来源、OCR/审核提供方或本地规则。reserved、未开始、本地 abandoned 不查询；真实查询仍按原 UUID/模板/发起人核对，保存真实实例和安全失败分类。
+
+`abandon-approval` 仅在本地原子地将此批仍 reserved 的组记为 failed，failure=`preparation/abandoned`，保留原计划/审计及记录。它与领取意图使用同一 registry 锁；一旦其他进程先领取，就不能放弃。submitting/unknown/pending/finished 不改动、不会解除其成员占用，也不调用远端撤回。放弃后的相同 UUID 不能直接再次提交；有新的业务/配置版本时才能另行准备计划。此操作不提供人工撤回、财务释放或结算能力。
+
+所有命令只打印安全状态/成员/UUID/实例 Code/审计摘要/错误分类。`status.all_instances_known` 只表示全部组已有实例映射，不能当作当前事实、人工批准或结算完成；`instance_verified` 区分创建响应与实际查询。提交/查询失败会先输出可读取的部分状态（若状态仍可读），然后非零退出，不打印上游私有错误。原件、表单、评论和凭证仍在私有文件中。
+
+当前企业未配置原生审批，也没有可用的完整当前 AI 样本。本阶段仅隔离建单/恢复联测及真实只读验证，没有真实上传、实例创建或通知，监督服务未更新。人工事件、Base/Seal 结果交付、正式财务动作与真实验收继续后续实施，见[建单过程记录](progress/2026-10-05-approval-submit.md)。

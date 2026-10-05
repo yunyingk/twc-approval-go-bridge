@@ -47,20 +47,7 @@ func runApprovalRequestPreparation(ctx context.Context, cfg config.Config, selec
 	if err != nil {
 		return err
 	}
-	reviews, err := newReviewSource(cfg)
-	if err != nil {
-		return err
-	}
-	scope := "feishu:" + cfg.ReceiptBaseToken + ":" + cfg.ReceiptTableID
-	gate, err := app.NewReviewGate(reviews, store, scope, cfg.ReviewProvider, cfg.Business.Approval.AllowedAIDecisions)
-	if err != nil {
-		return err
-	}
-	fields, err := newApprovalFieldsSource(cfg)
-	if err != nil {
-		return err
-	}
-	source, err := app.NewPreparedSourceWithUploads(fields, gate, store, "feishu-app:"+appID)
+	source, err := newApprovalPreparedSource(cfg, store, "feishu-app:"+appID)
 	if err != nil {
 		return err
 	}
@@ -69,6 +56,23 @@ func runApprovalRequestPreparation(ctx context.Context, cfg config.Config, selec
 		return fmt.Errorf("approval request preparation blocked: %s", issue)
 	}
 	return prepareApprovalRequests(ctx, cfg, ids, source, gateway, *target, store, output)
+}
+
+func newApprovalPreparedSource(cfg config.Config, store *state.Files, targetScope string) (*app.PreparedSource, error) {
+	reviews, err := newReviewSource(cfg)
+	if err != nil {
+		return nil, err
+	}
+	scope := "feishu:" + cfg.ReceiptBaseToken + ":" + cfg.ReceiptTableID
+	gate, err := app.NewReviewGate(reviews, store, scope, cfg.ReviewProvider, cfg.Business.Approval.AllowedAIDecisions)
+	if err != nil {
+		return nil, err
+	}
+	fields, err := newApprovalFieldsSource(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return app.NewPreparedSourceWithUploads(fields, gate, store, targetScope)
 }
 
 type approvalPreparationStore interface {
