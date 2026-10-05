@@ -66,20 +66,32 @@ type Observation struct {
 	At       time.Time `json:"at"`
 }
 type Attempt struct {
-	Plan           Plan            `json:"plan"`
-	Audit          *AuditReference `json:"audit,omitempty"`
-	Phase          string          `json:"phase"` // reserved, submitting, unknown, failed, pending, finished
-	Instance       *Instance       `json:"instance,omitempty"`
-	Failure        *Failure        `json:"failure,omitempty"`
-	History        []Observation   `json:"history,omitempty"`
-	LastObservedAt time.Time       `json:"last_observed_at,omitempty"`
-	CreatedAt      time.Time       `json:"created_at"`
-	UpdatedAt      time.Time       `json:"updated_at"`
+	Plan           Plan             `json:"plan"`
+	Audit          *AuditReference  `json:"audit,omitempty"`
+	Phase          string           `json:"phase"` // reserved, submitting, unknown, failed, pending, finished
+	Instance       *Instance        `json:"instance,omitempty"`
+	Failure        *Failure         `json:"failure,omitempty"`
+	NoCreation     *NoCreationProof `json:"no_creation,omitempty"`
+	Run            uint64           `json:"run"`
+	RunStartedAt   time.Time        `json:"run_started_at,omitempty"`
+	SendToken      string           `json:"send_token,omitempty"`
+	ClosedRuns     []ClosedRun      `json:"closed_runs,omitempty"`
+	History        []Observation    `json:"history,omitempty"`
+	LastObservedAt time.Time        `json:"last_observed_at,omitempty"`
+	CreatedAt      time.Time        `json:"created_at"`
+	UpdatedAt      time.Time        `json:"updated_at"`
 }
 
 // NotSent is based on a reserved phase or explicit local abandonment proof.
 // A later query failure must never turn a previously sent request into unsent.
+// An exact owner proof after a failed claim is also evidence of no POST.
 func (a Attempt) NotSent() bool {
+	if a.Instance != nil {
+		return false
+	}
+	if a.Phase == "failed" && a.NoCreation != nil {
+		return a.NoCreation.Kind == "abandoned" || a.NoCreation.Kind == "not_sent"
+	}
 	return a.Phase == "reserved" || (a.Phase == "failed" && a.Failure != nil && a.Failure.Phase == "preparation" && a.Failure.Code == "abandoned")
 }
 
@@ -94,6 +106,9 @@ func (a Attempt) Validate() error {
 	}
 	if a.Audit != nil && a.Audit.Validate() != nil {
 		return ErrConflict
+	}
+	if err := a.validateRuns(); err != nil {
+		return err
 	}
 	switch a.Phase {
 	case "reserved":

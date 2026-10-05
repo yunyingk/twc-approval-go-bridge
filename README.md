@@ -121,6 +121,8 @@ go run ./cmd/approval-template -app personal -file configs/feishu/approval-templ
 
 后续已补 `submit-approval <preparation_id>` 显式建单、`approval-status` 本地查看、`check-approval` 原 UUID 对账及 `abandon-approval` 放弃未发送预约。先整批重核并原子预约，再逐组领取发送；每份尝试固定原审计和请求摘要，部分失败后保留已创建与未发送状态，未知不重发。隔离官方 SDK HTTP 联测通过；企业配置/监督服务仍未启用，未真实建单、未接人工结果交付。命令与边界见[建单与恢复](docs/approval-configuration.md#显式建单与恢复)和[阶段记录](docs/progress/2026-10-05-approval-submit.md)。
 
+现已新增 `retry-approval <preparation_id>`：修复明确拒绝后，重核原整批并保留同 UUID/审计请求显式再试，原失败证据及每轮历史不被查询错误覆盖。确切同调用方的未发送证明可恢复保存错误；未知、冲突或证明保存失败仍先对账。隔离 SDK、并发及故障测试通过，企业配置/监督服务尚未启用；人工结果闭环继续后续实施，见[重试说明](docs/approval-configuration.md#显式重试原请求)和[过程记录](docs/progress/2026-10-05-approval-retry.md)。
+
 ## 业务边界
 
 | 目录 | 职责 | 当前状态 |

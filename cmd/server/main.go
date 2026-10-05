@@ -36,7 +36,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	if len(os.Args) > 1 {
 		if (os.Args[1] == "check-business-config" && len(os.Args) != 2) || (os.Args[1] != "check-business-config" && len(os.Args) != 3) {
-			logger.Error("usage: server check-business-config | {review-status|check-review|preview-review|preview-approval|prepare-approval|prepare-approval-files|retry-approval-files|submit-approval|approval-status|check-approval|abandon-approval|submit-seal|submit-review|retry-writeback|apply-seal-result} <record-id-preparation-id-document-id-or-file>")
+			logger.Error("usage: server check-business-config | {review-status|check-review|preview-review|preview-approval|prepare-approval|prepare-approval-files|retry-approval-files|submit-approval|retry-approval|approval-status|check-approval|abandon-approval|submit-seal|submit-review|retry-writeback|apply-seal-result} <record-id-preparation-id-document-id-or-file>")
 			os.Exit(2)
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -54,6 +54,8 @@ func main() {
 			err = runApprovalRequestPreparation(ctx, cfg, os.Args[2], os.Stdout)
 		case "submit-approval":
 			err = runApprovalSubmission(ctx, cfg, os.Args[2], os.Stdout)
+		case "retry-approval":
+			err = runApprovalRetry(ctx, cfg, os.Args[2], os.Stdout)
 		case "approval-status":
 			err = runApprovalStatus(ctx, cfg, os.Args[2], os.Stdout)
 		case "check-approval":

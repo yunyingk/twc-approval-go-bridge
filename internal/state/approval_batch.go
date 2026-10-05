@@ -2,6 +2,8 @@ package state
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -18,6 +20,19 @@ func matchingPreparedAttempt(attempt core.Attempt, prepared core.PreparedPlan, b
 // The private audit must already exist. No group has a send intent yet: reserved
 // means a crash/restart can safely resume, without treating an unsent RPC as lost.
 func (s *Files) BeginApprovalBatch(ctx context.Context, id string) ([]core.Attempt, error) {
+	return s.beginApprovalBatch(ctx, id, nil)
+}
+
+// RetryApprovalBatch requires the run numbers observed before rechecking source
+// facts. Concurrent retry commands cannot turn one authorization into two runs.
+func (s *Files) RetryApprovalBatch(ctx context.Context, id string, expected map[string]uint64) ([]core.Attempt, error) {
+	if expected == nil {
+		return nil, core.ErrConflict
+	}
+	return s.beginApprovalBatch(ctx, id, expected)
+}
+
+func (s *Files) beginApprovalBatch(ctx context.Context, id string, expected map[string]uint64) ([]core.Attempt, error) {
 	batch, err := s.ReadApprovalPreparation(ctx, id)
 	if err != nil {
 		return nil, err
@@ -35,21 +50,38 @@ func (s *Files) BeginApprovalBatch(ctx context.Context, id string) ([]core.Attem
 			return nil, err
 		}
 		members := map[string]bool{}
+		resets := map[string]core.NoCreationProof{}
 		for _, prepared := range batch.Plans {
 			if old, exists := registry.Attempts[prepared.Plan.ID]; exists {
 				if !matchingPreparedAttempt(old, prepared, id) {
 					return nil, core.ErrConflict
 				}
-				if old.Phase != "reserved" && old.Instance == nil {
+				if old.Instance != nil {
+					continue
+				}
+				if expected != nil {
+					run, observed := expected[prepared.Plan.ID]
+					if !observed || run != old.Run {
+						return nil, core.ErrReconcile
+					}
+				}
+				if old.Phase == "reserved" {
+					continue
+				}
+				proof := old.RetryProof()
+				if expected == nil || proof == nil {
 					return nil, core.ErrReconcile
 				}
-				continue
+				resets[prepared.Plan.ID] = *proof
 			}
 			for _, row := range prepared.Plan.Rows {
 				members[row.RecordID] = true
 			}
 		}
 		for _, old := range registry.Attempts {
+			if _, resetting := resets[old.Plan.ID]; resetting {
+				continue
+			}
 			if old.Phase == "failed" && old.Instance == nil {
 				continue
 			}
@@ -71,6 +103,15 @@ func (s *Files) BeginApprovalBatch(ctx context.Context, id string) ([]core.Attem
 					return nil, err
 				}
 				registry.Attempts[prepared.Plan.ID], changed = attempt, true
+			} else if proof, resetting := resets[prepared.Plan.ID]; resetting {
+				attempt.ClosedRuns = append(attempt.ClosedRuns, core.ClosedRun{Run: attempt.Run, StartedAt: attempt.RunStart(), FinishedAt: now, Proof: proof, LastFailure: attempt.Failure})
+				attempt.Run++
+				attempt.RunStartedAt, attempt.UpdatedAt = now, now
+				attempt.Phase, attempt.Failure, attempt.NoCreation, attempt.SendToken = "reserved", nil, nil, ""
+				if err := attempt.Validate(); err != nil {
+					return nil, err
+				}
+				registry.Attempts[prepared.Plan.ID], changed = attempt, true
 			}
 			attempts = append(attempts, attempt)
 		}
@@ -86,7 +127,17 @@ func (s *Files) BeginApprovalBatch(ctx context.Context, id string) ([]core.Attem
 // caller may send. An uncertain local save keeps submitting; it never gives a
 // second caller permission to POST merely because no response was observed.
 func (s *Files) ClaimApprovalSend(ctx context.Context, scope, id string, audit core.AuditReference) (core.Attempt, bool, error) {
-	if audit.Validate() != nil {
+	var nonce [32]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return core.Attempt{}, false, err
+	}
+	return s.ClaimApprovalSendWithToken(ctx, scope, id, audit, hex.EncodeToString(nonce[:]))
+}
+
+// The caller retains its token before the durable claim. If saving returns an
+// error before any RPC, only that caller can prove this particular intent unsent.
+func (s *Files) ClaimApprovalSendWithToken(ctx context.Context, scope, id string, audit core.AuditReference, token string) (core.Attempt, bool, error) {
+	if audit.Validate() != nil || !core.ValidSendToken(token) {
 		return core.Attempt{}, false, core.ErrConflict
 	}
 	var attempt core.Attempt
@@ -119,6 +170,10 @@ func (s *Files) ClaimApprovalSend(ctx context.Context, scope, id string, audit c
 			return nil, core.ErrConflict
 		}
 		attempt.Phase, attempt.UpdatedAt = "submitting", time.Now().UTC()
+		attempt.SendToken = token
+		if err := attempt.Validate(); err != nil {
+			return nil, err
+		}
 		registry.Attempts[id], claimed = attempt, true
 		return registry, nil
 	})
@@ -153,6 +208,7 @@ func (s *Files) AbandonApprovalReservations(ctx context.Context, id string) ([]c
 				now := time.Now().UTC()
 				attempt.Phase, attempt.UpdatedAt = "failed", now
 				attempt.Failure = &core.Failure{Phase: "preparation", Code: "abandoned", OccurredAt: now}
+				attempt.NoCreation = &core.NoCreationProof{Kind: "abandoned", Failure: *attempt.Failure}
 				if err := attempt.Validate(); err != nil {
 					return nil, fmt.Errorf("invalid unsent approval abandonment: %w", err)
 				}

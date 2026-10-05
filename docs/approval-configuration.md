@@ -141,3 +141,20 @@ go run ./cmd/server abandon-approval <preparation_id>
 所有命令只打印安全状态/成员/UUID/实例 Code/审计摘要/错误分类。`status.all_instances_known` 只表示全部组已有实例映射，不能当作当前事实、人工批准或结算完成；`instance_verified` 区分创建响应与实际查询。提交/查询失败会先输出可读取的部分状态（若状态仍可读），然后非零退出，不打印上游私有错误。原件、表单、评论和凭证仍在私有文件中。
 
 当前企业未配置原生审批，也没有可用的完整当前 AI 样本。本阶段仅隔离建单/恢复联测及真实只读验证，没有真实上传、实例创建或通知，监督服务未更新。人工事件、Base/Seal 结果交付、正式财务动作与真实验收继续后续实施，见[建单过程记录](progress/2026-10-05-approval-submit.md)。
+
+## 显式重试原请求
+
+上述“专门重试协议仍待实现”保留首次建单阶段范围。后续已补：
+
+```bash
+# 修复明确拒绝的原因后，使用原来已审阅的批次；保持原 UUID 和请求。
+go run ./cmd/server retry-approval <preparation_id>
+```
+
+要求完整 manual 配置及原来源/目标匹配，并再次核对整批当前 AI、业务值、上传引用和原生请求。普通 submit 仍不自动重试 failed。显式 retry 只重开带原始拒绝/本地放弃/同调用方未发送证明的 failed；submitting、unknown、未找到和 UUID 冲突保持原 UUID 对账。完全未提交的批次返回 not_submitted，已确认组只复用原映射，原 reserved 组可继续。若成员已被别的计划取得，整批停止。
+
+状态新增 run（初次 0）、closed_runs、no_creation、retryable。重开前原子归档该轮原始证明和最后诊断，保持 Plan/Audit/UUID 不变；另一批审计仍不可改绑。查询失败不覆盖拒绝证据，查询确认实例后则不再重发。旧状态只有完整、带有效时间的原失败证据才能重试，generic failed/lookup_failed 不补造证明。retryable 是本地恢复资格，仍需通过实时重核和预约。
+
+领取发送意图报错、但同调用方确实尚未调用 RPC 时，程序可凭完全匹配的 audit/run/私有发送标记保存 persistence/not_sent。证明保存失败继续保持 submitting，重启不能自行认定未发送；远端请求已经调用后绝不使用此分支。本地状态及 stdout 不输出发送标记或私有表单。该证明和本地 abandoned 不需要远端查询；明确拒绝仍可 check-approval。
+
+隔离 SDK、并发、旧轮次迟到和保存失败验证见[重试过程记录](progress/2026-10-05-approval-retry.md)。原请求、来源或模板发生实际变化时本命令停止；部分成功后的批次拆分/审计重关联仍待独立实现。当前企业未启用 approval，监督服务未更新，没有真实建单或人工结果交付。

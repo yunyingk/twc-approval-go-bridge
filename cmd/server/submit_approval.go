@@ -24,6 +24,18 @@ func approvalPreparationID(id string) error {
 }
 
 func runApprovalSubmission(ctx context.Context, cfg config.Config, id string, output io.Writer) error {
+	return runApprovalSend(ctx, cfg, id, false, output)
+}
+
+func runApprovalRetry(ctx context.Context, cfg config.Config, id string, output io.Writer) error {
+	return runApprovalSend(ctx, cfg, id, true, output)
+}
+
+func runApprovalSend(ctx context.Context, cfg config.Config, id string, retry bool, output io.Writer) error {
+	operation := "submission"
+	if retry {
+		operation = "retry_submission"
+	}
 	if err := approvalPreparationID(id); err != nil {
 		return err
 	}
@@ -52,19 +64,24 @@ func runApprovalSubmission(ctx context.Context, cfg config.Config, id string, ou
 	if err != nil {
 		return fmt.Errorf("saved approval status is unavailable or invalid")
 	}
+	hasExisting := false
 	for n, plan := range status.Plans {
+		hasExisting = hasExisting || plan.Phase != "not_started"
 		if plan.Audit != nil && *plan.Audit != batch.Plans[n].AuditReference(id) {
 			return fmt.Errorf("approval submission audit conflicts with the saved attempt")
 		}
 		if plan.Phase != "not_started" && plan.Audit == nil {
 			return fmt.Errorf("approval submission cannot reinterpret an unaudited historical attempt")
 		}
-		if plan.Phase == "submitting" || plan.Phase == "unknown" || plan.Phase == "failed" {
-			return writeApprovalOperation(output, "submission", app.BatchResult{Status: status, Issue: "reconciliation_required"}, core.ErrReconcile)
+		if plan.Phase == "submitting" || plan.Phase == "unknown" || (plan.Phase == "failed" && !(retry && plan.Retryable)) {
+			return writeApprovalOperation(output, operation, app.BatchResult{Status: status, Issue: "reconciliation_required"}, core.ErrReconcile)
 		}
 	}
 	if status.AllInstancesKnown {
-		return writeApprovalOperation(output, "submission", app.BatchResult{Status: status}, nil)
+		return writeApprovalOperation(output, operation, app.BatchResult{Status: status}, nil)
+	}
+	if retry && !hasExisting {
+		return writeApprovalOperation(output, operation, app.BatchResult{Status: status, Issue: "not_submitted"}, core.ErrNotSubmitted)
 	}
 	source, err := newApprovalPreparedSource(cfg, store, first.TargetScope)
 	if err != nil {
@@ -72,11 +89,14 @@ func runApprovalSubmission(ctx context.Context, cfg config.Config, id string, ou
 	}
 	gateway, target, issue := inspectApprovalTarget(ctx, cfg)
 	if issue != "" {
-		return writeApprovalOperation(output, "submission", app.BatchResult{Status: status, Issue: issue}, core.ErrPlanChanged)
+		return writeApprovalOperation(output, operation, app.BatchResult{Status: status, Issue: issue}, core.ErrPlanChanged)
 	}
 	service, err := app.NewBatchService(source, gateway, store, approvalPlanOptions(cfg, *target))
 	if err != nil {
 		return fmt.Errorf("approval submission configuration is invalid")
+	}
+	if retry {
+		return retryApprovalBatch(ctx, service, id, output)
 	}
 	return submitApprovalBatch(ctx, service, id, output)
 }
@@ -91,6 +111,16 @@ func submitApprovalBatch(ctx context.Context, service approvalBatchSubmitter, id
 		return fmt.Errorf("approval submission state is unavailable or invalid")
 	}
 	return writeApprovalOperation(output, "submission", result, err)
+}
+
+func retryApprovalBatch(ctx context.Context, service interface {
+	Retry(context.Context, string) (app.BatchResult, error)
+}, id string, output io.Writer) error {
+	result, err := service.Retry(ctx, id)
+	if result.Status.ID == "" {
+		return fmt.Errorf("approval retry state is unavailable or invalid")
+	}
+	return writeApprovalOperation(output, "retry_submission", result, err)
 }
 
 func writeApprovalOperation(output io.Writer, operation string, result app.BatchResult, cause error) error {
@@ -140,7 +170,7 @@ func runApprovalReconciliation(ctx context.Context, cfg config.Config, id string
 	}
 	needsLookup := false
 	for _, plan := range status.Plans {
-		attempt := core.Attempt{Phase: plan.Phase, Failure: plan.Failure}
+		attempt := core.Attempt{Phase: plan.Phase, Failure: plan.Failure, NoCreation: plan.NoCreation}
 		needsLookup = needsLookup || (plan.Phase != "not_started" && !attempt.NotSent())
 	}
 	if !needsLookup {

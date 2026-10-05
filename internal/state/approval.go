@@ -147,6 +147,10 @@ func (s *Files) UpdateApproval(ctx context.Context, scope, id string, update fun
 		}
 		before, _ := json.Marshal(attempt.Plan)
 		beforeAudit, _ := json.Marshal(attempt.Audit)
+		beforeRuns, _ := json.Marshal(attempt.ClosedRuns)
+		beforeProof, _ := json.Marshal(attempt.NoCreation)
+		oldProof := attempt.NoCreation != nil
+		run, runStartedAt, sendToken := attempt.Run, attempt.RunStartedAt, attempt.SendToken
 		createdAt, lastObservedAt, oldPhase := attempt.CreatedAt, attempt.LastObservedAt, attempt.Phase
 		oldHistory, _ := json.Marshal(attempt.History)
 		oldHistoryLen := len(attempt.History)
@@ -160,8 +164,21 @@ func (s *Files) UpdateApproval(ctx context.Context, scope, id string, update fun
 		}
 		after, err := json.Marshal(attempt.Plan)
 		afterAudit, auditErr := json.Marshal(attempt.Audit)
+		afterRuns, _ := json.Marshal(attempt.ClosedRuns)
+		afterProof, _ := json.Marshal(attempt.NoCreation)
 		if err != nil || auditErr != nil || string(before) != string(after) || string(beforeAudit) != string(afterAudit) {
 			return nil, fmt.Errorf("native approval frozen plan cannot be modified")
+		}
+		if run != attempt.Run || runStartedAt != attempt.RunStartedAt || sendToken != attempt.SendToken ||
+			string(beforeRuns) != string(afterRuns) || (oldProof && string(beforeProof) != string(afterProof)) {
+			return nil, core.ErrConflict
+		}
+		if !oldProof && attempt.NoCreation != nil && !((oldPhase == "submitting" && attempt.Phase == "failed" && attempt.NoCreation.Kind == "rejected") ||
+			(oldPhase == "reserved" && attempt.Phase == "failed" && attempt.NoCreation.Kind == "abandoned")) {
+			return nil, core.ErrConflict
+		}
+		if !oldProof && attempt.NoCreation != nil && (attempt.Failure == nil || attempt.NoCreation.Failure != *attempt.Failure) {
+			return nil, core.ErrConflict
 		}
 		// A late update cannot turn an uncertain external call into a proven
 		// rejection, forget an observation, or release a confirmed reservation.

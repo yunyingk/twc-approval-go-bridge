@@ -23,6 +23,7 @@ type batchGateway struct {
 	lookups atomic.Int64
 	renders atomic.Int64
 	failAt  int64
+	failErr error
 	after   func(core.Plan)
 	lookup  func(core.Plan) (core.Instance, error)
 }
@@ -67,6 +68,9 @@ func (g *batchGateway) CreatePrepared(ctx context.Context, plan core.Plan, artif
 		g.after(plan)
 	}
 	if g.failAt == call {
+		if g.failErr != nil {
+			return core.Instance{}, g.failErr
+		}
 		return core.Instance{}, errors.New("PRIVATE_LOST_RESPONSE")
 	}
 	return instance(plan, "pending", false), nil
@@ -291,17 +295,24 @@ func TestAbandonmentReleasesOnlyUnsentReservationsAndPreservesUnknownInstance(t 
 type batchFaultStore struct {
 	*state.Files
 	claimBefore, claimAfter, updateFailure bool
+	proofFailure                           bool
 }
 
-func (s *batchFaultStore) ClaimApprovalSend(ctx context.Context, scope, id string, audit core.AuditReference) (core.Attempt, bool, error) {
+func (s *batchFaultStore) ClaimApprovalSendWithToken(ctx context.Context, scope, id string, audit core.AuditReference, token string) (core.Attempt, bool, error) {
 	if s.claimBefore {
 		return core.Attempt{}, false, errors.New("PRIVATE_SAVE_FAILURE")
 	}
-	attempt, claimed, err := s.Files.ClaimApprovalSend(ctx, scope, id, audit)
+	attempt, claimed, err := s.Files.ClaimApprovalSendWithToken(ctx, scope, id, audit, token)
 	if err == nil && claimed && s.claimAfter {
 		return attempt, claimed, errors.New("PRIVATE_SAVE_FAILURE")
 	}
 	return attempt, claimed, err
+}
+func (s *batchFaultStore) ProveApprovalNotSent(ctx context.Context, scope, id string, audit core.AuditReference, run uint64, token string) (core.Attempt, error) {
+	if s.proofFailure {
+		return core.Attempt{}, errors.New("PRIVATE_PROOF_SAVE_FAILURE")
+	}
+	return s.Files.ProveApprovalNotSent(ctx, scope, id, audit, run, token)
 }
 func (s *batchFaultStore) UpdateApproval(ctx context.Context, scope, id string, update func(*core.Attempt) error) (core.Attempt, error) {
 	if s.updateFailure {
@@ -311,11 +322,11 @@ func (s *batchFaultStore) UpdateApproval(ctx context.Context, scope, id string, 
 }
 
 func TestBatchSaveFailuresDoNotSendOrRepeatAnUncertainNativeRequest(t *testing.T) {
-	for _, scenario := range []string{"before send intent", "after send intent", "after remote acceptance"} {
+	for _, scenario := range []string{"before send intent", "after send intent", "after send intent and proof save", "after remote acceptance"} {
 		t.Run(scenario, func(t *testing.T) {
 			_, batch, gateway, store, _, _ := batchFixture(t)
 			source, _, _ := batchSourceFixture(t)
-			faults := &batchFaultStore{Files: store, claimBefore: scenario == "before send intent", claimAfter: scenario == "after send intent", updateFailure: scenario == "after remote acceptance"}
+			faults := &batchFaultStore{Files: store, claimBefore: scenario == "before send intent", claimAfter: strings.HasPrefix(scenario, "after send intent"), proofFailure: scenario == "after send intent and proof save", updateFailure: scenario == "after remote acceptance"}
 			service, _ := app.NewBatchService(source, gateway, faults, batchOptions())
 			result, err := service.Submit(context.Background(), batch.ID)
 			if err == nil || result.Status.AllInstancesKnown || result.Status.Plans[1].Phase != "reserved" {
@@ -324,6 +335,14 @@ func TestBatchSaveFailuresDoNotSendOrRepeatAnUncertainNativeRequest(t *testing.T
 			if scenario == "before send intent" {
 				if gateway.creates.Load() != 0 || result.Status.Plans[0].Phase != "reserved" {
 					t.Fatal("native request sent without durable send intent")
+				}
+			} else if scenario == "after send intent" {
+				if gateway.creates.Load() != 0 || result.Status.Plans[0].Phase != "failed" || !result.Status.Plans[0].Retryable || result.Status.Plans[0].NoCreation.Kind != "not_sent" {
+					t.Fatal("owner did not durably prove its failed claim unsent")
+				}
+				faults.claimAfter = false
+				if retried, err := service.Retry(context.Background(), batch.ID); err != nil || !retried.Status.AllInstancesKnown || gateway.creates.Load() != 2 {
+					t.Fatal("proven unsent claim did not recover through explicit retry")
 				}
 			} else {
 				expected := int64(0)

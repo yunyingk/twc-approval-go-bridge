@@ -121,6 +121,10 @@ func TestApprovalCommandsOnlyExposeSafeBatchMappingsAndReadUnsentStateWithoutCre
 	if err := runApprovalSubmission(context.Background(), cfg, batch.ID, &output); err != nil || gateway.creates != 2 {
 		t.Fatal("known command rerun constructed a new provider/source/target")
 	}
+	output.Reset()
+	if err := runApprovalRetry(context.Background(), cfg, batch.ID, &output); err != nil || gateway.creates != 2 || !strings.Contains(output.String(), "retry_submission") {
+		t.Fatal("known retry command constructed another source/target or lost operation identity")
+	}
 	before = commandStateHashes(t, cfg.StateDir)
 	output.Reset()
 	if err := runApprovalReconciliation(context.Background(), local, batch.ID, &output); err == nil || !strings.Contains(output.String(), "original_target_credentials_unavailable") {
@@ -137,12 +141,62 @@ func (s privateFailureSubmitter) Submit(context.Context, string) (app.BatchResul
 	return s.result, errors.New("PRIVATE_UPSTREAM_REQUEST_SECRET")
 }
 
+func (s privateFailureSubmitter) Retry(context.Context, string) (app.BatchResult, error) {
+	return s.result, errors.New("PRIVATE_UPSTREAM_REQUEST_SECRET")
+}
+
 func TestApprovalSubmissionCommandSanitizesFailureAndReportsPartialState(t *testing.T) {
 	var output bytes.Buffer
 	result := app.BatchResult{Status: app.BatchStatus{ID: strings.Repeat("a", 64), Plans: []app.PlanStatus{{ID: "uuid", Phase: "unknown"}}}, Issue: "submission_failed"}
 	err := submitApprovalBatch(context.Background(), privateFailureSubmitter{result}, result.Status.ID, &output)
 	if err == nil || strings.Contains(err.Error()+output.String(), "PRIVATE") || !strings.Contains(output.String(), "unknown") {
 		t.Fatal("partial failure lost diagnostic status or exposed raw private error")
+	}
+	output.Reset()
+	err = retryApprovalBatch(context.Background(), privateFailureSubmitter{result}, result.Status.ID, &output)
+	if err == nil || strings.Contains(err.Error()+output.String(), "PRIVATE") || !strings.Contains(output.String(), "unknown") {
+		t.Fatal("retry failure lost partial state or exposed private error")
+	}
+}
+
+func TestRetryCommandStopsNewOrUnknownBatchesBeforeRealSourceAssembly(t *testing.T) {
+	cfg, _, batch, store, gateway := commandBatchFixture(t)
+	ctx := context.Background()
+	before := commandStateHashes(t, cfg.StateDir)
+	var output bytes.Buffer
+	if err := runApprovalRetry(ctx, cfg, batch.ID, &output); err == nil || !strings.Contains(output.String(), "not_submitted") || !reflect.DeepEqual(before, commandStateHashes(t, cfg.StateDir)) {
+		t.Fatal("retry tried to assemble a real source/target for a new batch")
+	}
+	store.BeginApprovalBatch(ctx, batch.ID)
+	p := batch.Plans[0]
+	attempt, claimed, err := store.ClaimApprovalSend(ctx, p.Plan.SourceScope, p.Plan.ID, p.AuditReference(batch.ID))
+	if err != nil || !claimed {
+		t.Fatal("could not save send intent")
+	}
+	if _, err := store.ProveApprovalNotSent(ctx, p.Plan.SourceScope, p.Plan.ID, *attempt.Audit, attempt.Run, attempt.SendToken); err != nil {
+		t.Fatal(err)
+	}
+	output.Reset()
+	if err := runApprovalReconciliation(ctx, config.Config{StateDir: cfg.StateDir}, batch.ID, &output); err != nil || !strings.Contains(output.String(), "not_submitted") {
+		t.Fatal("proven unsent claim required original credentials/query")
+	}
+	// The ordinary update path cannot reset a proven unsent run. Reopen only
+	// through the explicit transaction, then simulate loss of the new response.
+	expected := map[string]uint64{}
+	for _, plan := range batch.Plans {
+		expected[plan.Plan.ID] = 0
+	}
+	if _, err := store.RetryApprovalBatch(ctx, batch.ID, expected); err != nil {
+		t.Fatal(err)
+	}
+	store.ClaimApprovalSend(ctx, p.Plan.SourceScope, p.Plan.ID, p.AuditReference(batch.ID))
+	if _, err := store.UpdateApproval(ctx, p.Plan.SourceScope, p.Plan.ID, func(a *core.Attempt) error { a.Phase = "unknown"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	before = commandStateHashes(t, cfg.StateDir)
+	output.Reset()
+	if err := runApprovalRetry(ctx, cfg, batch.ID, &output); err == nil || !strings.Contains(output.String(), "reconciliation_required") || !reflect.DeepEqual(before, commandStateHashes(t, cfg.StateDir)) || gateway.creates != 0 {
+		t.Fatal("unknown command retry reached real source/target or changed state")
 	}
 }
 
@@ -153,6 +207,9 @@ func TestApprovalOperationGuardsDoNotCreateStateOrUseUnconfiguredSubmission(t *t
 		for _, run := range []func(context.Context, config.Config, string, *bytes.Buffer) error{
 			func(ctx context.Context, c config.Config, id string, out *bytes.Buffer) error {
 				return runApprovalSubmission(ctx, c, id, out)
+			},
+			func(ctx context.Context, c config.Config, id string, out *bytes.Buffer) error {
+				return runApprovalRetry(ctx, c, id, out)
 			},
 			func(ctx context.Context, c config.Config, id string, out *bytes.Buffer) error {
 				return runApprovalStatus(ctx, c, id, out)
@@ -171,6 +228,9 @@ func TestApprovalOperationGuardsDoNotCreateStateOrUseUnconfiguredSubmission(t *t
 	}
 	if err := runApprovalSubmission(context.Background(), cfg, strings.Repeat("a", 64), &bytes.Buffer{}); err == nil {
 		t.Fatal("unconfigured submission reached state/network")
+	}
+	if err := runApprovalRetry(context.Background(), cfg, strings.Repeat("a", 64), &bytes.Buffer{}); err == nil {
+		t.Fatal("unconfigured retry reached state/network")
 	}
 	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("guarded command created state")

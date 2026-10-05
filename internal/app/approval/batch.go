@@ -2,6 +2,8 @@ package approval
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,7 +21,9 @@ type BatchStore interface {
 	Store
 	PreparationStore
 	BeginApprovalBatch(context.Context, string) ([]core.Attempt, error)
-	ClaimApprovalSend(context.Context, string, string, core.AuditReference) (core.Attempt, bool, error)
+	RetryApprovalBatch(context.Context, string, map[string]uint64) ([]core.Attempt, error)
+	ClaimApprovalSendWithToken(context.Context, string, string, core.AuditReference, string) (core.Attempt, bool, error)
+	ProveApprovalNotSent(context.Context, string, string, core.AuditReference, uint64, string) (core.Attempt, error)
 }
 type BatchSource interface {
 	Source
@@ -29,16 +33,20 @@ type BatchSource interface {
 // BatchStatus intentionally omits private plans, native bodies and AI evidence.
 // AllInstancesKnown is a mapping observation, never a financial approval.
 type PlanStatus struct {
-	ID             string               `json:"plan_id"`
-	Revision       string               `json:"revision"`
-	RecordIDs      []string             `json:"record_ids"`
-	Phase          string               `json:"phase"`
-	Audit          *core.AuditReference `json:"audit,omitempty"`
-	InstanceID     string               `json:"instance_id,omitempty"`
-	InstanceStatus string               `json:"instance_status,omitempty"`
-	Verified       bool                 `json:"instance_verified"`
-	Failure        *core.Failure        `json:"failure,omitempty"`
-	LastObservedAt time.Time            `json:"last_observed_at,omitempty"`
+	ID             string                `json:"plan_id"`
+	Revision       string                `json:"revision"`
+	RecordIDs      []string              `json:"record_ids"`
+	Phase          string                `json:"phase"`
+	Audit          *core.AuditReference  `json:"audit,omitempty"`
+	InstanceID     string                `json:"instance_id,omitempty"`
+	InstanceStatus string                `json:"instance_status,omitempty"`
+	Verified       bool                  `json:"instance_verified"`
+	Failure        *core.Failure         `json:"failure,omitempty"`
+	NoCreation     *core.NoCreationProof `json:"no_creation,omitempty"`
+	Run            uint64                `json:"run"`
+	ClosedRuns     []core.ClosedRun      `json:"closed_runs,omitempty"`
+	Retryable      bool                  `json:"retryable"`
+	LastObservedAt time.Time             `json:"last_observed_at,omitempty"`
 }
 type BatchStatus struct {
 	ID                string       `json:"preparation_id"`
@@ -74,6 +82,7 @@ func ReadBatchStatus(ctx context.Context, store BatchReader, id string) (BatchSt
 				return BatchStatus{}, core.ErrConflict
 			}
 			row.Phase, row.Audit, row.Failure, row.LastObservedAt = attempt.Phase, attempt.Audit, attempt.Failure, attempt.LastObservedAt
+			row.NoCreation, row.Run, row.ClosedRuns, row.Retryable = attempt.NoCreation, attempt.Run, attempt.ClosedRuns, attempt.RetryProof() != nil
 			if attempt.Instance != nil {
 				row.InstanceID, row.InstanceStatus, row.Verified = attempt.Instance.ID, attempt.Instance.Status, attempt.Instance.Verified
 			}
@@ -111,6 +120,16 @@ func (s *BatchService) result(ctx context.Context, id, issue string, cause error
 // claims and sends each group once. A partial failure stops later sends. Confirmed
 // mappings survive reruns; uncertainty requires a UUID query before resumption.
 func (s *BatchService) Submit(ctx context.Context, id string) (BatchResult, error) {
+	return s.submit(ctx, id, false)
+}
+
+// Retry is explicit and reuses the same audited batch, plan UUID and body. Only
+// proven rejection/abandonment/unsent runs can be reopened after full rechecking.
+func (s *BatchService) Retry(ctx context.Context, id string) (BatchResult, error) {
+	return s.submit(ctx, id, true)
+}
+
+func (s *BatchService) submit(ctx context.Context, id string, retry bool) (BatchResult, error) {
 	batch, err := s.store.ReadApprovalPreparation(ctx, id)
 	if err != nil {
 		return BatchResult{}, err
@@ -120,6 +139,8 @@ func (s *BatchService) Submit(ctx context.Context, id string) (BatchResult, erro
 		return s.result(ctx, id, "identity_changed", core.ErrPlanChanged, nil)
 	}
 	allKnown := true
+	hasExisting := false
+	expectedRuns := map[string]uint64{}
 	for _, prepared := range batch.Plans {
 		attempt, err := s.store.ReadApproval(ctx, first.SourceScope, prepared.Plan.ID)
 		if errors.Is(err, core.ErrUnknown) {
@@ -129,16 +150,21 @@ func (s *BatchService) Submit(ctx context.Context, id string) (BatchResult, erro
 		if err != nil {
 			return BatchResult{}, err
 		}
+		hasExisting = true
 		if attempt.Audit == nil || *attempt.Audit != prepared.AuditReference(id) {
 			return s.result(ctx, id, "audit_conflict", core.ErrConflict, nil)
 		}
-		if attempt.Phase != "reserved" && attempt.Instance == nil {
+		expectedRuns[prepared.Plan.ID] = attempt.Run
+		if attempt.Phase != "reserved" && attempt.Instance == nil && !(retry && attempt.RetryProof() != nil) {
 			return s.result(ctx, id, "reconciliation_required", core.ErrReconcile, nil)
 		}
 		allKnown = allKnown && attempt.Instance != nil
 	}
 	if allKnown {
 		return s.result(ctx, id, "", nil, nil)
+	}
+	if retry && !hasExisting {
+		return s.result(ctx, id, "not_submitted", core.ErrNotSubmitted, nil)
 	}
 	checked, err := s.preparer.Check(ctx, batch)
 	if err != nil {
@@ -147,7 +173,12 @@ func (s *BatchService) Submit(ctx context.Context, id string) (BatchResult, erro
 	if checked.Batch == nil {
 		return s.result(ctx, id, checked.Issue, core.ErrPlanChanged, &checked.Inspection)
 	}
-	if _, err := s.store.BeginApprovalBatch(ctx, id); err != nil {
+	if retry {
+		_, err = s.store.RetryApprovalBatch(ctx, id, expectedRuns)
+	} else {
+		_, err = s.store.BeginApprovalBatch(ctx, id)
+	}
+	if err != nil {
 		return s.result(ctx, id, batchFailure(err), err, nil)
 	}
 	for _, prepared := range batch.Plans {
@@ -179,8 +210,17 @@ func (s *BatchService) Submit(ctx context.Context, id string) (BatchResult, erro
 		if len(current) != 1 || current[0].ID != plan.ID {
 			return s.result(ctx, id, "preparation_changed", core.ErrPlanChanged, nil)
 		}
-		attempt, claimed, err := s.store.ClaimApprovalSend(ctx, first.SourceScope, plan.ID, prepared.AuditReference(id))
+		var nonce [32]byte
+		if _, err := rand.Read(nonce[:]); err != nil {
+			return s.result(ctx, id, "send_token_unavailable", err, nil)
+		}
+		token := hex.EncodeToString(nonce[:])
+		audit := prepared.AuditReference(id)
+		attempt, claimed, err := s.store.ClaimApprovalSendWithToken(ctx, first.SourceScope, plan.ID, audit, token)
 		if err != nil {
+			// No gateway method has been invoked. An exact durable token match
+			// can prove this failed claim unsent; proof-save failure stays held.
+			_, _ = s.store.ProveApprovalNotSent(context.WithoutCancel(ctx), first.SourceScope, plan.ID, audit, old.Run, token)
 			return s.result(ctx, id, "send_intent_save_failed", err, nil)
 		}
 		if !claimed {
@@ -189,7 +229,7 @@ func (s *BatchService) Submit(ctx context.Context, id string) (BatchResult, erro
 			}
 			return s.result(ctx, id, "reconciliation_required", core.ErrReconcile, nil)
 		}
-		if _, err := service.send(ctx, plan); err != nil {
+		if _, err := service.send(ctx, plan, attempt); err != nil {
 			return s.result(ctx, id, batchFailure(err), err, nil)
 		}
 	}
