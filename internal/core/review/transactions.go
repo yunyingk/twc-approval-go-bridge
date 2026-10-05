@@ -34,6 +34,12 @@ type EvidenceIssue struct {
 	RawValue string `json:"raw_value,omitempty"`
 }
 
+// CanonicalTransactionEvidence gives private audit snapshots the same ordering
+// as the AI fingerprint, without changing the caller's linked evidence.
+func CanonicalTransactionEvidence(evidence *TransactionEvidence) *TransactionEvidence {
+	return canonicalTransactions(evidence)
+}
+
 func canonicalTransactions(evidence *TransactionEvidence) *TransactionEvidence {
 	if evidence == nil {
 		return nil

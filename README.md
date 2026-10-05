@@ -117,6 +117,8 @@ go run ./cmd/approval-template -app personal -file configs/feishu/approval-templ
 
 企业租户选 `-app enterprise`，使用独立的 `FEISHU_APPROVAL_APP_ID` / `FEISHU_APPROVAL_APP_SECRET`，不会回退到个人版凭证。工具不自动加载 `.env`，也不随服务启动运行。模板创建需要 `approval:definition` 或 `approval:approval` 写权限；2026-09-30 初次个人版测试因缺少写权限返回 `99991672`，开通权限后已成功创建「海外易商卡-接口测试」（Code：`EA296788-7BFC-47A2-91D7-6B7D8D2D0B11`），并通过正式客户端读取验证为 `ACTIVE`、一个明细、14 个子控件和 3 个流程节点。官方接口创建的模板不能停用或删除，正式创建前应审核模板配置。示例包含真实附件类型；完整约定见 [`internal/feishu/approval/README.md`](internal/feishu/approval/README.md)。创建审批实例和结果回写仍待接入。
 
+人工审批准备现已支持 `preview-approval`、显式 `prepare-approval-files`/`retry-approval-files` 和 `prepare-approval`。最后一个命令核对整组选中行、全部原生表单和当前 AI，将实际 SDK 请求、精确业务值、来源版本及审核证据原子保存为 0600 私有审计文件，便于建单前 review；输出只有摘要，不上传或创建实例。完整配置、命令及限制见[审批配置](docs/approval-configuration.md#完整请求准备)和[阶段记录](docs/progress/2026-10-05-approval-requests.md)。当前企业配置和监督服务未启用原生审批，真实建单与人工结果闭环仍待完成。
+
 ## 业务边界
 
 | 目录 | 职责 | 当前状态 |

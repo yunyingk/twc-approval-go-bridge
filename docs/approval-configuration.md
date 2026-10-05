@@ -77,3 +77,28 @@ go run ./cmd/server retry-approval-files <记录ID[,记录ID...]>
 一份成功、后一份失败时保留成功上传，不回滚也不在下次重传。上传后重新检查所有来源和当前 AI，再完整校验全部表单；有变化就不输出可用计划。输出只含安全状态/问题/计划摘要，不含原件、文件名、code、来源 token 或完整表单。`file_preparation_complete` 和 `form_validated` 必须分别检查：语义阻塞也返回诊断 JSON，不应只用进程退出码判定业务成功；`creation_available` 始终 false。
 
 状态元数据包含敏感来源标识和文件名，保存到 0600 文件及独立 native_approval_upload_version 命名空间，不能公开或提交 Git；原件二进制不入状态。预览缺少凭据时只读返回阻塞，不创建状态或锁文件。本阶段未启用企业 approval 配置、未更新监督服务、未真实上传或建单。验证与下一步见[附件准备记录](progress/2026-10-05-approval-files.md)。
+
+## 完整请求准备
+
+```bash
+# 使用完整 manual 配置；先按上面的命令准备所需审批附件。
+go run ./cmd/server prepare-approval <记录ID[,记录ID...]>
+```
+
+这个命令只读取线上来源和模板，并保存本地私有审计文件。整组选中行必须有唯一、已完成且符合显式策略的当前 AI 结果，以及完整业务值和所需审批 file code。它不会补上传、调用审核方、预约成员或创建实例；企业选中配置尚未启用 approval，会在状态/网络操作前拒绝。
+
+准备时生成全部分组的中立计划和实际 SDK 建单请求体，随后重新核对整组来源、AI 与每个请求；任何一行或一组失败、两次准备之间观测到变化，整批都不保存，不返回可用子集。已保存的批次含：
+
+- 所有计划的 UUID、来源/目标/配置版本、发起人、分组、成员、精确业务值及审批附件引用/上传身份。
+- 当次核对的完整票据事实、OCR 原始响应、查重候选、配置的支付证据、审核提供方/规则 pin 及实际 AI 结果。原件二进制和附件临时下载 URL 不保存；每份原件另存内容 SHA-256 与实际字节数。快照 revision 仍引用原始完整 AI 请求，不能把去掉二进制的审计快照再次当作审核请求。
+- Feishu 实际建单 JSON（`request.format=feishu.instance-create.v4`），包含字符串化 form、目标应用下人员/file code、原 UUID、自选节点审批人及两个关闭的重提开关；不含鉴权头或应用密钥。
+
+保存到 `STATE_DIR` 的独立 `native_approval_preparation_version=1` 文件，文件权限 0600。stdout 只提供 `preparation_id`、`private_audit_file`、计划/成员/版本及请求 SHA-256，不打印私有值。可在本机打开报告给出的私有文件 review；它与 `.env`、完整运行日志一样不能提交 Git 或公开。原子保存只保证本地整批快照，不冻结远端 Base。
+
+计划与审核证明的 JSON 载荷上限为 8MiB，超过时整批停止。审计采用单份 JSON 文件；本机格式化查看可读性时，也需保留其私有权限。
+
+`preparation_complete=true` 说明整个批次已成功保存；必须检查这个字段和 `issues`，不能只看进程退出码。`creation_available` 始终 false。整批摘要不含保存时间；读取时间、返回顺序和附件临时 URL 变化不产生新审计，同一批次重复准备保留最初保存时间。内容、AI 结果、人员、模板或请求变化则产生不同摘要；摘要用于完整性核对，不是权限凭证。
+
+`issues` 包括 source_not_ready、plan_inputs_invalid、target_request_invalid、review_proof_missing、review_proof_invalid、preparation_invalid、preparation_changed；具体来源原因仍在 records/source_inputs。状态读取/保存或上下文取消失败会返回非零退出码，不输出成功报告；已有空/损坏快照不会当作缺失记录覆盖。
+
+底层 `AuditedGateway` 已在隔离测试中将已保存的具体请求接到共用 Submit，用同一原生 body 构建器逐字节核对后发送，仍执行来源重核、成员预约及原 UUID 恢复。本阶段没有真实建单命令，尚未将批次 ID 关联进实际建单尝试或接人工结果交付；完整请求准备不能代替这部分验收。验证及下一步见[请求审计记录](progress/2026-10-05-approval-requests.md)。

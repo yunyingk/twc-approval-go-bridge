@@ -289,6 +289,45 @@ func (g *InstanceGateway) Create(ctx context.Context, plan core.Plan) (core.Inst
 		// No creation request was sent, including a template change after Begin.
 		return core.Instance{}, errors.Join(core.ErrRejected, err)
 	}
+	return g.createRequest(ctx, plan, request)
+}
+
+const instanceRequestFormat = "feishu.instance-create.v4"
+
+func (g *InstanceGateway) PrepareRequest(ctx context.Context, plan core.Plan) (core.RequestArtifact, error) {
+	request, err := g.request(ctx, plan)
+	if err != nil {
+		return core.RequestArtifact{}, err
+	}
+	body, err := request.WireBody()
+	if err != nil {
+		return core.RequestArtifact{}, err
+	}
+	return core.NewRequestArtifact(instanceRequestFormat, body)
+}
+
+// CreatePrepared checks the saved request against the current native mapping
+// before any creation call. The actual SDK body comes from the same builder.
+func (g *InstanceGateway) CreatePrepared(ctx context.Context, plan core.Plan, artifact core.RequestArtifact) (core.Instance, error) {
+	request, err := g.request(ctx, plan)
+	if err != nil {
+		return core.Instance{}, errors.Join(core.ErrRejected, err)
+	}
+	body, err := request.WireBody()
+	if err != nil {
+		return core.Instance{}, errors.Join(core.ErrRejected, err)
+	}
+	current, err := core.NewRequestArtifact(instanceRequestFormat, body)
+	if err != nil {
+		return core.Instance{}, errors.Join(core.ErrRejected, err)
+	}
+	if artifact.Validate() != nil || artifact.Format != current.Format || artifact.Hash != current.Hash {
+		return core.Instance{}, errors.Join(core.ErrRejected, core.ErrPlanChanged)
+	}
+	return g.createRequest(ctx, plan, request)
+}
+
+func (g *InstanceGateway) createRequest(ctx context.Context, plan core.Plan, request InstanceRequest) (core.Instance, error) {
 	ref, err := g.client.CreateInstance(ctx, request)
 	if err != nil {
 		var remote *InstanceAPIError

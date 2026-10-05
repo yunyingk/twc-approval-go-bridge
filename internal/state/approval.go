@@ -28,7 +28,7 @@ func approvalRegistryKey(scope string) string { return "native-approval-scope:" 
 
 func decodeApprovalRegistry(raw []byte, scope string) (approvalRegistry, error) {
 	registry := approvalRegistry{Version: 1, Scope: scope, Attempts: map[string]core.Attempt{}}
-	if len(raw) == 0 {
+	if raw == nil {
 		return registry, nil
 	}
 	if err := json.Unmarshal(raw, &registry); err != nil {

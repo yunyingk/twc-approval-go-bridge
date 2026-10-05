@@ -38,6 +38,14 @@
 
 上传请求与历次状态位于中立 `core/approval`，持久化与复用由 `app/approval.UploadManager` 和 `state.Files` 承担。`prepare-approval-files`/`retry-approval-files` 只做显式附件准备，预览只读取已存上传凭据。本阶段隔离测试已通过，未真实上传或建单；完整配置、状态及恢复边界见[附件准备说明](../../../docs/approval-configuration.md#审批附件准备)和[过程记录](../../../docs/progress/2026-10-05-approval-files.md)。
 
+## 完整实例请求审计
+
+`InstanceRequest.WireBody` 与 `CreateInstance` 使用同一个 SDK body 构建器，保存真实 `form` 字符串、原 UUID、节点审批人及关闭的重提开关，不保存鉴权信息。`InstanceGateway.PrepareRequest` 只生成 `feishu.instance-create.v4` 不透明 JSON；核心只保存格式/字节/摘要，不解释平台控件。
+
+`CreatePrepared` 在发送前重新读取当前模板，按已存计划生成实际请求，并与审计逐字节摘要核对；任何变化作为未发送的拒绝停止。`app/approval.AuditedGateway` 绑定一份具体已存计划/请求，保留共用 Submit 的来源重核、原子成员预约和一次发送/UUID 恢复语义。隔离 HTTP 测试核对完整 SDK body 与审计一致及响应丢失后不重发；不表示真实实例已经创建。
+
+`prepare-approval` 保存整个显式选择的私有审计批次，尚无真实建单命令或人工结果交付装配。详见[完整请求准备](../../../docs/approval-configuration.md#完整请求准备)和[过程记录](../../../docs/progress/2026-10-05-approval-requests.md)。
+
 ## 一次性创建模板
 
 独立入口为 [`cmd/approval-template`](../../../cmd/approval-template/main.go)，不依赖 Anyreceipt、SealAI 或轮询任务。

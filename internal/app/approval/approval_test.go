@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -397,5 +399,31 @@ func TestCallerCancellationAfterAcceptanceStillPersistsInstance(t *testing.T) {
 	saved, err := store.ReadApproval(context.Background(), "source", plan.ID)
 	if err != nil || saved.Instance == nil || saved.Phase != "pending" {
 		t.Fatal("caller cancellation dropped accepted instance mapping")
+	}
+}
+
+func TestEmptyExistingApprovalRegistryCannotReleaseMemberOccupancy(t *testing.T) {
+	svc, s, g, store := fixture(t)
+	plan := prepare(t, svc, "a")
+	if _, err := svc.Submit(context.Background(), plan); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(store.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".json") {
+			if err := os.WriteFile(filepath.Join(store.root, entry.Name()), nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if _, err := store.ReadApproval(context.Background(), "source", plan.ID); err == nil || errors.Is(err, core.ErrUnknown) {
+		t.Fatal("empty existing registry lost confirmed occupancy")
+	}
+	s.rows[0].Fields["amount"] = core.Value{Kind: "money", Decimal: "20", Currency: "USD"}
+	if _, err := svc.Submit(context.Background(), prepare(t, svc, "a")); err == nil || g.creates.Load() != 1 {
+		t.Fatal("damaged registry permitted another instance for its member")
 	}
 }

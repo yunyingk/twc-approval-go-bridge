@@ -134,28 +134,11 @@ func (c *InstanceClient) CreateInstance(ctx context.Context, draft InstanceReque
 	if c == nil || c.definitions == nil {
 		return InstanceRef{}, fmt.Errorf("Feishu instance client is not initialized")
 	}
-	if err := draft.Validate(); err != nil {
+	body, err := draft.nativeBody()
+	if err != nil {
 		return InstanceRef{}, err
 	}
-	body := larkapproval.NewInstanceCreateBuilder().ApprovalCode(draft.ApprovalCode).
-		OpenId(draft.OpenID).Uuid(draft.UUID).Form(string(draft.Form)).
-		AllowResubmit(false).AllowSubmitAgain(false)
-	if draft.DepartmentID != "" {
-		body.DepartmentId(draft.DepartmentID)
-	}
-	nodes := make([]*larkapproval.NodeApprover, 0, len(draft.NodeApprovers))
-	keys := make([]string, 0, len(draft.NodeApprovers))
-	for node := range draft.NodeApprovers {
-		keys = append(keys, node)
-	}
-	sort.Strings(keys)
-	for _, node := range keys {
-		nodes = append(nodes, larkapproval.NewNodeApproverBuilder().Key(node).Value(draft.NodeApprovers[node]).Build())
-	}
-	if len(nodes) > 0 {
-		body.NodeApproverOpenIdList(nodes)
-	}
-	resp, err := c.definitions.sdk.Instance.Create(ctx, larkapproval.NewCreateInstanceReqBuilder().InstanceCreate(body.Build()).Build())
+	resp, err := c.definitions.sdk.Instance.Create(ctx, larkapproval.NewCreateInstanceReqBuilder().InstanceCreate(body).Build())
 	if err != nil {
 		return InstanceRef{}, &instanceTransportError{"create", err}
 	}
@@ -177,6 +160,40 @@ func (c *InstanceClient) CreateInstance(ctx context.Context, draft InstanceReque
 		ref.Link = *resp.Data.InstanceLink
 	}
 	return ref, nil
+}
+
+// WireBody uses the exact SDK body builder used by CreateInstance. Authorization
+// and tenant-token acquisition are not part of a reviewable creation artifact.
+func (draft InstanceRequest) WireBody() (json.RawMessage, error) {
+	body, err := draft.nativeBody()
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(body)
+}
+func (draft InstanceRequest) nativeBody() (*larkapproval.InstanceCreate, error) {
+	if err := draft.Validate(); err != nil {
+		return nil, err
+	}
+	body := larkapproval.NewInstanceCreateBuilder().ApprovalCode(draft.ApprovalCode).
+		OpenId(draft.OpenID).Uuid(draft.UUID).Form(string(draft.Form)).
+		AllowResubmit(false).AllowSubmitAgain(false)
+	if draft.DepartmentID != "" {
+		body.DepartmentId(draft.DepartmentID)
+	}
+	nodes := make([]*larkapproval.NodeApprover, 0, len(draft.NodeApprovers))
+	keys := make([]string, 0, len(draft.NodeApprovers))
+	for node := range draft.NodeApprovers {
+		keys = append(keys, node)
+	}
+	sort.Strings(keys)
+	for _, node := range keys {
+		nodes = append(nodes, larkapproval.NewNodeApproverBuilder().Key(node).Value(draft.NodeApprovers[node]).Build())
+	}
+	if len(nodes) > 0 {
+		body.NodeApproverOpenIdList(nodes)
+	}
+	return body.Build(), nil
 }
 
 // GetInstance accepts either a native instance code or the original creation
