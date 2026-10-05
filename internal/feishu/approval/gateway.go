@@ -345,31 +345,39 @@ func (g *InstanceGateway) createRequest(ctx context.Context, plan core.Plan, req
 }
 
 func (g *InstanceLookupGateway) Lookup(ctx context.Context, plan core.Plan) (core.Instance, error) {
+	result, err := g.LookupResult(ctx, plan)
+	return result.Instance, err
+}
+
+func (g *InstanceLookupGateway) LookupResult(ctx context.Context, plan core.Plan) (core.ResultSnapshot, error) {
 	if err := plan.Validate(); err != nil {
-		return core.Instance{}, err
+		return core.ResultSnapshot{}, err
 	}
 	if plan.TargetScope != g.TargetScope() {
-		return core.Instance{}, fmt.Errorf("approval lookup belongs to another target identity")
+		return core.ResultSnapshot{}, fmt.Errorf("approval lookup belongs to another target identity")
 	}
 	// Lookup uses the saved template/UUID, not a newly selected template or form.
 	data, err := g.client.GetInstance(ctx, plan.ID)
 	if err != nil {
-		return core.Instance{}, err
+		return core.ResultSnapshot{}, err
 	}
 	if data.Uuid == nil || data.ApprovalCode == nil || data.OpenId == nil {
-		return core.Instance{}, core.ErrConflict
+		return core.ResultSnapshot{}, core.ErrConflict
 	}
 	status := map[string]string{"PENDING": "pending", "APPROVED": "approved", "REJECTED": "rejected", "CANCELED": "canceled", "DELETED": "deleted"}[*data.Status]
 	// The query contract exposes revocation separately from its five statuses.
 	// A historical APPROVED must not stay approved after reverted becomes true.
 	if data.Reverted != nil && *data.Reverted {
 		if status == "pending" {
-			return core.Instance{}, core.ErrConflict
+			return core.ResultSnapshot{}, core.ErrConflict
 		}
 		if status == "approved" {
 			status = "reverted"
 		}
 	}
 	instance := core.Instance{ID: *data.InstanceCode, UUID: *data.Uuid, TargetScope: g.TargetScope(), Template: *data.ApprovalCode, SubmitterID: *data.OpenId, Status: status, Verified: true}
-	return instance, instance.Validate(plan)
+	if err := instance.Validate(plan); err != nil {
+		return core.ResultSnapshot{}, err
+	}
+	return nativeResultSnapshot(plan, instance, data)
 }

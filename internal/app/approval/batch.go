@@ -33,20 +33,25 @@ type BatchSource interface {
 // BatchStatus intentionally omits private plans, native bodies and AI evidence.
 // AllInstancesKnown is a mapping observation, never a financial approval.
 type PlanStatus struct {
-	ID             string                `json:"plan_id"`
-	Revision       string                `json:"revision"`
-	RecordIDs      []string              `json:"record_ids"`
-	Phase          string                `json:"phase"`
-	Audit          *core.AuditReference  `json:"audit,omitempty"`
-	InstanceID     string                `json:"instance_id,omitempty"`
-	InstanceStatus string                `json:"instance_status,omitempty"`
-	Verified       bool                  `json:"instance_verified"`
-	Failure        *core.Failure         `json:"failure,omitempty"`
-	NoCreation     *core.NoCreationProof `json:"no_creation,omitempty"`
-	Run            uint64                `json:"run"`
-	ClosedRuns     []core.ClosedRun      `json:"closed_runs,omitempty"`
-	Retryable      bool                  `json:"retryable"`
-	LastObservedAt time.Time             `json:"last_observed_at,omitempty"`
+	ID               string                `json:"plan_id"`
+	Revision         string                `json:"revision"`
+	RecordIDs        []string              `json:"record_ids"`
+	Phase            string                `json:"phase"`
+	Audit            *core.AuditReference  `json:"audit,omitempty"`
+	InstanceID       string                `json:"instance_id,omitempty"`
+	InstanceStatus   string                `json:"instance_status,omitempty"`
+	Verified         bool                  `json:"instance_verified"`
+	Failure          *core.Failure         `json:"failure,omitempty"`
+	NoCreation       *core.NoCreationProof `json:"no_creation,omitempty"`
+	Run              uint64                `json:"run"`
+	ClosedRuns       []core.ClosedRun      `json:"closed_runs,omitempty"`
+	Retryable        bool                  `json:"retryable"`
+	LastObservedAt   time.Time             `json:"last_observed_at,omitempty"`
+	ResultRevision   string                `json:"result_revision,omitempty"`
+	ResultTasks      int                   `json:"result_tasks,omitempty"`
+	ResultComments   int                   `json:"result_comments,omitempty"`
+	ResultActions    int                   `json:"result_actions,omitempty"`
+	HumanResultIssue string                `json:"human_result_issue,omitempty"`
 }
 type BatchStatus struct {
 	ID                string       `json:"preparation_id"`
@@ -85,6 +90,11 @@ func ReadBatchStatus(ctx context.Context, store BatchReader, id string) (BatchSt
 			row.NoCreation, row.Run, row.ClosedRuns, row.Retryable = attempt.NoCreation, attempt.Run, attempt.ClosedRuns, attempt.RetryProof() != nil
 			if attempt.Instance != nil {
 				row.InstanceID, row.InstanceStatus, row.Verified = attempt.Instance.ID, attempt.Instance.Status, attempt.Instance.Verified
+			}
+			if result := attempt.CurrentResult(); result != nil {
+				row.ResultRevision = result.Revision
+				row.ResultTasks, row.ResultComments, row.ResultActions = len(result.Tasks), len(result.Comments), len(result.Actions)
+				_, row.HumanResultIssue = result.HumanDecision(plan)
 			}
 		}
 		status.AllInstancesKnown = status.AllInstancesKnown && row.InstanceID != ""

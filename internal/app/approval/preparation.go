@@ -174,6 +174,16 @@ func (g *AuditedGateway) Describe(ctx context.Context) (Target, error) {
 func (g *AuditedGateway) Lookup(ctx context.Context, plan core.Plan) (core.Instance, error) {
 	return g.gateway.Lookup(ctx, plan)
 }
+func (g *AuditedGateway) LookupResult(ctx context.Context, plan core.Plan) (core.ResultSnapshot, error) {
+	if lookup, ok := g.gateway.(ResultLookupGateway); ok {
+		return lookup.LookupResult(ctx, plan)
+	}
+	instance, err := g.gateway.Lookup(ctx, plan)
+	if err != nil {
+		return core.ResultSnapshot{}, err
+	}
+	return core.NewResultSnapshot(plan, core.ResultSnapshot{Kind: "status_only", Instance: instance})
+}
 func (g *AuditedGateway) ValidatePlan(ctx context.Context, plan core.Plan) error {
 	if plan.ID != g.prepared.Plan.ID || plan.Revision != g.prepared.Plan.Revision || plan.Validate() != nil {
 		return core.ErrPlanChanged

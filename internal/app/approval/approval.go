@@ -22,6 +22,12 @@ type LookupGateway interface {
 	TargetScope() string
 	Lookup(context.Context, core.Plan) (core.Instance, error)
 }
+
+// ResultLookupGateway is optional for historical/custom gateways. Native lookup
+// implements it so the same authoritative GET provides status and full evidence.
+type ResultLookupGateway interface {
+	LookupResult(context.Context, core.Plan) (core.ResultSnapshot, error)
+}
 type Gateway interface {
 	LookupGateway
 	Describe(context.Context) (Target, error)
@@ -232,7 +238,22 @@ func (s *Service) ReconcileExpected(ctx context.Context, id, instanceID string) 
 	}
 	started := time.Now().UTC()
 	run, sendToken := attempt.Run, attempt.SendToken
-	instance, callErr := s.lookup.Lookup(ctx, attempt.Plan)
+	var instance core.Instance
+	var result *core.ResultSnapshot
+	var callErr error
+	if lookup, ok := s.lookup.(ResultLookupGateway); ok {
+		observed, err := lookup.LookupResult(ctx, attempt.Plan)
+		callErr = err
+		if callErr == nil {
+			callErr = observed.Validate(attempt.Plan)
+		}
+		if callErr == nil {
+			instance = observed.Instance
+			result = &observed
+		}
+	} else {
+		instance, callErr = s.lookup.Lookup(ctx, attempt.Plan)
+	}
 	if callErr == nil {
 		callErr = validateInstance(attempt.Plan, instance)
 		if callErr == nil && !instance.Verified {
@@ -265,6 +286,12 @@ func (s *Service) ReconcileExpected(ctx context.Context, id, instanceID string) 
 			a.History = append(a.History, core.Observation{Instance: instance, At: started})
 		}
 		a.Instance, a.Phase, a.Failure, a.LastObservedAt = &instance, phaseFor(instance.Status), nil, started
+		if result != nil {
+			a.ResultObservedAt = started
+		}
+		if result != nil && (len(a.Results) == 0 || a.Results[len(a.Results)-1].Snapshot.Revision != result.Revision) {
+			a.Results = append(a.Results, core.ResultObservation{Snapshot: *result, At: started})
+		}
 		return nil
 	})
 	if err != nil {

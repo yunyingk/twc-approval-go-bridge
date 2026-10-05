@@ -160,6 +160,9 @@ func (s *Files) UpdateApproval(ctx context.Context, scope, id string, update fun
 		createdAt, lastObservedAt, oldPhase := attempt.CreatedAt, attempt.LastObservedAt, attempt.Phase
 		oldHistory, _ := json.Marshal(attempt.History)
 		oldHistoryLen := len(attempt.History)
+		oldResults, _ := json.Marshal(attempt.Results)
+		oldResultsLen := len(attempt.Results)
+		oldResultObservedAt := attempt.ResultObservedAt
 		var oldInstance *core.Instance
 		if attempt.Instance != nil {
 			copy := *attempt.Instance
@@ -195,6 +198,15 @@ func (s *Files) UpdateApproval(ctx context.Context, scope, id string, update fun
 		if oldHistoryLen > 0 {
 			prefix, _ := json.Marshal(attempt.History[:oldHistoryLen])
 			if string(prefix) != string(oldHistory) {
+				return nil, core.ErrConflict
+			}
+		}
+		if len(attempt.Results) < oldResultsLen || attempt.ResultObservedAt.Before(oldResultObservedAt) {
+			return nil, core.ErrConflict
+		}
+		if oldResultsLen > 0 {
+			prefix, _ := json.Marshal(attempt.Results[:oldResultsLen])
+			if string(prefix) != string(oldResults) {
 				return nil, core.ErrConflict
 			}
 		}

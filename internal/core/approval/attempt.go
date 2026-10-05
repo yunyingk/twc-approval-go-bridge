@@ -66,20 +66,22 @@ type Observation struct {
 	At       time.Time `json:"at"`
 }
 type Attempt struct {
-	Plan           Plan             `json:"plan"`
-	Audit          *AuditReference  `json:"audit,omitempty"`
-	Phase          string           `json:"phase"` // reserved, submitting, unknown, failed, pending, finished
-	Instance       *Instance        `json:"instance,omitempty"`
-	Failure        *Failure         `json:"failure,omitempty"`
-	NoCreation     *NoCreationProof `json:"no_creation,omitempty"`
-	Run            uint64           `json:"run"`
-	RunStartedAt   time.Time        `json:"run_started_at,omitempty"`
-	SendToken      string           `json:"send_token,omitempty"`
-	ClosedRuns     []ClosedRun      `json:"closed_runs,omitempty"`
-	History        []Observation    `json:"history,omitempty"`
-	LastObservedAt time.Time        `json:"last_observed_at,omitempty"`
-	CreatedAt      time.Time        `json:"created_at"`
-	UpdatedAt      time.Time        `json:"updated_at"`
+	Plan             Plan                `json:"plan"`
+	Audit            *AuditReference     `json:"audit,omitempty"`
+	Phase            string              `json:"phase"` // reserved, submitting, unknown, failed, pending, finished
+	Instance         *Instance           `json:"instance,omitempty"`
+	Failure          *Failure            `json:"failure,omitempty"`
+	NoCreation       *NoCreationProof    `json:"no_creation,omitempty"`
+	Run              uint64              `json:"run"`
+	RunStartedAt     time.Time           `json:"run_started_at,omitempty"`
+	SendToken        string              `json:"send_token,omitempty"`
+	ClosedRuns       []ClosedRun         `json:"closed_runs,omitempty"`
+	History          []Observation       `json:"history,omitempty"`
+	Results          []ResultObservation `json:"results,omitempty"`
+	ResultObservedAt time.Time           `json:"result_observed_at,omitempty"`
+	LastObservedAt   time.Time           `json:"last_observed_at,omitempty"`
+	CreatedAt        time.Time           `json:"created_at"`
+	UpdatedAt        time.Time           `json:"updated_at"`
 }
 
 // NotSent is based on a reserved phase or explicit local abandonment proof.
@@ -146,5 +148,28 @@ func (a Attempt) Validate() error {
 	} else if !a.LastObservedAt.IsZero() {
 		return ErrConflict
 	}
+	previous = time.Time{}
+	if (len(a.Results) == 0) != a.ResultObservedAt.IsZero() || a.ResultObservedAt.After(a.LastObservedAt) {
+		return ErrConflict
+	}
+	for _, result := range a.Results {
+		if result.Snapshot.Validate(a.Plan) != nil || result.At.IsZero() || result.At.Before(previous) || a.Instance == nil || result.Snapshot.Instance.ID != a.Instance.ID || result.At.After(a.ResultObservedAt) {
+			return ErrConflict
+		}
+		previous = result.At
+	}
 	return nil
+}
+
+// CurrentResult never labels older evidence as current after a lookup from a
+// gateway that only reports status. Historical private snapshots remain intact.
+func (a Attempt) CurrentResult() *ResultSnapshot {
+	if a.Instance == nil || a.Failure != nil || len(a.Results) == 0 || !a.ResultObservedAt.Equal(a.LastObservedAt) {
+		return nil
+	}
+	result := a.Results[len(a.Results)-1].Snapshot
+	if result.Instance != *a.Instance {
+		return nil
+	}
+	return &result
 }

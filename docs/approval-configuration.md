@@ -192,3 +192,17 @@ go run ./cmd/server subscribe-approval-events <与配置一致的审批Code>
 启动和定时轮询覆盖原应用全部已发送尝试，包括 finished，补查停机修改及迟到撤销；reserved、本地 abandoned/not_sent 不查询。原生 GET 的 APPROVED 加 reverted=true 保存为 reverted，PENDING 加 reverted=true 视为冲突；不会用事件的 OVERTIME 状态扩展官方 GET 枚举。终态不回退 pending，批准/拒绝/撤销/删除均不自动释放财务占用。每来源/应用有 OS worker 锁；当前单主机文件库保存全部历史意图并逐条查询，规模扩大时需要另行设计清理、限流和分页。
 
 `approval-status <preparation_id>` 可以查看最新原实例状态及 verified/last_observed_at，仍不能当作 Base 或 Seal 交付成功。当前只持久化已核对状态，没有审批人/评论完整快照、Base 人工结果列、Seal manual-result 交付或结算释放。企业测试文件未启用此配置，监督服务未更新，未真实订阅或验收审批事件；实现与测试见[监听过程记录](progress/2026-10-05-approval-observation.md)。
+
+## 人工结果证据快照
+
+监听阶段之后已补 `ResultSnapshot v1`：同一次原 UUID GET 保存实例、任务、原应用 open ID、开始/完成毫秒时间、评论、时间线、抄送/转交等关联和修改/撤销原实例 Code。评论附件只存名称/类别/实际大小，临时访问 URL 不保存；姓名和邮箱仍需原应用下的真实身份解析。缺失时间/人员/大小保留缺失，未完成时间 0 保留 0；不从 event、user_id、发起人或当前时钟补值。这里是流程结果证据，原生表单与提交审计的值对比仍需另外完成。
+
+中立结果由可选 `ResultLookupGateway` 返回，Native 查询和审计 gateway 已接入；兼容的旧 gateway 仍可只返回状态，审计包装会明确标为 status_only。快照按实际内容生成版本，任务/评论/时间线及 JSON 元数据键顺序不影响版本；未知提供方标签与 ext 元数据保留供私有检查，精确数值不经过 float64。每份上限 8MiB，结果历史仅追加，重复查询更新核对时间而不复制同一快照。元数据变化即使实例状态相同，也会产生新结果版本。
+
+晚到的旧查询不覆盖更新证据。最新查询失败或仅核对状态时，旧流程快照继续保存，但不作为当前证据输出；再次成功读取相同完整结果即可恢复当前性。状态保存失败不会确认事件，仍按上一节恢复，不创建新实例或重新 AI 审核。
+
+`approval-status/check-approval` 新增 result_revision、result_tasks/result_comments/result_actions 和 human_result_issue；不输出评论、附件名称、身份或整份快照。明细与实例原映射、最新查询时间及私有结果历史共同保留审计依据。零数量字段可能省略；有 result_revision 才说明当前存在可用结果快照。
+
+人工决定提取要求已验证的 approved/rejected、真实完成时间、唯一的最后完成任务、与终态一致的任务结果、明确的人工审批方式及原应用 actor。同一时刻多个候选报告 terminal_actor_ambiguous；自动任务报告 automatic_decision；时间/人员缺失、未知任务或流程动作保留问题分类。驳回原因只取该真实任务/人员关联的拒绝动态，同一时刻理由冲突停止，无理由时保留空值；不拿普通评论当驳回理由。
+
+human_result_issue 为空仅说明人工结果证据可以归属，不代表当前 Base 事实、表单一致性、身份姓名/邮箱、财务决定或外部交付已验证。canceled/deleted/reverted 不转换为 Seal reject，仍保留历史与财务占用。当前尚无 Base/Seal 人工结果交付，企业配置与监督服务未变，没有真实人工结果验收；下一步及验证见[结果证据记录](progress/2026-10-05-approval-results.md)。

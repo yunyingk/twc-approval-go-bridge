@@ -125,6 +125,8 @@ go run ./cmd/approval-template -app personal -file configs/feishu/approval-templ
 
 可选 `approval.observation` 现已接服务：原生审批事件先持久化查询意图，再按原应用/UUID 保存真实状态，定时补查离线变化和后续撤销。同应用共用一条长连接，独立审批应用不回退；显式 `subscribe-approval-events` 订阅已配置模板，启动不会自动订阅。关闭创建仍可监听历史单。当前企业配置/监督服务未启用，未验收真实审批事件；Base/Seal 人工结果交付仍待实现。配置见[监听说明](docs/approval-configuration.md#原生审批结果监听)，验证见[监听记录](docs/progress/2026-10-05-approval-observation.md)。
 
+结果观察现已保存中立流程证据快照：任务、原应用身份、时间线、评论与附件元数据按内容版本仅追加，最新失败或仅状态查询不把旧证据当当前。明确区分唯一人工决定、自动动作与多人歧义；命令仅返回安全摘要。企业配置/服务仍未启用，身份姓名邮箱、原生表单对照与 Base/Seal 人工结果交付继续实现，见[结果说明](docs/approval-configuration.md#人工结果证据快照)和[结果记录](docs/progress/2026-10-05-approval-results.md)。
+
 ## 业务边界
 
 | 目录 | 职责 | 当前状态 |
