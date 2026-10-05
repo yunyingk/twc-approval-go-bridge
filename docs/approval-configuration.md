@@ -28,7 +28,7 @@
 
 来源适配现已按稳定字段 ID 核对实时类型，直接解析原始 JSON。文本支持文字/单选/自动编号，数字和金额支持文字/数字列，日期为类型 5，人员为类型 11，附件为类型 17；公式与查找引用不做隐式转换。精确十进制不经 float64；币种字段只能为文字/单选。可选文本可空，必填由实时模板判断。关系和人员分组要求单值；流水输入要求明确单笔关联，缺失/多笔不猜分摊或求和。
 
-人员映射校验格式及完整性，不代替目标企业的人员/发起权限核验。附件列目前只验证真实 Base 引用并报告 approval_upload_required，上传及复用尚未实现；不能将 Base token 当审批 file code。配置存在不代表完整表单可用。时区数据编入程序以支持静态镜像，未配置日期规则时不默认月份或时区。
+人员映射校验格式及完整性，不代替目标企业的人员/发起权限核验。附件列解析真实 Base 引用，再匹配当前审核核对过的原件与已存上传结果；未准备时报告 approval_upload_required，不能将 Base token 当审批 file code。显式上传及恢复见下方，配置存在不代表完整表单可用。时区数据编入程序以支持静态镜像，未配置日期规则时不默认月份或时区。
 
 ## 预检命令与结果
 
@@ -50,3 +50,30 @@ go run ./cmd/server preview-approval <记录ID[,记录ID...]>
 输出始终为 `preview_kind=preflight`、`creation_available=false`；来源未检查时保留 form_source_preparation_pending。本命令不领取成员、不写状态或 Base、不上传、不通知、不建单，也不更新运行服务。企业选中配置仍没有 approval，因此当前三条真实记录只返回 AI 预检，不生成计划。
 
 使用本阶段构建或 `go run`；本机运行包装器仍使用先前监督二进制，需后续受控更新后才具备此命令。AI 三行预检见[预检记录](progress/2026-10-05-approval-preflight.md)，独立来源读取及计划校验见[来源记录](progress/2026-10-05-approval-source.md)。
+
+## 审批附件准备
+
+```bash
+# 使用完整 manual 配置和原有 STATE_DIR；不会创建审批实例。
+go run ./cmd/server prepare-approval-files <记录ID[,记录ID...]>
+# 只对已经证明拒绝的上传追加一次新尝试；未知响应仍停止。
+go run ./cmd/server retry-approval-files <记录ID[,记录ID...]>
+```
+
+此命令会向所选审批应用上传原件并保存本地状态。先检查整组选中的当前 AI 结果、来源稳定性、分组和各组实时必填表单；全部通过才逐文件上传。当前只接受审核快照中已经核对的明细附件，不临时下载另一份原件、不上传未进入审核的流水附件。附件元数据与审核原件不一致时停止；来源绑定与人员身份仍使用现有显式配置。
+
+每份上传保存发送前意图，身份涵盖内容 SHA-256、来源 Base/Table、应用、行、字段、文件 token、文件名/MIME/长度、目标应用及用途。同一份已确认结果在重启和并发调用中复用；来源或目标变化得到另一身份。历史上传记录不能作为跨记录、跨应用通用文件缓存。核心计划保存上传身份 provenance，即使供应商返回相同 code，另一份原件也改变计划版本。
+
+| 本地状态 | 下一步 |
+| --- | --- |
+| 无记录（approval_upload_required） | 显式 prepare 命令保存意图并上传 |
+| uploaded | 复用确认的目标应用 file code |
+| rejected（approval_upload_rejected） | 普通 prepare 停止；显式 retry 保留旧记录并追加尝试 |
+| uploading/unknown（approval_upload_reconcile） | 禁止重发，包括 retry 命令；需外部核查 |
+| 状态无法读取/格式不符 | 停止，不能当作未上传 |
+
+只有文件 POST 尚未发生的本地/鉴权失败，或一致 HTTP 响应中的官方鉴权、权限/IP 拒绝，才记为 rejected；断连、缺字段、5xx、429 等保留 unknown。上传已经成功但本地结果保存失败时，原意图保留 uploading，后续停止。官方没有上传幂等键或结果查询协议，当前不编造自动对账或清除未知状态。12 小时是下载 URL 有效期，不是 file code TTL；不保存 URL，也不按时间猜测失效并重传。已存 code 在完整实例表单中仍需按实际接口验证。
+
+一份成功、后一份失败时保留成功上传，不回滚也不在下次重传。上传后重新检查所有来源和当前 AI，再完整校验全部表单；有变化就不输出可用计划。输出只含安全状态/问题/计划摘要，不含原件、文件名、code、来源 token 或完整表单。`file_preparation_complete` 和 `form_validated` 必须分别检查：语义阻塞也返回诊断 JSON，不应只用进程退出码判定业务成功；`creation_available` 始终 false。
+
+状态元数据包含敏感来源标识和文件名，保存到 0600 文件及独立 native_approval_upload_version 命名空间，不能公开或提交 Git；原件二进制不入状态。预览缺少凭据时只读返回阻塞，不创建状态或锁文件。本阶段未启用企业 approval 配置、未更新监督服务、未真实上传或建单。验证与下一步见[附件准备记录](progress/2026-10-05-approval-files.md)。

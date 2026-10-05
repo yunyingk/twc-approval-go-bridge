@@ -163,10 +163,17 @@ func TestApprovalSourceDoesNotInferPeopleOrUseBaseTokensAsApprovalFiles(t *testi
 				want = "person_id_invalid"
 			case "files":
 				binding.Inputs["files"] = ApprovalInputBinding{Role: "reimbursement_details", FieldID: "files", Kind: "files"}
+				transport.values["details"]["files"] = json.RawMessage(`[{"file_token":"BASE_TOKEN_MUST_NOT_LEAK","name":"private.pdf","size":123}]`)
 				want = "approval_upload_required"
 			}
 			binding.Inputs["employee"] = input
 			checks := readApprovalInputs(t, client, binding)
+			if scenario == "files" {
+				file := checks[0].Files["files"][0]
+				if file.SourceScope != "feishu:base:details" || file.SourceIdentity != "feishu-app:bridge" || file.RecordID != "a" || file.FieldID != "files" || file.Name != "private.pdf" || file.Size != 123 {
+					t.Fatal("file locator lost its exact physical source or metadata")
+				}
+			}
 			if want == "" {
 				if len(checks[0].Issues) != 0 || checks[0].Row.Fields["employee"].References[0].ID != "ou_target" {
 					t.Fatal("explicit mapping was not used")

@@ -41,16 +41,24 @@ type approvalPreviewTarget struct {
 	Version  string `json:"configuration_version"`
 }
 
-// This preflight never submits or changes state. Typed inputs and current AI
-// evidence may produce validated plan summaries, without exposing form values.
-func runApprovalPreview(ctx context.Context, cfg config.Config, selection string, output io.Writer) error {
+func approvalRecordSelection(selection string) ([]string, error) {
 	ids := strings.Split(selection, ",")
 	selected := map[string]bool{}
 	for _, id := range ids {
 		if id == "" || id != strings.TrimSpace(id) || selected[id] {
-			return fmt.Errorf("approval preview requires unique explicit selected record IDs")
+			return nil, fmt.Errorf("approval requires unique explicit selected record IDs")
 		}
 		selected[id] = true
+	}
+	return ids, nil
+}
+
+// This preflight never submits or changes state. Typed inputs and current AI
+// evidence may produce validated plan summaries, without exposing form values.
+func runApprovalPreview(ctx context.Context, cfg config.Config, selection string, output io.Writer) error {
+	ids, err := approvalRecordSelection(selection)
+	if err != nil {
+		return err
 	}
 	store, err := state.OpenFiles(cfg.StateDir)
 	if err != nil {
@@ -83,7 +91,11 @@ func runApprovalPreview(ctx context.Context, cfg config.Config, selection string
 		}
 		fields, sourceErr := newApprovalFieldsSource(cfg)
 		if sourceErr == nil {
-			prepared, err := app.NewPreparedSource(fields, gate)
+			targetApp, _, err := cfg.ApprovalCredentials()
+			if err != nil {
+				return err
+			}
+			prepared, err := app.NewPreparedSourceWithUploads(fields, gate, store, "feishu-app:"+targetApp)
 			if err != nil {
 				return err
 			}
@@ -193,13 +205,7 @@ func previewApprovalPlans(ctx context.Context, cfg config.Config, inspection app
 	if err != nil {
 		return nil, ""
 	} // Row diagnostics already identify every hold.
-	a := cfg.Business.Approval
-	axes := []string{}
-	for _, group := range a.GroupBy {
-		axes = append(axes, group.Axis)
-	}
-	plans, err := core.BuildPlans(core.Options{SourceScope: "feishu:" + cfg.ReceiptBaseToken + ":" + cfg.ReceiptTableID, TargetScope: target.Scope, Template: target.Template, ConfigurationVersion: target.Version,
-		DepartmentID: a.DepartmentID, Submitter: core.Identity{Scope: target.Scope, ID: a.SubmitterOpenID}, Axes: axes, AllowedDecisions: a.AllowedAIDecisions}, rows)
+	plans, err := core.BuildPlans(approvalPlanOptions(cfg, target), rows)
 	if err != nil {
 		return nil, "plan_inputs_invalid"
 	}
@@ -215,4 +221,14 @@ func previewApprovalPlans(ctx context.Context, cfg config.Config, inspection app
 		previews = append(previews, preview)
 	}
 	return previews, ""
+}
+
+func approvalPlanOptions(cfg config.Config, target approvalPreviewTarget) core.Options {
+	a := cfg.Business.Approval
+	axes := []string{}
+	for _, group := range a.GroupBy {
+		axes = append(axes, group.Axis)
+	}
+	return core.Options{SourceScope: "feishu:" + cfg.ReceiptBaseToken + ":" + cfg.ReceiptTableID, TargetScope: target.Scope, Template: target.Template, ConfigurationVersion: target.Version,
+		DepartmentID: a.DepartmentID, Submitter: core.Identity{Scope: target.Scope, ID: a.SubmitterOpenID}, Axes: axes, AllowedDecisions: a.AllowedAIDecisions}
 }

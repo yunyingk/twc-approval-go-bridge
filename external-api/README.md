@@ -15,5 +15,7 @@
 | [`feishu/create-approval-instance.md`](feishu/create-approval-instance.md) | [飞书官方创建审批实例 Markdown 原文](https://open.feishu.cn/document/server-docs/approval-v4/instance/create.md)，2026-10-05 采集 | `f32fdf3226bcac78302adb491876b2747a8b9b1c8d528c922a12c8aa882512d6` |
 | [`feishu/get-approval-instance.md`](feishu/get-approval-instance.md) | [飞书官方获取审批实例 Markdown 原文](https://open.feishu.cn/document/server-docs/approval-v4/instance/get.md)，2026-10-05 采集 | `34617e24630a4152be6dcfd239ec3409a14d37066dc65fcb232f954bcc4fd1ed` |
 | [`feishu/approval-instance-form-controls.md`](feishu/approval-instance-form-controls.md) | [飞书官方审批实例控件 Markdown 原文](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/approval-v4/instance/approval-instance-form-control-parameters.md)，2026-10-05 采集 | `e975dd6a0f0ffa9723d8708ed85a12d18edecdfcb24655785947038ba999e127` |
+| [`feishu/upload-approval-file.md`](feishu/upload-approval-file.md) | [飞书官方上传审批文件 Markdown 原文](https://open.feishu.cn/document/server-docs/approval-v4/file/upload-files.md)，2026-10-05 采集 | `d6c87115ebae73bcb909551aba05b5db5f24f2d9e69f06ed6551832c8889a3a7` |
+| [`feishu/common-errors.md`](feishu/common-errors.md) | [上传文档引用的飞书通用错误码原文](https://open.feishu.cn/document/ukTMukTMukTM/ugjM14COyUjL4ITN.md)，2026-10-05 采集 | `b69fa2480463dbc267f60ae32fddb5bfc9aceeb2ee6ac1449291b80b437effce` |
 
 SealAI 这三份是租户官方页面直接生成的 Markdown，并非 OpenAPI 导出文件；目前未发现该租户提供可下载的完整 OpenAPI 规范。原文中的 Webhook 地址属于当前测试通道，不能当成其他租户的固定地址。原文只含 `Bearer <token>` 占位符，没有提交鉴权密钥。更新时应重新从供应商获取原文，并记录新版本或新的采集日期与校验值。

@@ -13,6 +13,8 @@
 
 2026-10-05 另直接下载并保留三份官方 Markdown 原文：[`create-approval-instance.md`](create-approval-instance.md)、[`get-approval-instance.md`](get-approval-instance.md) 和 [`approval-instance-form-controls.md`](approval-instance-form-controls.md)。查询文档明确允许用创建时的 UUID 作为 `instance_id`；创建文档明确 UUID 冲突返回 `60012`，不能将该响应推断成“没有建单”。身份和审批状态也以这些原文为准。
 
+同日从 `llms-approval.txt` 的文件目录取得 [`upload-approval-file.md`](upload-approval-file.md)，并跟随原文链接取得 [`common-errors.md`](common-errors.md)。上传使用 `www.feishu.cn/approval/openapi/v2/file/upload`，不是 v4 实例端点；multipart 的 name/type/content 及目标应用 tenant token 以原文为准。文档中 12 小时期限指下载 URL，没有给出 file code 的 TTL、幂等上传或查询上传结果协议。两份原文按字节保存，保留供应商原始排版。
+
 ## 当前企业模板
 
 [`approval-definition-9944A2AE-ED45-43F3-9B87-0F3902F09844.json`](approval-definition-9944A2AE-ED45-43F3-9B87-0F3902F09844.json) 是 2026-09-30 使用企业应用 `cli_aaea8d481d381bee` 调用飞书官方接口取得的完整响应，原始字节未改写。这是当前审批模板的资源快照，不是 OpenAPI 规范文件。

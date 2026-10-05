@@ -172,6 +172,7 @@ func (s *ApprovalFieldsSource) ReadApprovalInputs(ctx context.Context, ids []str
 			continue
 		}
 		values := map[string]map[string]json.RawMessage{"reimbursement_details": fields}
+		paymentID := ""
 		txIssue := ""
 		if s.transactions {
 			relation, exists := details[s.binding.TransactionRelationFieldID]
@@ -186,6 +187,7 @@ func (s *ApprovalFieldsSource) ReadApprovalInputs(ctx context.Context, ids []str
 				} else if len(linked) != 1 {
 					txIssue = "transaction_ambiguous"
 				} else {
+					paymentID = linked[0]
 					payment, cached := payments[linked[0]]
 					if !cached {
 						payment, err = s.client.recordFieldsQuery(ctx, token, s.binding.BaseToken, s.binding.TransactionTableID, linked[0], "user_id_type=open_id&text_field_as_array=true")
@@ -219,6 +221,28 @@ func (s *ApprovalFieldsSource) ReadApprovalInputs(ctx context.Context, ids []str
 			value, code := s.inputValue(input, schemas[input.Role], values[input.Role])
 			if code != "" {
 				issue(semantic, code)
+				if code == "approval_upload_required" {
+					if check.Files == nil {
+						check.Files = map[string][]app.SourceFile{}
+					}
+					field := schemas[input.Role][input.FieldID]
+					var files []struct {
+						ID   string `json:"file_token"`
+						Name string `json:"name"`
+						Size int64  `json:"size"`
+					}
+					if err := json.Unmarshal(values[input.Role][field.Name], &files); err != nil {
+						return nil, fmt.Errorf("approval file metadata is invalid")
+					}
+					table, sourceRecord := s.binding.DetailTableID, id
+					if input.Role == "transactions" {
+						table, sourceRecord = s.binding.TransactionTableID, paymentID
+					}
+					sort.Slice(files, func(i, j int) bool { return files[i].ID < files[j].ID })
+					for _, file := range files {
+						check.Files[semantic] = append(check.Files[semantic], app.SourceFile{SourceScope: "feishu:" + s.binding.BaseToken + ":" + table, SourceIdentity: "feishu-app:" + s.client.appID, RecordID: sourceRecord, FieldID: input.FieldID, ID: file.ID, Name: file.Name, Size: file.Size})
+					}
+				}
 			} else {
 				check.Row.Fields[semantic] = value
 			}

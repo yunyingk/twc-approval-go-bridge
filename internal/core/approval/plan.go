@@ -38,6 +38,7 @@ type Value struct {
 	Decimal    string     `json:"decimal,omitempty"`
 	Currency   string     `json:"currency,omitempty"`
 	References []Identity `json:"references,omitempty"`
+	Artifacts  []string   `json:"artifacts,omitempty"` // Durable upload request IDs for file provenance; absent on older plans.
 }
 type ReviewRef struct {
 	DocumentID      string `json:"document_id"`
@@ -77,6 +78,19 @@ type Plan struct {
 func validID(value string) bool { return value != "" && value == strings.TrimSpace(value) }
 
 func normalizeValue(value Value, targetScope string) (Value, error) {
+	if len(value.Artifacts) > 0 {
+		if value.Kind != "files" || len(value.Artifacts) != len(value.References) {
+			return Value{}, fmt.Errorf("file provenance must match issued references")
+		}
+		value.Artifacts = append([]string(nil), value.Artifacts...)
+		sort.Strings(value.Artifacts)
+		for n, id := range value.Artifacts {
+			hash, err := hex.DecodeString(id)
+			if err != nil || len(hash) != sha256.Size || strings.ToLower(id) != id || (n > 0 && value.Artifacts[n-1] == id) {
+				return Value{}, fmt.Errorf("file provenance requires unique upload identities")
+			}
+		}
+	}
 	switch value.Kind {
 	case "text", "date":
 		if value.Decimal != "" || value.Currency != "" || len(value.References) != 0 {

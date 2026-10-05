@@ -137,28 +137,47 @@ func (g *InstanceGateway) request(ctx context.Context, plan core.Plan) (Instance
 	if target.ConfigurationVersion != plan.ConfigurationVersion {
 		return InstanceRequest{}, core.ErrPlanChanged
 	}
-	controls, _ := templateControls(definition)
+	rows, err := g.formRows(definition, plan.Rows)
+	if err != nil {
+		return InstanceRequest{}, err
+	}
+	form, err := BuildDetailForm(definition, g.binding, rows)
+	if err != nil {
+		return InstanceRequest{}, err
+	}
+	request := InstanceRequest{ApprovalCode: g.template, UUID: plan.ID, OpenID: plan.Submitter.ID, DepartmentID: plan.DepartmentID, Form: form, NodeApprovers: g.nodeApprovers}
+	return request, request.Validate()
+}
+
+func (g *InstanceGateway) formRows(definition *larkapproval.GetApprovalRespData, business []core.Row) ([]map[string]FormValue, error) {
+	controls, err := templateControls(definition)
+	if err != nil {
+		return nil, err
+	}
 	detail, err := selectControl(controls, g.binding.Detail)
 	if err != nil || detail.Type != "fieldList" {
-		return InstanceRequest{}, fmt.Errorf("approval binding must select a current detail control")
+		return nil, fmt.Errorf("approval binding must select a current detail control")
 	}
 	kinds := map[string]string{}
 	for semantic, selector := range g.binding.Fields {
 		control, err := selectControl(detail.Children, selector)
 		if err != nil {
-			return InstanceRequest{}, err
+			return nil, err
 		}
 		kinds[semantic] = map[string]string{"input": "text", "textarea": "text", "date": "date", "amount": "money", "number": "number", "contact": "people", "attachmentV2": "files"}[control.Type]
 	}
-	rows := make([]map[string]FormValue, 0, len(plan.Rows))
-	for _, row := range plan.Rows {
+	rows := make([]map[string]FormValue, 0, len(business))
+	for _, row := range business {
 		fields := make(map[string]FormValue, len(row.Fields))
 		for semantic, value := range row.Fields {
 			if kinds[semantic] != value.Kind {
-				return InstanceRequest{}, fmt.Errorf("approval business field %s has a different type from its current template control", semantic)
+				return nil, fmt.Errorf("approval business field %s has a different type from its current template control", semantic)
 			}
 			v := FormValue{Text: value.Text, Decimal: value.Decimal, Currency: value.Currency}
 			for _, ref := range value.References {
+				if ref.Scope != g.TargetScope() {
+					return nil, fmt.Errorf("approval reference belongs to another target application")
+				}
 				if value.Kind == "people" {
 					v.OpenIDs = append(v.OpenIDs, ref.ID)
 				} else if value.Kind == "files" {
@@ -169,12 +188,94 @@ func (g *InstanceGateway) request(ctx context.Context, plan core.Plan) (Instance
 		}
 		rows = append(rows, fields)
 	}
-	form, err := BuildDetailForm(definition, g.binding, rows)
+	return rows, nil
+}
+
+// ValidateUploadDraft checks the real non-file values and bindings before upload.
+// Only explicitly deferred attachment controls are optional in a local metadata
+// copy. No placeholder file code or executable instance request is produced.
+func (g *InstanceGateway) ValidateUploadDraft(ctx context.Context, version string, business []core.Row, payloads []app.UploadPayload) error {
+	definition, target, err := g.describe(ctx)
 	if err != nil {
-		return InstanceRequest{}, err
+		return err
 	}
-	request := InstanceRequest{ApprovalCode: g.template, UUID: plan.ID, OpenID: plan.Submitter.ID, DepartmentID: plan.DepartmentID, Form: form, NodeApprovers: g.nodeApprovers}
-	return request, request.Validate()
+	if version != target.ConfigurationVersion {
+		return core.ErrPlanChanged
+	}
+	rows, err := g.formRows(definition, business)
+	if err != nil {
+		return err
+	}
+	controls, err := templateControls(definition)
+	if err != nil {
+		return err
+	}
+	detail, err := selectControl(controls, g.binding.Detail)
+	if err != nil {
+		return err
+	}
+	selected := map[string]core.Row{}
+	for _, row := range business {
+		if row.RecordID == "" || selected[row.RecordID].RecordID != "" {
+			return fmt.Errorf("approval upload draft requires unique selected rows")
+		}
+		selected[row.RecordID] = row
+	}
+	deferred := map[string]bool{}
+	prepared := map[string]bool{}
+	for _, payload := range payloads {
+		request := payload.Request
+		row, exists := selected[request.RecordID]
+		if request.Validate() != nil || !exists || row.SourceScope != request.SourceScope || request.TargetScope != g.TargetScope() || request.Kind != "attachment" {
+			return fmt.Errorf("approval upload draft contains a foreign file request")
+		}
+		control, err := selectControl(detail.Children, g.binding.Fields[payload.Semantic])
+		if err != nil || control.Type != "attachmentV2" {
+			return fmt.Errorf("approval upload purpose must match a current attachment control")
+		}
+		if _, resolved := row.Fields[payload.Semantic]; !resolved {
+			deferred[control.ID] = true
+			prepared[row.RecordID+"\x00"+control.ID] = true
+		}
+	}
+	// Making a control optional in the local copy must not hide a missing
+	// attachment on another selected row which has no reviewed upload payload.
+	for n, row := range business {
+		for _, control := range detail.Children {
+			if !control.Required || !deferred[control.ID] {
+				continue
+			}
+			present := false
+			for semantic := range rows[n] {
+				bound, err := selectControl(detail.Children, g.binding.Fields[semantic])
+				if err == nil && bound.ID == control.ID {
+					present = true
+				}
+			}
+			if !present && !prepared[row.RecordID+"\x00"+control.ID] {
+				return fmt.Errorf("approval upload draft lacks a required attachment on a selected row")
+			}
+		}
+	}
+	for n := range controls {
+		if controls[n].ID != detail.ID {
+			continue
+		}
+		for child := range controls[n].Children {
+			if deferred[controls[n].Children[child].ID] {
+				controls[n].Children[child].Required = false
+			}
+		}
+	}
+	encoded, err := json.Marshal(controls)
+	if err != nil {
+		return err
+	}
+	copy := *definition
+	form := string(encoded)
+	copy.Form = &form
+	_, err = BuildDetailForm(&copy, g.binding, rows)
+	return err
 }
 
 func (g *InstanceGateway) ValidatePlan(ctx context.Context, plan core.Plan) error {

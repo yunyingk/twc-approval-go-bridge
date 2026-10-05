@@ -30,6 +30,14 @@
 
 `NewInstanceLookupGateway` 只使用原应用的实例客户端和已存计划，不需要当前模板或表单配置，也没有建单方法；共用 `NewReconciler` 仅依赖查询接口。查询校验 UUID、模板、应用范围和发起人，支持终态观察，不把新模板配置用于旧实例。更多约束及测试见[gateway 记录](../../../docs/progress/2026-10-05-approval-gateway.md)。
 
+## 审批附件准备
+
+`NewFileUploader` 使用官方旧版 multipart 上传地址及显式目标应用凭证，拒绝跳转，不重发 POST；文件用途由控件决定，附件控件使用 attachment，即使原件是图片。逐项核对实际内容哈希、长度、MIME、文件名扩展和目标身份，成功仅返回带应用 scope 的 file code，忽略临时下载 URL。官方附件/图片上限为 50M/10M；本项目当前读取并核对的票据原件仍限 20MiB，不扩展既有识别入口的文件类型。
+
+`ValidateUploadDraft` 用实时模板检查各行非附件值及上传用途。只在本地元数据副本中延后确有待上传原件的附件必填校验，逐行确保其他必填附件没有遗漏；不生成占位 file code、不改实际模板，也不产生可执行实例请求。文件准备完成后仍由 `ValidatePlan` 校验完整表单。
+
+上传请求与历次状态位于中立 `core/approval`，持久化与复用由 `app/approval.UploadManager` 和 `state.Files` 承担。`prepare-approval-files`/`retry-approval-files` 只做显式附件准备，预览只读取已存上传凭据。本阶段隔离测试已通过，未真实上传或建单；完整配置、状态及恢复边界见[附件准备说明](../../../docs/approval-configuration.md#审批附件准备)和[过程记录](../../../docs/progress/2026-10-05-approval-files.md)。
+
 ## 一次性创建模板
 
 独立入口为 [`cmd/approval-template`](../../../cmd/approval-template/main.go)，不依赖 Anyreceipt、SealAI 或轮询任务。
