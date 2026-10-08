@@ -116,7 +116,7 @@ func TestLoadRejectsInvalidDuration(t *testing.T) {
 }
 
 func TestLoadRejectsPartialFeishuCredentials(t *testing.T) {
-	for _, feishu := range []FeishuSettings{{AppCredentials: AppCredentials{AppID: "app"}}, {ApprovalApp: AppCredentials{AppSecret: "secret"}}} {
+	for _, feishu := range []FeishuSettings{{AppCredentials: AppCredentials{AppID: "app"}}, {AppCredentials: AppCredentials{AppSecret: "secret"}}} {
 		if _, err := loadDocument(t, Document{BusinessProfile: testProfile(), Feishu: feishu}); err == nil {
 			t.Fatal("partial application credentials accepted")
 		}

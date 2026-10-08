@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -37,7 +38,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	if len(os.Args) > 1 {
 		if (os.Args[1] == "check-business-config" && len(os.Args) != 2) || (os.Args[1] != "check-business-config" && len(os.Args) != 3) {
-			logger.Error("usage: server check-business-config | {review-status|check-review|preview-review|preview-approval|prepare-approval|prepare-approval-files|retry-approval-files|submit-approval|retry-approval|approval-status|check-approval|abandon-approval|subscribe-approval-events|submit-review|retry-writeback|apply-seal-result} <record-id-preparation-id-document-id-template-code-or-file>")
+			logger.Error("usage: server check-business-config | {review-status|check-review|preview-review|submit-review|retry-writeback|apply-seal-result} <record-id-document-id-or-file>")
 			os.Exit(2)
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -47,26 +48,6 @@ func main() {
 			err = runBusinessCheck(ctx, cfg, os.Stdout)
 		case "preview-review":
 			err = runReviewPreview(ctx, cfg, os.Args[2], os.Stdout)
-		case "preview-approval":
-			err = runApprovalPreview(ctx, cfg, os.Args[2], os.Stdout)
-		case "prepare-approval-files":
-			err = runApprovalFilePreparation(ctx, cfg, os.Args[2], false, os.Stdout)
-		case "prepare-approval":
-			err = runApprovalRequestPreparation(ctx, cfg, os.Args[2], os.Stdout)
-		case "submit-approval":
-			err = runApprovalSubmission(ctx, cfg, os.Args[2], os.Stdout)
-		case "retry-approval":
-			err = runApprovalRetry(ctx, cfg, os.Args[2], os.Stdout)
-		case "approval-status":
-			err = runApprovalStatus(ctx, cfg, os.Args[2], os.Stdout)
-		case "check-approval":
-			err = runApprovalReconciliation(ctx, cfg, os.Args[2], os.Stdout)
-		case "abandon-approval":
-			err = runApprovalAbandonment(ctx, cfg, os.Args[2], os.Stdout)
-		case "subscribe-approval-events":
-			err = runApprovalSubscription(ctx, cfg, os.Args[2], os.Stdout)
-		case "retry-approval-files":
-			err = runApprovalFilePreparation(ctx, cfg, os.Args[2], true, os.Stdout)
 		case "review-status":
 			err = runReviewInspection(ctx, cfg, os.Args[2], false, os.Stdout)
 		case "check-review":
@@ -144,15 +125,6 @@ func main() {
 				os.Exit(1)
 			}
 		}
-	}
-	observation, err := newApprovalObservation(cfg, logger)
-	if err != nil {
-		logger.Error("configure approval observation", "error", err)
-		os.Exit(1)
-	}
-	if observation != nil {
-		defer observation.lease.Close()
-		logger.Info("approval observation configured", "target_scope", "feishu-app:"+observation.appID, "poll_interval", observation.interval)
 	}
 	var baseEventSink events.Sink
 	var receiptFlow *recognition.Processor
@@ -269,14 +241,13 @@ func main() {
 	} else {
 		logger.Info("Feishu long connection disabled", "reason", "credentials not configured")
 	}
-	registrations, err := feishuRegistrations(cfg, baseEventSink, observation)
-	if err != nil {
-		logger.Error("configure Feishu event registrations", "error", err)
-		os.Exit(1)
-	}
-	listeners := make([]*events.Listener, 0, len(registrations))
-	for _, registration := range registrations {
-		listener, err := events.NewForEvents(registration.appID, registration.secret, registration.sinks, logger)
+	var listeners []*events.Listener
+	if baseEventSink != nil {
+		eventType := strings.TrimSpace(cfg.FeishuEventType)
+		if eventType == "" {
+			eventType = events.DefaultEventType
+		}
+		listener, err := events.New(cfg.FeishuAppID, cfg.FeishuAppSecret, eventType, baseEventSink, logger)
 		if err != nil {
 			logger.Error("create Feishu listener", "error", err)
 			os.Exit(1)
@@ -286,9 +257,6 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if observation != nil {
-		go observation.observer.Run(ctx, observation.interval)
-	}
 	if automaticReview != nil {
 		go automaticReview.Run(ctx)
 	}

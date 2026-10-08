@@ -28,11 +28,6 @@ app_secret = ""
 event_type = "drive.file.bitable_record_changed_v1"
 log_raw_events = false
 
-# 可选独立审批应用；空值表示未配置。
-[feishu.approval_app]
-app_id = ""
-app_secret = ""
-
 [anyreceipt]
 api_key = ""
 
@@ -140,12 +135,3 @@ expense_category = "fld4jWLNH0"
 
 # AI 专用结果字段，属于报销明细表，不覆盖员工输入。
 [review.result_fields]
-
-# 可选人工审批；当前未启用。
-[approval]
-mode = "disabled"
-target_identity = "bridge"
-
-[approval.observation]
-enabled = false
-poll_interval = "5m"

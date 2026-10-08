@@ -61,3 +61,4 @@
 - 两种构建与提供方独立切换保留；Seal 规则由外部系统管理，自有规则位于 review.rules。没有开启新的人工审批或财务业务。
 
 - 2026-10-08 按用户要求改用 TOML 并独立模板/规则。本阶段只完成配置改动和验证，监督服务仍为前阶段 JSON 二进制与包装器；切换需同步部署，见 docs/progress/2026-10-08-config-toml.md。用户要求此后移交 Gemini review，不再自动扩展。
+- 2026-10-08 按用户确认的方案 A，将未上线的飞书原生审批扩展（13,300+ 行）整体归档至分支 `archive/feishu-native-approval` 与标签 `archive/native-approval-20261008`，并从主线干净剥离。主线服务回归轻量纯粹的 OCR 识别与 AI 审核回写，详见 docs/progress/2026-10-08-archive-native-approval.md。

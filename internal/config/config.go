@@ -37,9 +37,8 @@ type AppCredentials struct {
 
 type FeishuSettings struct {
 	AppCredentials
-	ApprovalApp  AppCredentials `json:"approval_app" toml:"approval_app"`
-	EventType    string         `json:"event_type" toml:"event_type"`
-	LogRawEvents bool           `json:"log_raw_events" toml:"log_raw_events"`
+	EventType    string `json:"event_type" toml:"event_type"`
+	LogRawEvents bool   `json:"log_raw_events" toml:"log_raw_events"`
 }
 
 type AnyreceiptSettings struct {
@@ -66,8 +65,6 @@ type Config struct {
 	ShutdownTimeout            time.Duration
 	FeishuAppID                string
 	FeishuAppSecret            string
-	FeishuApprovalAppID        string
-	FeishuApprovalAppSecret    string
 	FeishuEventType            string
 	FeishuLogRawEvents         bool
 	ReceiptBaseToken           string
@@ -144,10 +141,10 @@ func LoadFile(path string) (Config, error) {
 		ConfigFile: path, Business: &document.BusinessProfile,
 		HTTPAddr: fallback(document.Runtime.HTTPAddr, ":8080"), LogLevel: level,
 		ShutdownTimeout: shutdown, StateDir: fallback(document.Runtime.StateDir, "data"),
-		FeishuAppID: document.Feishu.AppID, FeishuAppSecret: document.Feishu.AppSecret,
-		FeishuApprovalAppID: document.Feishu.ApprovalApp.AppID, FeishuApprovalAppSecret: document.Feishu.ApprovalApp.AppSecret,
-		FeishuEventType:     fallback(document.Feishu.EventType, "drive.file.bitable_record_changed_v1"),
-		FeishuLogRawEvents:  document.Feishu.LogRawEvents,
+		FeishuAppID:        document.Feishu.AppID,
+		FeishuAppSecret:    document.Feishu.AppSecret,
+		FeishuEventType:    fallback(document.Feishu.EventType, "drive.file.bitable_record_changed_v1"),
+		FeishuLogRawEvents: document.Feishu.LogRawEvents,
 		ReceiptPollInterval: poll, ReceiptPollStartup: fallback(document.Recognition.PollStartup, "baseline"),
 		AnyreceiptAPIKey:    document.Anyreceipt.APIKey,
 		ReceiptModelAPIKey:  document.Recognition.Model.APIKey,
@@ -159,15 +156,8 @@ func LoadFile(path string) (Config, error) {
 		ReviewRulesFile: document.Review.RulesFile,
 	}
 	document.BusinessProfile.apply(&cfg)
-	for _, app := range []AppCredentials{document.Feishu.AppCredentials, document.Feishu.ApprovalApp} {
-		if (app.AppID == "") != (app.AppSecret == "") {
-			return Config{}, fmt.Errorf("Feishu app_id and app_secret must be set together")
-		}
-	}
-	if cfg.ApprovalObservationEnabled() {
-		if _, _, err := cfg.ApprovalObservationCredentials(); err != nil {
-			return Config{}, err
-		}
+	if (document.Feishu.AppID == "") != (document.Feishu.AppSecret == "") {
+		return Config{}, fmt.Errorf("Feishu app_id and app_secret must be set together")
 	}
 	contextFields, resultFields := cfg.ReviewContextFieldIDs, cfg.ReviewResultFieldIDs
 	for semantic := range resultFields {
