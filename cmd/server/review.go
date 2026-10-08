@@ -22,7 +22,7 @@ func newReviewSource(cfg config.Config) (*base.ReviewSource, error) {
 	}
 	details := cfg.Business.Tables.ReimbursementDetails
 	ledger := cfg.Business.Tables.InvoiceLedger
-	source, err := base.NewReviewSource(cfg.Feishu.AppID, cfg.Feishu.AppSecret, details.BaseToken, details.TableID, details.Fields["attachments"], details.Fields["ledger_relation"], ledger.TableID, ledger.Fields)
+	source, err := base.NewReviewSource(cfg.Feishu.AppID, cfg.Feishu.AppSecret, details.BaseToken, details.TableID, details.AttachmentField(), details.DetailIDField(), ledger.TableID, ledger.Fields)
 	if err != nil {
 		return nil, err
 	}

@@ -51,6 +51,24 @@ type ReimbursementDetailsBinding struct {
 	ResultFields  map[string]string `json:"result_fields,omitempty"`
 }
 
+func (r ReimbursementDetailsBinding) AttachmentField() string {
+	if id := r.Fields["attachment"]; id != "" {
+		return id
+	}
+	return r.Fields["attachments"]
+}
+
+func (r ReimbursementDetailsBinding) InvoiceRelationField() string {
+	if id := r.Fields["invoice_relation"]; id != "" {
+		return id
+	}
+	return r.Fields["ledger_relation"]
+}
+
+func (r ReimbursementDetailsBinding) DetailIDField() string {
+	return r.Fields["detail_id"]
+}
+
 func (r ReimbursementDetailsBinding) TableBinding() TableBinding {
 	return TableBinding{
 		Name:      r.Name,
@@ -71,6 +89,24 @@ type TableBinding struct {
 	BaseToken string            `json:"base_token" toml:"base_token"`
 	TableID   string            `json:"table_id" toml:"table_id"`
 	Fields    map[string]string `json:"fields" toml:"fields"`
+}
+
+func (t TableBinding) AttachmentField() string {
+	if id := t.Fields["attachment"]; id != "" {
+		return id
+	}
+	return t.Fields["attachments"]
+}
+
+func (t TableBinding) InvoiceRelationField() string {
+	if id := t.Fields["invoice_relation"]; id != "" {
+		return id
+	}
+	return t.Fields["ledger_relation"]
+}
+
+func (t TableBinding) DetailIDField() string {
+	return t.Fields["detail_id"]
 }
 
 type RecognitionSettings struct {

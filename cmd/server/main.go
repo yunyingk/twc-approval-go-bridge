@@ -158,7 +158,7 @@ func main() {
 			details := cfg.Business.Tables.ReimbursementDetails
 			ledger := cfg.Business.Tables.InvoiceLedger
 			if ledger.TableID != "" {
-				ledgerHandler, ledgerErr := invoiceledger.New(invoiceledger.Config{BaseToken: details.BaseToken, SourceTableID: details.TableID, SourceDetailFieldID: details.Fields["ledger_relation"], TableID: ledger.TableID, Fields: ledger.Fields}, base.NewLedgerClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret), logger)
+				ledgerHandler, ledgerErr := invoiceledger.New(invoiceledger.Config{BaseToken: details.BaseToken, SourceTableID: details.TableID, SourceDetailFieldID: details.DetailIDField(), TableID: ledger.TableID, Fields: ledger.Fields}, base.NewLedgerClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret), logger)
 				if ledgerErr != nil {
 					logger.Error("configure invoice ledger", "error", ledgerErr)
 					os.Exit(1)
@@ -173,7 +173,7 @@ func main() {
 					return nil
 				}
 			}
-			receiptFlow, err = recognition.New(recognition.Config{BaseToken: details.BaseToken, TableID: details.TableID, FieldID: details.Fields["attachments"]}, attachmentClient, recognizer, resultHandler, logger)
+			receiptFlow, err = recognition.New(recognition.Config{BaseToken: details.BaseToken, TableID: details.TableID, FieldID: details.AttachmentField()}, attachmentClient, recognizer, resultHandler, logger)
 			if err != nil {
 				logger.Error("configure receipt flow", "error", err)
 				os.Exit(1)
@@ -186,8 +186,8 @@ func main() {
 			scopeData, _ := json.Marshal(struct {
 				Base, Table, Field, Provider, Model, Endpoint, Ledger string
 				Fields                                                map[string]string
-			}{details.BaseToken, details.TableID, details.Fields["attachments"], receiptProvider, cfg.Model.Name, cfg.Model.BaseURL, ledger.TableID, ledger.Fields})
-			lease, leaseErr := checkpoints.AcquireWorker(details.BaseToken + ":" + details.TableID + ":" + details.Fields["attachments"])
+			}{details.BaseToken, details.TableID, details.AttachmentField(), receiptProvider, cfg.Model.Name, cfg.Model.BaseURL, ledger.TableID, ledger.Fields})
+			lease, leaseErr := checkpoints.AcquireWorker(details.BaseToken + ":" + details.TableID + ":" + details.AttachmentField())
 			if leaseErr != nil {
 				logger.Error("claim receipt worker", "error", leaseErr)
 				os.Exit(1)
@@ -197,7 +197,7 @@ func main() {
 			receiptFlow.WithCheckpoints(checkpoints, hex.EncodeToString(scopeHash[:]))
 			if cfg.ReceiptTriggerMode() != "poll" {
 				logEvent := sink
-				attachmentSink := baseevents.NewAttachmentSink(recognition.Config{BaseToken: details.BaseToken, TableID: details.TableID, FieldID: details.Fields["attachments"]}, receiptFlow).Sink
+				attachmentSink := baseevents.NewAttachmentSink(recognition.Config{BaseToken: details.BaseToken, TableID: details.TableID, FieldID: details.AttachmentField()}, receiptFlow).Sink
 				sink = func(ctx context.Context, event events.Event) error {
 					if err := logEvent(ctx, event); err != nil {
 						return err
@@ -208,7 +208,7 @@ func main() {
 		}
 		if automaticReview != nil && cfg.Business != nil && cfg.Business.Review.ResubmitOnDetailChange {
 			details := cfg.Business.Tables.ReimbursementDetails
-			fieldIDs := []string{details.Fields["attachments"], details.Fields["ledger_relation"]}
+			fieldIDs := []string{details.AttachmentField(), details.InvoiceRelationField()}
 			for _, id := range cfg.Business.Review.ContextFields {
 				fieldIDs = append(fieldIDs, id)
 			}
