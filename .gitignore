@@ -1,6 +1,7 @@
 # Local configuration and secrets
 /config.json
 /config.toml
+/configs/config.toml
 /configs/tables/*.json
 !/configs/tables/*.example.json
 .env

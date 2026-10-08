@@ -1,49 +1,62 @@
-# 主运行配置；含凭证，请保持 0600 权限，不提交 Git。
-# 业务多维表格拓扑与字段映射独立存放于 configs/tables/。
+# 主运行配置示例（脱敏）；实际文件为同目录下的 config.toml（0600 权限，Git 忽略）。
+# 业务多维表格拓扑与字段映射存放在同级的 tables/ 目录下。
 tables_file = "configs/tables/enterprise.example.json"
 
-# 识别提供方：anyreceipt = 外部服务；model = 自有 Anthropic 模块；disabled = 关闭。
-# trigger_mode：event / poll / both；poll_startup：baseline / process。
-[recognition]
-provider = "disabled"
-trigger_mode = "both"
-poll_interval = "5m"
-poll_startup = "baseline"
+# ==========================================
+# 1. 海外小票附件识别（OCR 提取与台账回写）
+# ==========================================
+[recognition] # 也支持写为 ["海外小票附件识别"]
+provider = "disabled"     # 识别提供方：anyreceipt（外部识别） / model（自建大模型） / disabled（关闭）
+trigger_mode = "both"     # 触发方式：event（飞书变更事件） / poll（定时轮询） / both（两者皆有）
+poll_interval = "5m"      # 轮询时间间隔
+poll_startup = "baseline" # 启动时策略：baseline（仅记录基线） / process（立即处理旧附件）
 
-# 审核提供方：seal = 外部 SealAI；model = 自有 Anthropic 模块。
-# trigger_mode：after_recognition = 识别完成自动送审；manual = 手动提交。
-# 仅 model 需要 rules_file = "rules/review.example.json"，相对主配置目录解析。
-[review]
-provider = "seal"
-trigger_mode = "manual"
-include_transactions = true
-resubmit_on_detail_change = false
-resubmit_on_source_change = false
-change_debounce = "10s"
+# ==========================================
+# 2. 单据 AI 审批（机审与结果回写）
+# ==========================================
+[review] # 也支持写为 ["单据AI审批"]
+provider = "seal"                   # 审核提供方：seal（外部 SealAI） / model（自建大模型）
+trigger_mode = "manual"             # 触发方式：after_recognition（识别完成自动送审） / manual（手动提交）
+include_transactions = true         # 是否联动读取已绑定的交易流水
+resubmit_on_detail_change = false   # 报销明细修改后是否自动重审
+resubmit_on_source_change = false   # 票据台账/流水修改后是否自动重审
+change_debounce = "10s"             # 修改事件防抖等待时间
 
-# 飞书应用身份；更换企业时更新凭证，并核对 tables_file 中的 Base / Table / Field ID。
+# ==========================================
+# 3. 飞书应用身份（用于连接多维表格与事件订阅）
+# ==========================================
 [feishu]
 app_id = ""
 app_secret = ""
 event_type = "drive.file.bitable_record_changed_v1"
 log_raw_events = false
 
+# ==========================================
+# 4. Anyreceipt 海外小票识别凭证
+# ==========================================
 [anyreceipt]
 api_key = ""
 
-# SealAI 单据通道、访问凭证和回调鉴权；规则在 SealAI 系统维护。
+# ==========================================
+# 5. SealAI 单据通道与回调凭据（规则在 Seal 系统维护）
+# ==========================================
 [seal]
 document_url = "https://mediastorm-test.sealai.cc/api/v1/integrations/webhook/wh_1790692906316_6z2eao6/document"
 bearer_token = ""
 callback_token = ""
 
+# ==========================================
+# 6. 本地运行服务参数
+# ==========================================
 [runtime]
 http_addr = ":8080"
 log_level = "info"
 shutdown_timeout = "10s"
 state_dir = "data"
 
-# 自有 Anthropic 兼容模型连接（当 recognition.provider = "model" 或 review.provider = "model" 时使用）。
+# ==========================================
+# 7. 自建 Anthropic 兼容模型连接（可选，备用）
+# ==========================================
 [model]
 api_key = ""
 base_url = "https://api.deepseek.com/anthropic"

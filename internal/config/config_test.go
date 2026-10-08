@@ -352,3 +352,43 @@ name = "流水"
 	}
 }
 
+func TestLoadFile_SupportsChineseSectionHeaders(t *testing.T) {
+	dir := t.TempDir()
+	tablesPath := filepath.Join(dir, "tables.json")
+	validJSON := `{
+		"version": 1,
+		"name": "cn-test",
+		"tables": {
+			"transactions": {"name": "流水", "source": "webhook", "access": "read_only", "base_token": "base1", "table_id": "tbl_trans", "fields": {"transaction_id": "fld_tid"}},
+			"reimbursement_details": {"name": "明细", "source": "employee", "access": "read_write", "base_token": "base1", "table_id": "tbl_details", "fields": {"attachment": "fld_att"}},
+			"invoice_ledger": {"name": "台账", "source": "bridge", "access": "read_write", "base_token": "base1", "table_id": "tbl_ledger", "fields": {"source_key": "fld_sk", "raw_json": "fld_raw"}}
+		}
+	}`
+	if err := os.WriteFile(tablesPath, []byte(validJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+	tomlPath := filepath.Join(dir, "config.toml")
+	tomlContent := `
+tables_file = "tables.json"
+
+["海外小票附件识别"]
+provider = "disabled"
+trigger_mode = "both"
+
+["单据AI审批"]
+provider = "seal"
+trigger_mode = "manual"
+`
+	if err := os.WriteFile(tomlPath, []byte(tomlContent), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadFile(tomlPath)
+	if err != nil {
+		t.Fatalf("LoadFile failed with Chinese sections: %v", err)
+	}
+	if cfg.ReceiptTriggerMode != "both" || cfg.ReviewProvider != "seal" || cfg.ReviewTriggerMode != "manual" {
+		t.Fatalf("unexpected settings from Chinese sections: %+v", cfg)
+	}
+}
+
+

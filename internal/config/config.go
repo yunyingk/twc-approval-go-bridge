@@ -17,16 +17,18 @@ import (
 // Document is the only runtime configuration source, including credentials.
 // The private file is not committed; the repository contains a redacted example.
 type Document struct {
-	Version     int                 `json:"version,omitempty" toml:"version,omitempty"`
-	Name        string              `json:"name,omitempty" toml:"name,omitempty"`
-	TablesFile  string              `json:"tables_file" toml:"tables_file"`
-	Recognition RecognitionSettings `json:"recognition" toml:"recognition"`
-	Review      ReviewSettings      `json:"review" toml:"review"`
-	Runtime     RuntimeSettings     `json:"runtime" toml:"runtime"`
-	Feishu      FeishuSettings      `json:"feishu" toml:"feishu"`
-	Anyreceipt  AnyreceiptSettings  `json:"anyreceipt" toml:"anyreceipt"`
-	Seal        SealSettings        `json:"seal" toml:"seal"`
-	Model       ModelSettings       `json:"model" toml:"model"`
+	Version       int                 `json:"version,omitempty" toml:"version,omitempty"`
+	Name          string              `json:"name,omitempty" toml:"name,omitempty"`
+	TablesFile    string              `json:"tables_file" toml:"tables_file"`
+	Recognition   RecognitionSettings `json:"recognition,omitempty" toml:"recognition,omitempty"`
+	RecognitionCN RecognitionSettings `json:"-" toml:"海外小票附件识别,omitempty"`
+	Review        ReviewSettings      `json:"review,omitempty" toml:"review,omitempty"`
+	ReviewCN      ReviewSettings      `json:"-" toml:"单据AI审批,omitempty"`
+	Runtime       RuntimeSettings     `json:"runtime" toml:"runtime"`
+	Feishu        FeishuSettings      `json:"feishu" toml:"feishu"`
+	Anyreceipt    AnyreceiptSettings  `json:"anyreceipt" toml:"anyreceipt"`
+	Seal          SealSettings        `json:"seal" toml:"seal"`
+	Model         ModelSettings       `json:"model" toml:"model"`
 
 	BusinessProfile BusinessProfile `json:"-" toml:"-"`
 }
@@ -108,7 +110,11 @@ type Config struct {
 func Load() (Config, error) {
 	path := strings.TrimSpace(os.Getenv("CONFIG_FILE"))
 	if path == "" {
-		path = "config.toml"
+		if _, err := os.Stat("configs/config.toml"); err == nil {
+			path = "configs/config.toml"
+		} else {
+			path = "config.toml"
+		}
 	}
 	return LoadFile(path)
 }
@@ -131,6 +137,12 @@ func LoadFile(path string) (Config, error) {
 		// Do not echo private TOML values or unknown keys into application logs.
 		return Config{}, fmt.Errorf("invalid configuration TOML or unknown field")
 	}
+	if document.Recognition == (RecognitionSettings{}) && document.RecognitionCN != (RecognitionSettings{}) {
+		document.Recognition = document.RecognitionCN
+	}
+	if document.Review.Provider == "" && document.ReviewCN.Provider != "" {
+		document.Review = document.ReviewCN
+	}
 	if document.Version != 0 && document.Version != 1 {
 		return Config{}, fmt.Errorf("configuration version must be 1")
 	}
@@ -139,7 +151,9 @@ func LoadFile(path string) (Config, error) {
 	}
 	tablesPath := document.TablesFile
 	if !filepath.IsAbs(tablesPath) {
-		tablesPath = filepath.Join(filepath.Dir(path), tablesPath)
+		if _, err := os.Stat(tablesPath); err != nil {
+			tablesPath = filepath.Join(filepath.Dir(path), tablesPath)
+		}
 	}
 	tablesProfile, err := LoadTablesFile(tablesPath)
 	if err != nil {
