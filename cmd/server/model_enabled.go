@@ -12,6 +12,7 @@ import (
 	appreview "github.com/yunyingk/twc-approval-go-bridge/internal/app/review"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -26,7 +27,9 @@ func newModelReview(cfg config.Config) (appreview.Reviewer, string, string, erro
 	}
 	path := cfg.ReviewRulesFile
 	if !filepath.IsAbs(path) {
-		path = filepath.Join(filepath.Dir(cfg.ConfigFile), path)
+		if _, err := os.Stat(path); err != nil {
+			path = filepath.Join(filepath.Dir(cfg.ConfigFile), path)
+		}
 	}
 	rules, err := modelreview.LoadRules(path)
 	if err != nil {

@@ -4,6 +4,8 @@
 /configs/config.toml
 /configs/tables/*.json
 !/configs/tables/*.example.json
+/configs/rules/*.json
+!/configs/rules/*.example.json
 .env
 .env.*
 !.env.example

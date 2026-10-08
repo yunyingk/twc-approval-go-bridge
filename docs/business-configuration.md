@@ -67,7 +67,7 @@ Table 类似普通表格的 Sheet；View 是同一张 Table 的另一种展示�
 
 - `configs/tables/enterprise.example.json`：多维表格三表拓扑与字段映射示例模板。
 - `templates/feishu/approval-template.example.json`：一次性创建飞书原生审批模板的请求（历史归档参考）。
-- `rules/review.example.json`：自有审核示例规则。只有 `review.provider = "model"` 才读取 `review.rules_file`；相对路径以主 TOML 所在目录为准。SealAI 路径不要求文件存在。
+- `configs/rules/review.example.json`：自有审核示例规则。只有 `review.provider = "model"` 才读取 `review.rules_file`；相对路径以主 TOML 所在目录（或项目根目录）为准。SealAI 路径不要求文件存在。
 
 主配置顺序为 `tables_file` 路径引用、识别/审核提供方、连接凭证、运行参数、自建模型连接。TOML 与 JSON 均开启严格的未知字段检测（`DisallowUnknownFields`）；重复键/节、错误类型及未知结构字段会立即报错。旧 JSON 主配置及旧版 TOML 内嵌 `[tables]` 语法不再受新加载器支持，没有兼容回退。当前监督服务仍运行上一阶段二进制与私有 JSON，尚未部署本次改动，见[交接记录](progress/2026-10-08-config-toml.md)。
 
