@@ -45,17 +45,13 @@ func TestApprovalObservationIsIndependentFromCreationAndUsesSelectedCredentials(
 func TestLoadRejectsMissingObserverCredentialsBeforeServiceAssembly(t *testing.T) {
 	p := testProfile()
 	p.Approval = &ApprovalSettings{Mode: "disabled", TargetIdentity: "approval", Observation: &ApprovalObservation{Enabled: true}}
-	t.Setenv("BUSINESS_CONFIG_FILE", writeProfile(t, p))
-	t.Setenv("FEISHU_APP_ID", "bridge")
-	t.Setenv("FEISHU_APP_SECRET", "bridge-secret")
-	t.Setenv("FEISHU_APPROVAL_APP_ID", "original")
-	t.Setenv("FEISHU_APPROVAL_APP_SECRET", "")
-	if _, err := Load(); err == nil {
-		t.Fatal("configuration load allowed missing selected observer secret")
+	d := Document{BusinessProfile: p, Feishu: FeishuSettings{AppCredentials: AppCredentials{AppID: "bridge", AppSecret: "bridge-secret"}}}
+	if _, err := loadDocument(t, d); err == nil {
+		t.Fatal("missing selected observer credentials accepted")
 	}
-	t.Setenv("FEISHU_APPROVAL_APP_SECRET", "original-secret")
-	if cfg, err := Load(); err != nil || !cfg.ApprovalObservationEnabled() {
-		t.Fatalf("valid independent observer config failed: %v", err)
+	d.Feishu.ApprovalApp = AppCredentials{AppID: "original", AppSecret: "original-secret"}
+	if cfg, err := loadDocument(t, d); err != nil || !cfg.ApprovalObservationEnabled() {
+		t.Fatalf("valid observer failed: %v", err)
 	}
 }
 
@@ -179,7 +175,7 @@ func TestApprovalDraftAndCredentialSelectionNeverFallBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.Approval = &ApprovalSettings{Mode: "disabled"}
-	if _, err := LoadBusinessProfile(writeProfile(t, p)); err != nil {
+	if _, err := LoadFile(writeProfile(t, p)); err != nil {
 		t.Fatal("disabled draft broke existing business")
 	}
 	p = approvalProfile()
@@ -202,7 +198,7 @@ func TestApprovalDraftAndCredentialSelectionNeverFallBack(t *testing.T) {
 	if err != nil || id != "bridge" {
 		t.Fatal("explicit bridge identity not selected")
 	}
-	// Credentials are environment-only, including inside the new section.
+	// Credentials belong to feishu.approval_app, never to approval business settings.
 	encoded, _ := json.Marshal(p)
 	var raw map[string]any
 	json.Unmarshal(encoded, &raw)
@@ -210,7 +206,7 @@ func TestApprovalDraftAndCredentialSelectionNeverFallBack(t *testing.T) {
 	encoded, _ = json.Marshal(raw)
 	path := filepath.Join(t.TempDir(), "invalid.json")
 	os.WriteFile(path, encoded, 0600)
-	if _, err := LoadBusinessProfile(path); err == nil {
+	if _, err := LoadFile(path); err == nil {
 		t.Fatal("approval secret accepted in business file")
 	}
 }

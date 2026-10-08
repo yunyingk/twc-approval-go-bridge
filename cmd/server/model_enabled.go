@@ -6,12 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/anthropic/model"
 	modelreview "github.com/yunyingk/twc-approval-go-bridge/internal/anthropic/review"
 	appreview "github.com/yunyingk/twc-approval-go-bridge/internal/app/review"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
-	"os"
 )
 
 func newModel(apiKey, baseURL, name string) (invoice.Recognizer, error) {
@@ -19,7 +19,10 @@ func newModel(apiKey, baseURL, name string) (invoice.Recognizer, error) {
 }
 
 func newModelReview(cfg config.Config) (appreview.Reviewer, string, string, error) {
-	data, err := os.ReadFile(cfg.ReviewRulesFile)
+	if cfg.ReviewRules == nil {
+		return nil, "", "", fmt.Errorf("review.rules is required for the model provider")
+	}
+	data, err := json.Marshal(cfg.ReviewRules)
 	if err != nil {
 		return nil, "", "", err
 	}

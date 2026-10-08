@@ -37,7 +37,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	if len(os.Args) > 1 {
 		if (os.Args[1] == "check-business-config" && len(os.Args) != 2) || (os.Args[1] != "check-business-config" && len(os.Args) != 3) {
-			logger.Error("usage: server check-business-config | {review-status|check-review|preview-review|preview-approval|prepare-approval|prepare-approval-files|retry-approval-files|submit-approval|retry-approval|approval-status|check-approval|abandon-approval|subscribe-approval-events|submit-seal|submit-review|retry-writeback|apply-seal-result} <record-id-preparation-id-document-id-template-code-or-file>")
+			logger.Error("usage: server check-business-config | {review-status|check-review|preview-review|preview-approval|prepare-approval|prepare-approval-files|retry-approval-files|submit-approval|retry-approval|approval-status|check-approval|abandon-approval|subscribe-approval-events|submit-review|retry-writeback|apply-seal-result} <record-id-preparation-id-document-id-template-code-or-file>")
 			os.Exit(2)
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -73,10 +73,8 @@ func main() {
 			err = runReviewInspection(ctx, cfg, os.Args[2], true, os.Stdout)
 		case "retry-writeback":
 			err = runReviewWriteback(ctx, cfg, os.Args[2], os.Stdout)
-		case "submit-seal":
-			err = runSealSubmit(ctx, cfg, os.Args[2], logger)
 		case "submit-review":
-			err = runReviewSubmit(ctx, cfg, os.Args[2], cfg.ReviewProvider, true, logger)
+			err = runReviewSubmit(ctx, cfg, os.Args[2], logger)
 		case "apply-seal-result":
 			err = runSealResult(ctx, cfg, os.Args[2])
 		default:
@@ -89,7 +87,7 @@ func main() {
 		return
 	}
 	if cfg.Business != nil {
-		logger.Info("business profile selected", "profile", cfg.Business.Name, "config_file", cfg.BusinessConfigFile,
+		logger.Info("business profile selected", "profile", cfg.Business.Name, "config_file", cfg.ConfigFile,
 			"source_base", cfg.ReceiptBaseToken, "source_table", cfg.ReceiptTableID, "ledger_table", cfg.ReceiptLedgerTableID,
 			"receipt_provider", cfg.ReceiptProvider, "review_provider", cfg.ReviewProvider, "review_trigger", cfg.ReviewTriggerMode,
 			"include_transactions", cfg.Business.Review.IncludeTransactions)
@@ -121,7 +119,7 @@ func main() {
 	if cfg.ReviewTriggerMode == "after_recognition" {
 		// Automatic submissions follow REVIEW_PROVIDER independently of a Seal
 		// callback receiver that may still finish older in-flight Seal requests.
-		submitter, err := newReviewService(cfg, cfg.ReviewProvider, true)
+		submitter, err := newReviewService(cfg)
 		if err != nil {
 			logger.Error("configure automatic review provider", "error", err)
 			os.Exit(1)

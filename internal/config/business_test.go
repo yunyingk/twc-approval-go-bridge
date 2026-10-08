@@ -88,7 +88,7 @@ func TestProfileSwitchIsCompleteAndOverridesStaleEnvironment(t *testing.T) {
 		t.Setenv(key, "stale-invalid")
 	}
 	first := testProfile()
-	t.Setenv("BUSINESS_CONFIG_FILE", writeProfile(t, first))
+	t.Setenv("CONFIG_FILE", writeProfile(t, first))
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +97,7 @@ func TestProfileSwitchIsCompleteAndOverridesStaleEnvironment(t *testing.T) {
 		cfg.ReceiptLedgerTableID != "ledger" || cfg.ReceiptSourceDetailFieldID != "detail" || cfg.ReceiptProvider != "" ||
 		cfg.ReviewTriggerMode != "manual" || !reflect.DeepEqual(cfg.ReviewContextFieldIDs, first.Review.ContextFields) ||
 		!reflect.DeepEqual(cfg.ReviewResultFieldIDs, first.Review.ResultFields) || !reflect.DeepEqual(cfg.ReceiptLedgerFieldIDs, first.Tables.InvoiceLedger.Fields) {
-		t.Fatal("profile did not replace the complete legacy binding set")
+		t.Fatal("selected file did not supply the complete binding set")
 	}
 	second := testProfile()
 	second.Name = "another-company"
@@ -110,7 +110,7 @@ func TestProfileSwitchIsCompleteAndOverridesStaleEnvironment(t *testing.T) {
 	second.Tables.InvoiceLedger.TableID = "new-ledger"
 	second.Tables.InvoiceLedger.Fields["source_key"] = "new-source"
 	second.Review.ResultFields["decision"] = "new-decision"
-	t.Setenv("BUSINESS_CONFIG_FILE", writeProfile(t, second))
+	t.Setenv("CONFIG_FILE", writeProfile(t, second))
 	cfg, err = Load()
 	if err != nil {
 		t.Fatal(err)
@@ -123,26 +123,20 @@ func TestProfileSwitchIsCompleteAndOverridesStaleEnvironment(t *testing.T) {
 	}
 }
 
-func TestProfileKeepsRuntimeCredentialsAndAppliesAutomaticReview(t *testing.T) {
-	profile := testProfile()
-	profile.Recognition.Provider = "anyreceipt"
-	profile.Review.TriggerMode = "after_recognition"
-	t.Setenv("BUSINESS_CONFIG_FILE", writeProfile(t, profile))
-	t.Setenv("FEISHU_APP_ID", "app")
-	t.Setenv("FEISHU_APP_SECRET", "secret-from-environment")
-	t.Setenv("ANYRECEIPT_API_KEY", "key-from-environment")
-	t.Setenv("SEAL_CALLBACK_TOKEN", "abcdefghijklmnopqrstuvwxyz012345")
-	cfg, err := Load()
+func TestSingleDocumentCredentialsAndAutomaticReview(t *testing.T) {
+	d := Document{BusinessProfile: testProfile(), Feishu: FeishuSettings{AppCredentials: AppCredentials{AppID: "app", AppSecret: "file-secret"}}, Anyreceipt: AnyreceiptSettings{APIKey: "file-key"}, Seal: SealSettings{CallbackToken: "abcdefghijklmnopqrstuvwxyz012345"}}
+	d.Recognition.Provider = "anyreceipt"
+	d.Review.TriggerMode = "after_recognition"
+	cfg, err := loadDocument(t, d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.FeishuAppSecret != "secret-from-environment" || cfg.AnyreceiptAPIKey != "key-from-environment" ||
-		cfg.ReceiptProvider != "anyreceipt" || cfg.ReviewTriggerMode != "after_recognition" {
-		t.Fatal("profile replaced credentials or lost automatic review configuration")
+	if cfg.FeishuAppSecret != "file-secret" || cfg.AnyreceiptAPIKey != "file-key" || cfg.ReceiptProvider != "anyreceipt" || cfg.ReviewTriggerMode != "after_recognition" {
+		t.Fatal("complete document did not supply automatic review")
 	}
-	t.Setenv("SEAL_CALLBACK_TOKEN", "")
-	if _, err := Load(); err == nil {
-		t.Fatal("file-based automatic Seal review bypassed callback requirements")
+	d.Seal.CallbackToken = ""
+	if _, err := loadDocument(t, d); err == nil {
+		t.Fatal("automatic Seal review bypassed callback requirement")
 	}
 }
 
@@ -166,7 +160,7 @@ func TestProfileRejectsUnsafeOrUnsupportedBindings(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			profile := testProfile()
 			tc.change(&profile)
-			if _, err := LoadBusinessProfile(writeProfile(t, profile)); err == nil {
+			if _, err := LoadFile(writeProfile(t, profile)); err == nil {
 				t.Fatal("unsafe or unsupported profile accepted")
 			}
 		})
@@ -188,7 +182,7 @@ func TestProfileRejectsUnknownKeysAndExtraObjects(t *testing.T) {
 		if err := os.WriteFile(path, []byte(input), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := LoadBusinessProfile(path); err == nil {
+		if _, err := LoadFile(path); err == nil {
 			t.Fatal("unknown key, malformed JSON or extra object accepted")
 		}
 	}
@@ -200,21 +194,21 @@ func TestLinkedTransactionReviewRequiresExplicitCompleteNativeBinding(t *testing
 	for _, semantic := range []string{"original_amount", "original_currency", "merchant", "transaction_time"} {
 		profile.Tables.Transactions.Fields[semantic] = semantic + "-field"
 	}
-	if _, err := LoadBusinessProfile(writeProfile(t, profile)); err != nil {
+	if _, err := LoadFile(writeProfile(t, profile)); err != nil {
 		t.Fatal(err)
 	}
 	profile.Tables.Transactions.BaseToken = "other-base"
-	if _, err := LoadBusinessProfile(writeProfile(t, profile)); err == nil {
+	if _, err := LoadFile(writeProfile(t, profile)); err == nil {
 		t.Fatal("native transaction relation accepted another Base")
 	}
 	profile.Tables.Transactions.BaseToken = "base"
 	delete(profile.Tables.Transactions.Fields, "original_currency")
-	if _, err := LoadBusinessProfile(writeProfile(t, profile)); err == nil {
+	if _, err := LoadFile(writeProfile(t, profile)); err == nil {
 		t.Fatal("payment review accepted an incomplete currency binding")
 	}
 	profile.Review.IncludeTransactions = false
 	profile.Review.ContextFields["bridge_transaction_evidence"] = "input"
-	if _, err := LoadBusinessProfile(writeProfile(t, profile)); err == nil {
+	if _, err := LoadFile(writeProfile(t, profile)); err == nil {
 		t.Fatal("source context can replace provider-generated payment evidence")
 	}
 }

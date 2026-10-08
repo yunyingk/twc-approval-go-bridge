@@ -9,7 +9,7 @@
 | [`create-approval-definition.md`](create-approval-definition.md) | [创建审批定义](https://open.feishu.cn/document/server-docs/approval-v4/approval/create.md)，包含完整请求体、响应、权限和使用限制 |
 | [`approval-definition-form-controls.md`](approval-definition-form-controls.md) | [审批定义表单控件参数](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/approval-v4/approval/approval-definition-form-control-parameters.md)，包含明细、附件等控件协议及不支持的类型 |
 
-校验值见上一级 [`README.md`](../README.md)。项目编写的模板请求示例放在 `configs/feishu/`，不混入此原文目录。
+校验值见上一级 [`README.md`](../README.md)。项目编写的模板请求示例内嵌于 `configs/config.example.json` 的 feishu.approval_template，不混入此原文目录。
 
 2026-10-05 另直接下载并保留三份官方 Markdown 原文：[`create-approval-instance.md`](create-approval-instance.md)、[`get-approval-instance.md`](get-approval-instance.md) 和 [`approval-instance-form-controls.md`](approval-instance-form-controls.md)。查询文档明确允许用创建时的 UUID 作为 `instance_id`；创建文档明确 UUID 冲突返回 `60012`，不能将该响应推断成“没有建单”。身份和审批状态也以这些原文为准。
 

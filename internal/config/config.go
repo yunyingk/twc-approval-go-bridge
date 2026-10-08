@@ -1,9 +1,10 @@
-// Package config loads process configuration from environment variables and business files.
+// Package config loads the bridge from one complete JSON document.
 package config
 
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"regexp"
@@ -11,9 +12,62 @@ import (
 	"time"
 )
 
+// Document is the only runtime configuration source, including credentials.
+// The private file is not committed; the repository contains a redacted example.
+type Document struct {
+	BusinessProfile
+	Runtime    RuntimeSettings    `json:"runtime"`
+	Feishu     FeishuSettings     `json:"feishu"`
+	Anyreceipt AnyreceiptSettings `json:"anyreceipt"`
+	Seal       SealSettings       `json:"seal"`
+}
+
+type RuntimeSettings struct {
+	HTTPAddr        string `json:"http_addr"`
+	LogLevel        string `json:"log_level"`
+	ShutdownTimeout string `json:"shutdown_timeout"`
+	StateDir        string `json:"state_dir"`
+}
+
+type AppCredentials struct {
+	AppID     string `json:"app_id"`
+	AppSecret string `json:"app_secret"`
+}
+
+type FeishuSettings struct {
+	AppCredentials
+	ApprovalApp      AppCredentials  `json:"approval_app"`
+	EventType        string          `json:"event_type"`
+	LogRawEvents     bool            `json:"log_raw_events"`
+	ApprovalTemplate json.RawMessage `json:"approval_template,omitempty"`
+}
+
+type AnyreceiptSettings struct {
+	APIKey string `json:"api_key"`
+}
+type SealSettings struct {
+	DocumentURL   string `json:"document_url"`
+	BearerToken   string `json:"bearer_token"`
+	CallbackToken string `json:"callback_token"`
+}
+
+type ModelSettings struct {
+	APIKey  string `json:"api_key"`
+	BaseURL string `json:"base_url"`
+	Name    string `json:"name"`
+}
+
+// LocalReviewRules belong only to the self-hosted provider; Seal maintains its own rules.
+type LocalReviewRules struct {
+	Version                string   `json:"version"`
+	Instructions           string   `json:"instructions"`
+	RequiredContext        []string `json:"required_context"`
+	AllowAutomaticDecision bool     `json:"allow_automatic_decision"`
+}
+
 // Config contains runtime settings for the service shell.
 type Config struct {
-	BusinessConfigFile         string
+	ConfigFile                 string
 	Business                   *BusinessProfile
 	HTTPAddr                   string
 	LogLevel                   slog.Level
@@ -46,109 +100,88 @@ type Config struct {
 	ReviewModelAPIKey          string
 	ReviewModelBaseURL         string
 	ReviewModelName            string
-	ReviewRulesFile            string
+	ReviewRules                *LocalReviewRules
+	ApprovalTemplate           json.RawMessage
 	ReviewContextFieldIDs      map[string]string
 	ReviewResultFieldIDs       map[string]string
 	SealBearerToken            string
 }
 
-// Load reads configuration from the environment and applies development-safe defaults.
+// Load selects a single file. CONFIG_FILE selects its path, never field overrides.
 func Load() (Config, error) {
-	shutdownTimeout, err := duration("SHUTDOWN_TIMEOUT", 10*time.Second)
-	if err != nil {
-		return Config{}, err
+	path := strings.TrimSpace(os.Getenv("CONFIG_FILE"))
+	if path == "" {
+		path = "config.json"
 	}
+	return LoadFile(path)
+}
 
-	level, err := logLevel("LOG_LEVEL", slog.LevelInfo)
+// LoadFile never reads environment credentials, other profiles or rule files.
+func LoadFile(path string) (Config, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("open configuration %s: %w", path, err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() > 1<<20 {
+		return Config{}, fmt.Errorf("configuration must be a regular file of at most 1 MiB")
+	}
+	decoder := json.NewDecoder(io.LimitReader(file, 1<<20))
+	decoder.DisallowUnknownFields()
+	var document Document
+	if err := decoder.Decode(&document); err != nil {
+		// Do not echo private JSON values or unknown keys into application logs.
+		return Config{}, fmt.Errorf("invalid configuration JSON or unknown field")
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return Config{}, fmt.Errorf("configuration requires exactly one JSON object")
+	}
+	if err := document.BusinessProfile.validate(); err != nil {
+		return Config{}, err
+	}
+	shutdown, err := parseDuration("runtime.shutdown_timeout", document.Runtime.ShutdownTimeout, 10*time.Second)
 	if err != nil {
 		return Config{}, err
 	}
-
-	feishuAppID := value("FEISHU_APP_ID", "")
-	feishuAppSecret := value("FEISHU_APP_SECRET", "")
-	if (feishuAppID == "") != (feishuAppSecret == "") {
-		return Config{}, fmt.Errorf("FEISHU_APP_ID and FEISHU_APP_SECRET must be set together")
-	}
-
-	logRawEvents, err := boolean("FEISHU_LOG_RAW_EVENTS", false)
+	poll, err := parseDuration("recognition.poll_interval", document.Recognition.PollInterval, 5*time.Minute)
 	if err != nil {
 		return Config{}, err
 	}
-	pollInterval, err := duration("RECEIPT_POLL_INTERVAL", 5*time.Minute)
+	level, err := parseLogLevel(document.Runtime.LogLevel)
 	if err != nil {
 		return Config{}, err
-	}
-	businessFile := value("BUSINESS_CONFIG_FILE", "")
-	var business *BusinessProfile
-	var ledgerFieldIDs, contextFields, resultFields map[string]string
-	if businessFile != "" {
-		business, err = LoadBusinessProfile(businessFile)
-		if err != nil {
-			return Config{}, err
-		}
-	} else {
-		// Legacy bindings remain available only when no complete profile is selected.
-		// Never mix field IDs from two environments, even when old variables remain set.
-		ledgerFieldIDs, err = fieldMapping("RECEIPT_LEDGER_FIELD_IDS")
-		if err != nil {
-			return Config{}, err
-		}
-		contextFields, err = fieldMapping("REVIEW_CONTEXT_FIELD_IDS")
-		if err != nil {
-			return Config{}, err
-		}
-		resultFields, err = fieldMapping("REVIEW_RESULT_FIELD_IDS")
-		if err != nil {
-			return Config{}, err
-		}
 	}
 	cfg := Config{
-		BusinessConfigFile:         businessFile,
-		Business:                   business,
-		HTTPAddr:                   value("HTTP_ADDR", ":8080"),
-		LogLevel:                   level,
-		ShutdownTimeout:            shutdownTimeout,
-		FeishuAppID:                feishuAppID,
-		FeishuAppSecret:            feishuAppSecret,
-		FeishuApprovalAppID:        value("FEISHU_APPROVAL_APP_ID", ""),
-		FeishuApprovalAppSecret:    value("FEISHU_APPROVAL_APP_SECRET", ""),
-		FeishuEventType:            value("FEISHU_EVENT_TYPE", "drive.file.bitable_record_changed_v1"),
-		FeishuLogRawEvents:         logRawEvents,
-		ReceiptBaseToken:           value("RECEIPT_BASE_TOKEN", ""),
-		ReceiptTableID:             value("RECEIPT_TABLE_ID", ""),
-		ReceiptFieldID:             value("RECEIPT_ATTACHMENT_FIELD_ID", ""),
-		ReceiptProvider:            strings.ToLower(value("RECEIPT_PROVIDER", "")),
-		ReceiptTriggerMode:         strings.ToLower(value("RECEIPT_TRIGGER_MODE", "both")),
-		ReceiptPollInterval:        pollInterval,
-		ReceiptPollStartup:         strings.ToLower(value("RECEIPT_POLL_STARTUP", "baseline")),
-		AnyreceiptAPIKey:           value("ANYRECEIPT_API_KEY", ""),
-		ReceiptModelAPIKey:         value("RECEIPT_MODEL_API_KEY", ""),
-		ReceiptModelBaseURL:        value("RECEIPT_MODEL_BASE_URL", ""),
-		ReceiptModelName:           value("RECEIPT_MODEL_NAME", ""),
-		ReceiptLedgerTableID:       value("RECEIPT_LEDGER_TABLE_ID", ""),
-		ReceiptSourceDetailFieldID: value("RECEIPT_SOURCE_DETAIL_FIELD_ID", ""),
-		ReceiptLedgerFieldIDs:      ledgerFieldIDs,
-		SealDocumentURL:            value("SEAL_DOCUMENT_URL", ""),
-		SealCallbackToken:          value("SEAL_CALLBACK_TOKEN", ""),
-		StateDir:                   value("STATE_DIR", "data"),
-		ReviewProvider:             strings.ToLower(value("REVIEW_PROVIDER", "seal")),
-		ReviewTriggerMode:          strings.ToLower(value("REVIEW_TRIGGER_MODE", "manual")),
-		ReviewModelAPIKey:          value("REVIEW_MODEL_API_KEY", ""),
-		ReviewModelBaseURL:         value("REVIEW_MODEL_BASE_URL", ""),
-		ReviewModelName:            value("REVIEW_MODEL_NAME", ""),
-		ReviewRulesFile:            value("REVIEW_RULES_FILE", ""),
-		ReviewContextFieldIDs:      contextFields, ReviewResultFieldIDs: resultFields,
-		SealBearerToken: value("SEAL_BEARER_TOKEN", ""),
+		ConfigFile: path, Business: &document.BusinessProfile,
+		HTTPAddr: fallback(document.Runtime.HTTPAddr, ":8080"), LogLevel: level,
+		ShutdownTimeout: shutdown, StateDir: fallback(document.Runtime.StateDir, "data"),
+		FeishuAppID: document.Feishu.AppID, FeishuAppSecret: document.Feishu.AppSecret,
+		FeishuApprovalAppID: document.Feishu.ApprovalApp.AppID, FeishuApprovalAppSecret: document.Feishu.ApprovalApp.AppSecret,
+		FeishuEventType:     fallback(document.Feishu.EventType, "drive.file.bitable_record_changed_v1"),
+		FeishuLogRawEvents:  document.Feishu.LogRawEvents,
+		ReceiptPollInterval: poll, ReceiptPollStartup: fallback(document.Recognition.PollStartup, "baseline"),
+		AnyreceiptAPIKey:    document.Anyreceipt.APIKey,
+		ReceiptModelAPIKey:  document.Recognition.Model.APIKey,
+		ReceiptModelBaseURL: document.Recognition.Model.BaseURL, ReceiptModelName: document.Recognition.Model.Name,
+		SealDocumentURL: document.Seal.DocumentURL, SealBearerToken: document.Seal.BearerToken,
+		SealCallbackToken:  document.Seal.CallbackToken,
+		ReviewModelAPIKey:  document.Review.Model.APIKey,
+		ReviewModelBaseURL: document.Review.Model.BaseURL, ReviewModelName: document.Review.Model.Name,
+		ReviewRules: document.Review.Rules, ApprovalTemplate: document.Feishu.ApprovalTemplate,
 	}
-	if business != nil {
-		business.apply(&cfg)
+	document.BusinessProfile.apply(&cfg)
+	for _, app := range []AppCredentials{document.Feishu.AppCredentials, document.Feishu.ApprovalApp} {
+		if (app.AppID == "") != (app.AppSecret == "") {
+			return Config{}, fmt.Errorf("Feishu app_id and app_secret must be set together")
+		}
 	}
 	if cfg.ApprovalObservationEnabled() {
 		if _, _, err := cfg.ApprovalObservationCredentials(); err != nil {
 			return Config{}, err
 		}
 	}
-	contextFields, resultFields = cfg.ReviewContextFieldIDs, cfg.ReviewResultFieldIDs
+	contextFields, resultFields := cfg.ReviewContextFieldIDs, cfg.ReviewResultFieldIDs
 	for semantic := range resultFields {
 		switch semantic {
 		case "decision", "comment", "document_id", "revision", "provider", "external_id", "url":
@@ -163,12 +196,12 @@ func Load() (Config, error) {
 		switch cfg.ReceiptTriggerMode {
 		case "event", "poll", "both":
 		default:
-			return Config{}, fmt.Errorf("RECEIPT_TRIGGER_MODE must be event, poll or both")
+			return Config{}, fmt.Errorf("recognition.trigger_mode must be event, poll or both")
 		}
 		switch cfg.ReceiptPollStartup {
 		case "baseline", "process":
 		default:
-			return Config{}, fmt.Errorf("RECEIPT_POLL_STARTUP must be baseline or process")
+			return Config{}, fmt.Errorf("recognition.poll_startup must be baseline or process")
 		}
 		if !cfg.FeishuEnabled() || cfg.ReceiptBaseToken == "" || cfg.ReceiptTableID == "" || cfg.ReceiptFieldID == "" {
 			return Config{}, fmt.Errorf("receipt recognition requires Feishu credentials and Base, Table and attachment field IDs")
@@ -176,21 +209,21 @@ func Load() (Config, error) {
 		switch cfg.ReceiptProvider {
 		case "anyreceipt":
 			if cfg.AnyreceiptAPIKey == "" {
-				return Config{}, fmt.Errorf("ANYRECEIPT_API_KEY is required")
+				return Config{}, fmt.Errorf("anyreceipt.api_key is required")
 			}
 		case "model":
 			if cfg.ReceiptModelAPIKey == "" || cfg.ReceiptModelName == "" {
 				return Config{}, fmt.Errorf("receipt model API key and name are required")
 			}
 		default:
-			return Config{}, fmt.Errorf("unsupported RECEIPT_PROVIDER %q", cfg.ReceiptProvider)
+			return Config{}, fmt.Errorf("unsupported recognition.provider %q", cfg.ReceiptProvider)
 		}
 	}
 	if cfg.ReviewProvider != "seal" && cfg.ReviewProvider != "model" {
-		return Config{}, fmt.Errorf("REVIEW_PROVIDER must be seal or model")
+		return Config{}, fmt.Errorf("review.provider must be seal or model")
 	}
 	if cfg.ReviewTriggerMode != "manual" && cfg.ReviewTriggerMode != "after_recognition" {
-		return Config{}, fmt.Errorf("REVIEW_TRIGGER_MODE must be manual or after_recognition")
+		return Config{}, fmt.Errorf("review.trigger_mode must be manual or after_recognition")
 	}
 	if cfg.ReviewTriggerMode == "after_recognition" {
 		if cfg.ReceiptProvider == "" || cfg.ReceiptLedgerTableID == "" {
@@ -204,7 +237,7 @@ func Load() (Config, error) {
 		}
 	}
 	if cfg.SealCallbackToken != "" && !regexp.MustCompile(`^[A-Za-z0-9_-]{32,}$`).MatchString(cfg.SealCallbackToken) {
-		return Config{}, fmt.Errorf("SEAL_CALLBACK_TOKEN must have at least 32 URL-safe characters")
+		return Config{}, fmt.Errorf("seal.callback_token must have at least 32 URL-safe characters")
 	}
 	for _, id := range resultFields {
 		for _, contextID := range contextFields {
@@ -226,28 +259,23 @@ func (c Config) FeishuEnabled() bool {
 	return c.FeishuAppID != "" && c.FeishuAppSecret != ""
 }
 
-func value(key, fallback string) string {
-	if v, ok := os.LookupEnv(key); ok && strings.TrimSpace(v) != "" {
-		return v
+func fallback(input, defaultValue string) string {
+	if strings.TrimSpace(input) == "" {
+		return defaultValue
 	}
-	return fallback
+	return input
 }
 
-func duration(key string, fallback time.Duration) (time.Duration, error) {
-	v := value(key, fallback.String())
-	parsed, err := time.ParseDuration(v)
-	if err != nil {
-		return 0, fmt.Errorf("%s: parse duration %q: %w", key, v, err)
-	}
-	if parsed <= 0 {
-		return 0, fmt.Errorf("%s: duration must be positive", key)
+func parseDuration(label, input string, defaultValue time.Duration) (time.Duration, error) {
+	parsed, err := time.ParseDuration(fallback(input, defaultValue.String()))
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("%s must be a positive duration", label)
 	}
 	return parsed, nil
 }
 
-func logLevel(key string, fallback slog.Level) (slog.Level, error) {
-	v := strings.ToLower(value(key, fallback.String()))
-	switch v {
+func parseLogLevel(input string) (slog.Level, error) {
+	switch strings.ToLower(fallback(input, "info")) {
 	case "debug":
 		return slog.LevelDebug, nil
 	case "info":
@@ -257,34 +285,6 @@ func logLevel(key string, fallback slog.Level) (slog.Level, error) {
 	case "error":
 		return slog.LevelError, nil
 	default:
-		return 0, fmt.Errorf("%s: unsupported log level %q", key, v)
+		return 0, fmt.Errorf("runtime.log_level must be debug, info, warn or error")
 	}
-}
-
-func boolean(key string, fallback bool) (bool, error) {
-	v := strings.ToLower(value(key, ""))
-	if v == "" {
-		return fallback, nil
-	}
-	switch v {
-	case "1", "true", "yes", "on":
-		return true, nil
-	case "0", "false", "no", "off":
-		return false, nil
-	default:
-		return false, fmt.Errorf("%s: unsupported boolean value %q", key, v)
-	}
-}
-
-func fieldMapping(key string) (map[string]string, error) {
-	var fields map[string]string
-	if raw := value(key, ""); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &fields); err != nil {
-			return nil, fmt.Errorf("%s: invalid field mapping", key)
-		}
-		if err := validateFieldMapping(key, fields); err != nil {
-			return nil, err
-		}
-	}
-	return fields, nil
 }

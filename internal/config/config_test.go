@@ -1,163 +1,175 @@
 package config
 
 import (
+	"encoding/json"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
-func TestLoadDefaults(t *testing.T) {
-	t.Setenv("HTTP_ADDR", "")
-	t.Setenv("LOG_LEVEL", "")
-	t.Setenv("SHUTDOWN_TIMEOUT", "")
-	t.Setenv("FEISHU_APP_ID", "")
-	t.Setenv("FEISHU_APP_SECRET", "")
-	t.Setenv("FEISHU_EVENT_TYPE", "")
-	t.Setenv("FEISHU_LOG_RAW_EVENTS", "")
-	t.Setenv("RECEIPT_PROVIDER", "")
-	t.Setenv("RECEIPT_TRIGGER_MODE", "")
-	t.Setenv("RECEIPT_POLL_STARTUP", "")
-	t.Setenv("RECEIPT_POLL_INTERVAL", "")
-	t.Setenv("REVIEW_TRIGGER_MODE", "")
-
-	cfg, err := Load()
+func writeDocument(t *testing.T, document Document) string {
+	t.Helper()
+	raw, err := json.Marshal(document)
 	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+		t.Fatal(err)
 	}
-	if cfg.HTTPAddr != ":8080" {
-		t.Errorf("HTTPAddr = %q, want :8080", cfg.HTTPAddr)
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
 	}
-	if cfg.LogLevel != slog.LevelInfo {
-		t.Errorf("LogLevel = %v, want info", cfg.LogLevel)
+	return path
+}
+
+func loadDocument(t *testing.T, document Document) (Config, error) {
+	t.Helper()
+	t.Setenv("CONFIG_FILE", writeDocument(t, document))
+	return Load()
+}
+
+func TestLoadDefaults(t *testing.T) {
+	cfg, err := loadDocument(t, Document{BusinessProfile: testProfile()})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if cfg.ShutdownTimeout != 10*time.Second {
-		t.Errorf("ShutdownTimeout = %s, want 10s", cfg.ShutdownTimeout)
+	if cfg.HTTPAddr != ":8080" || cfg.LogLevel != slog.LevelInfo || cfg.ShutdownTimeout != 10*time.Second || cfg.FeishuEnabled() {
+		t.Fatal("unexpected runtime defaults")
 	}
-	if cfg.FeishuEnabled() {
-		t.Error("FeishuEnabled() = true, want false")
-	}
-	if cfg.FeishuEventType != "drive.file.bitable_record_changed_v1" {
-		t.Errorf("FeishuEventType = %q, want default event type", cfg.FeishuEventType)
-	}
-	if cfg.ReceiptTriggerMode != "both" || cfg.ReceiptPollStartup != "baseline" || cfg.ReceiptPollInterval != 5*time.Minute {
-		t.Errorf("unexpected receipt trigger defaults: mode=%q startup=%q interval=%s", cfg.ReceiptTriggerMode, cfg.ReceiptPollStartup, cfg.ReceiptPollInterval)
-	}
-	if cfg.ReviewTriggerMode != "manual" {
-		t.Errorf("ReviewTriggerMode = %q, want manual", cfg.ReviewTriggerMode)
+	if cfg.FeishuEventType != "drive.file.bitable_record_changed_v1" || cfg.ReceiptTriggerMode != "both" || cfg.ReceiptPollStartup != "baseline" || cfg.ReceiptPollInterval != 5*time.Minute || cfg.ReviewTriggerMode != "manual" {
+		t.Fatal("unexpected event or trigger defaults")
 	}
 }
 
 func TestAutomaticReviewRequiresRecognitionDeliveryAndResults(t *testing.T) {
-	t.Setenv("FEISHU_APP_ID", "cli_test")
-	t.Setenv("FEISHU_APP_SECRET", "secret")
-	t.Setenv("RECEIPT_BASE_TOKEN", "base")
-	t.Setenv("RECEIPT_TABLE_ID", "details")
-	t.Setenv("RECEIPT_ATTACHMENT_FIELD_ID", "attachment")
-	t.Setenv("ANYRECEIPT_API_KEY", "test")
-	t.Setenv("RECEIPT_LEDGER_FIELD_IDS", `{"source_key":"source","raw_json":"raw"}`)
-	t.Setenv("REVIEW_PROVIDER", "seal")
-	t.Setenv("REVIEW_TRIGGER_MODE", "after_recognition")
-	t.Setenv("RECEIPT_PROVIDER", "")
-	t.Setenv("RECEIPT_LEDGER_TABLE_ID", "")
-	t.Setenv("REVIEW_RESULT_FIELD_IDS", "")
-	t.Setenv("SEAL_CALLBACK_TOKEN", "")
-	if _, err := Load(); err == nil {
-		t.Fatal("automatic review accepted disabled receipt recognition")
+	d := Document{BusinessProfile: testProfile(), Feishu: FeishuSettings{AppCredentials: AppCredentials{AppID: "app", AppSecret: "secret"}}, Anyreceipt: AnyreceiptSettings{APIKey: "key"}}
+	d.Review.TriggerMode = "after_recognition"
+	if _, err := loadDocument(t, d); err == nil {
+		t.Fatal("automatic review accepted disabled recognition")
 	}
-	t.Setenv("RECEIPT_PROVIDER", "anyreceipt")
-	t.Setenv("RECEIPT_LEDGER_TABLE_ID", "ledger")
-	if _, err := Load(); err == nil {
+	d.Recognition.Provider = "anyreceipt"
+	d.Review.ResultFields = nil
+	if _, err := loadDocument(t, d); err == nil {
 		t.Fatal("automatic review accepted missing result columns")
 	}
-	t.Setenv("REVIEW_RESULT_FIELD_IDS", `{"decision":"decision","document_id":"document","revision":"revision"}`)
-	if _, err := Load(); err == nil {
-		t.Fatal("automatic Seal review accepted a missing result callback")
+	d.Review.ResultFields = testProfile().Review.ResultFields
+	if _, err := loadDocument(t, d); err == nil {
+		t.Fatal("automatic Seal review accepted missing callback")
 	}
-	t.Setenv("SEAL_CALLBACK_TOKEN", "abcdefghijklmnopqrstuvwxyz012345")
-	if _, err := Load(); err != nil {
+	d.Seal.CallbackToken = "abcdefghijklmnopqrstuvwxyz012345"
+	if _, err := loadDocument(t, d); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("REVIEW_TRIGGER_MODE", "unknown")
-	if _, err := Load(); err == nil {
-		t.Fatal("unknown review trigger accepted")
+	d.Review.TriggerMode = "unknown"
+	if _, err := loadDocument(t, d); err == nil {
+		t.Fatal("unknown trigger accepted")
 	}
 }
 
 func TestLoadRejectsInvalidReceiptTrigger(t *testing.T) {
-	t.Setenv("FEISHU_APP_ID", "cli_test")
-	t.Setenv("FEISHU_APP_SECRET", "secret")
-	t.Setenv("RECEIPT_PROVIDER", "model")
-	t.Setenv("RECEIPT_BASE_TOKEN", "base")
-	t.Setenv("RECEIPT_TABLE_ID", "table")
-	t.Setenv("RECEIPT_ATTACHMENT_FIELD_ID", "field")
-	t.Setenv("RECEIPT_MODEL_API_KEY", "test")
-	t.Setenv("RECEIPT_MODEL_NAME", "test")
-	t.Setenv("RECEIPT_TRIGGER_MODE", "invalid")
-	if _, err := Load(); err == nil {
-		t.Fatal("Load() accepted invalid receipt trigger mode")
+	d := Document{BusinessProfile: testProfile()}
+	d.Recognition.TriggerMode = "invalid"
+	if _, err := loadDocument(t, d); err == nil {
+		t.Fatal("invalid receipt trigger accepted")
 	}
 }
 
 func TestLoadParsesLedgerFieldIDs(t *testing.T) {
-	t.Setenv("FEISHU_APP_ID", "cli_test")
-	t.Setenv("FEISHU_APP_SECRET", "secret")
-	t.Setenv("RECEIPT_PROVIDER", "model")
-	t.Setenv("RECEIPT_BASE_TOKEN", "base")
-	t.Setenv("RECEIPT_TABLE_ID", "detail")
-	t.Setenv("RECEIPT_ATTACHMENT_FIELD_ID", "attachment")
-	t.Setenv("RECEIPT_MODEL_API_KEY", "test")
-	t.Setenv("RECEIPT_MODEL_NAME", "test")
-	t.Setenv("RECEIPT_LEDGER_TABLE_ID", "ledger")
-	t.Setenv("RECEIPT_LEDGER_FIELD_IDS", `{"source_key":"source-id","raw_json":"raw-id"}`)
-	cfg, err := Load()
+	d := Document{BusinessProfile: testProfile(), Feishu: FeishuSettings{AppCredentials: AppCredentials{AppID: "app", AppSecret: "secret"}}}
+	d.Recognition.Provider = "model"
+	d.Recognition.Model = ModelSettings{APIKey: "key", Name: "model"}
+	d.Tables.InvoiceLedger.Fields["source_key"] = "source-id"
+	cfg, err := loadDocument(t, d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ReceiptLedgerTableID != "ledger" || cfg.ReceiptLedgerFieldIDs["source_key"] != "source-id" {
-		t.Fatalf("ledger config = %+v", cfg.ReceiptLedgerFieldIDs)
+	if cfg.ReceiptLedgerTableID != "ledger" || cfg.ReceiptLedgerFieldIDs["source_key"] != "source-id" || cfg.ReceiptModelAPIKey != "key" {
+		t.Fatal("single-file model or ledger configuration was lost")
 	}
 }
 
 func TestLoadRejectsUnconfiguredReceiptProvider(t *testing.T) {
-	t.Setenv("FEISHU_APP_ID", "cli_test")
-	t.Setenv("FEISHU_APP_SECRET", "secret")
-	t.Setenv("RECEIPT_PROVIDER", "model")
-	t.Setenv("RECEIPT_BASE_TOKEN", "")
-	if _, err := Load(); err == nil {
-		t.Fatal("Load() accepted receipt provider without target Base")
+	d := Document{BusinessProfile: testProfile()}
+	d.Recognition.Provider = "anyreceipt"
+	if _, err := loadDocument(t, d); err == nil {
+		t.Fatal("recognition accepted without app credentials")
+	}
+	d.Feishu.AppID, d.Feishu.AppSecret = "app", "secret"
+	if _, err := loadDocument(t, d); err == nil {
+		t.Fatal("recognition accepted without provider credentials")
+	}
+	d.Anyreceipt.APIKey = "key"
+	d.Tables.ReimbursementDetails.BaseToken = ""
+	if _, err := loadDocument(t, d); err == nil {
+		t.Fatal("recognition accepted without source Base")
 	}
 }
 
 func TestLoadRejectsInvalidDuration(t *testing.T) {
-	t.Setenv("SHUTDOWN_TIMEOUT", "soon")
-	if _, err := Load(); err == nil {
-		t.Fatal("Load() error = nil, want error")
+	for _, value := range []string{"soon", "0s", "-1s"} {
+		d := Document{BusinessProfile: testProfile(), Runtime: RuntimeSettings{ShutdownTimeout: value}}
+		if _, err := loadDocument(t, d); err == nil {
+			t.Fatal("invalid duration accepted")
+		}
 	}
 }
 
 func TestLoadRejectsPartialFeishuCredentials(t *testing.T) {
-	t.Setenv("FEISHU_APP_ID", "cli_test")
-	t.Setenv("FEISHU_APP_SECRET", "")
-	if _, err := Load(); err == nil {
-		t.Fatal("Load() error = nil, want partial credential error")
+	for _, feishu := range []FeishuSettings{{AppCredentials: AppCredentials{AppID: "app"}}, {ApprovalApp: AppCredentials{AppSecret: "secret"}}} {
+		if _, err := loadDocument(t, Document{BusinessProfile: testProfile(), Feishu: feishu}); err == nil {
+			t.Fatal("partial application credentials accepted")
+		}
 	}
 }
 
 func TestSealReviewDoesNotRequireLocalRules(t *testing.T) {
-	t.Setenv("REVIEW_PROVIDER", "seal")
-	t.Setenv("REVIEW_RULES_FILE", "")
-	t.Setenv("RECEIPT_PROVIDER", "")
-	t.Setenv("FEISHU_APP_ID", "")
-	t.Setenv("FEISHU_APP_SECRET", "")
-	if _, err := Load(); err != nil {
+	d := Document{BusinessProfile: testProfile()}
+	if _, err := loadDocument(t, d); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestRejectsOverlappingReviewContextAndResults(t *testing.T) {
-	t.Setenv("REVIEW_CONTEXT_FIELD_IDS", `{"amount":"field"}`)
-	t.Setenv("REVIEW_RESULT_FIELD_IDS", `{"decision":"field"}`)
+	d := Document{BusinessProfile: testProfile()}
+	d.Review.ContextFields = map[string]string{"reason": "decision"}
+	if _, err := loadDocument(t, d); err == nil {
+		t.Fatal("review output overwrote input")
+	}
+}
+
+func TestOnlySelectedFileSuppliesCredentialsRuntimeAndInlineRules(t *testing.T) {
+	for _, key := range []string{"FEISHU_APP_ID", "FEISHU_APP_SECRET", "ANYRECEIPT_API_KEY", "HTTP_ADDR", "REVIEW_RULES_FILE", "BUSINESS_CONFIG_FILE"} {
+		t.Setenv(key, "stale-value")
+	}
+	d := Document{BusinessProfile: testProfile(), Runtime: RuntimeSettings{HTTPAddr: ":9090"}, Feishu: FeishuSettings{AppCredentials: AppCredentials{AppID: "file-app", AppSecret: "file-secret"}}}
+	d.Review.Rules = &LocalReviewRules{Version: "v1", Instructions: "file rules"}
+	cfg, err := loadDocument(t, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.FeishuAppID != "file-app" || cfg.FeishuAppSecret != "file-secret" || cfg.HTTPAddr != ":9090" || cfg.AnyreceiptAPIKey != "" || cfg.ReviewRules == nil || cfg.ReviewRules.Instructions != "file rules" {
+		t.Fatal("environment affected single-file configuration")
+	}
+}
+
+func TestMissingFileNeverFallsBackToEnvironment(t *testing.T) {
+	t.Setenv("CONFIG_FILE", filepath.Join(t.TempDir(), "missing.json"))
+	t.Setenv("FEISHU_APP_ID", "stale-app")
 	if _, err := Load(); err == nil {
-		t.Fatal("review output would overwrite its own input")
+		t.Fatal("missing configuration silently fell back")
+	}
+}
+
+func TestMalformedPrivateConfigurationDoesNotExposeValues(t *testing.T) {
+	raw, _ := json.Marshal(Document{BusinessProfile: testProfile()})
+	raw = []byte(strings.TrimSuffix(string(raw), "}") + `,"SECRET_MUST_NOT_APPEAR":"secret"}`)
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadFile(path)
+	if err == nil || strings.Contains(err.Error(), "SECRET_MUST_NOT_APPEAR") {
+		t.Fatal("invalid private config accepted or leaked")
 	}
 }

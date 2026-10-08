@@ -22,7 +22,7 @@ archives:
       - tar.gz
     files:
       - README.md
-      - configs/config.example.env
+      - configs/config.example.json
 
 checksum:
   name_template: checksums.txt

@@ -1,3 +1,10 @@
+# 迁移前配置注释归档
+
+2026-10-08。以下内容保留原有注释与模板文档，供历史核对，不再是启动方式；当前配置见[单文件配置](../business-configuration.md)。运行只读取 config.json，示例为 configs/config.example.json。
+
+## 原环境变量示例及注释
+
+```text
 # HTTP listener address
 HTTP_ADDR=:8080
 
@@ -63,3 +70,14 @@ REVIEW_CONTEXT_FIELD_IDS={}
 REVIEW_RESULT_FIELD_IDS={}
 # Optional secret URL token for POST /seal/callback/<token>. Use 32+ random URL-safe characters.
 SEAL_CALLBACK_TOKEN=
+```
+
+## 原模板说明
+
+# 飞书模板配置
+
+`approval-template.example.json` 是项目编写的审批模板创建请求，按飞书官方协议组织；它不是供应商原文或现有企业模板的导出文件。表单、字段 ID、文案、审批流程和可编辑设置均可在此修改。
+
+使用独立工具 `go run ./cmd/approval-template -app personal -file configs/feishu/approval-template.example.json` 校验；显式加 `-apply` 才创建。凭证由进程环境注入，不写进 JSON。企业租户改用 `-app enterprise`。
+
+完整运行约定与线上验证状态见 [`internal/feishu/approval/README.md`](../../internal/feishu/approval/README.md)，官方原文见 [`external-api/feishu/`](../../external-api/feishu/README.md)。

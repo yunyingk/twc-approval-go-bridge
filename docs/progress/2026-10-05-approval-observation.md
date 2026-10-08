@@ -19,7 +19,7 @@
 - `cmd/server` 为同应用注册 Base/审批两种事件，独立审批应用单独连接；Base 仅轮询时也能监听审批。审批不会进入 Base 原始日志。
 - 观察 worker 以来源/应用领取 OS 锁，凭证组必须明确且唯一；关闭观察不构造客户端、worker 或新状态。
 
-配置/恢复步骤见[审批配置](../approval-configuration.md#原生审批结果监听)；[示例片段](../../configs/approval/observation.fragment.example.json)需合并进完整业务文件。默认不开启，poll_interval 默认 5m、范围 1m～24h。仅当前 Base/Table 和所选应用下计划被观察；其他历史来源仍可显式 check-approval。
+配置/恢复步骤见[审批配置](../approval-configuration.md#原生审批结果监听)；[完整配置示例（现已统一）](../../configs/config.example.json)需合并进完整业务文件。默认不开启，poll_interval 默认 5m、范围 1m～24h。仅当前 Base/Table 和所选应用下计划被观察；其他历史来源仍可显式 check-approval。
 
 ## 原始协议与订阅
 

@@ -7,18 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	app "github.com/yunyingk/twc-approval-go-bridge/internal/app/review"
 	core "github.com/yunyingk/twc-approval-go-bridge/internal/core/review"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal/mapper"
 	"sort"
 )
-
-type File = core.File
-type Detail = core.Detail
-type LedgerEntry = core.LedgerEntry
-type Source = app.Source
-type Result = core.Submission
 
 type SealGateway interface {
 	UploadAttachment(context.Context, seal.Attachment) (seal.UploadResponse, error)
@@ -33,24 +26,9 @@ func NewGateway(client SealGateway) (*Gateway, error) {
 	return &Gateway{client: client}, nil
 }
 
-// Service preserves the explicit legacy command while using the shared use case.
-type Service struct{ *app.Service }
-
-func New(source Source, client SealGateway) (*Service, error) {
-	gateway, err := NewGateway(client)
-	if err != nil {
-		return nil, err
-	}
-	service, err := app.New(source, gateway, app.Options{Provider: "seal"})
-	if err != nil {
-		return nil, err
-	}
-	return &Service{service}, nil
-}
-
 // Submit reads every attachment and its written ledger result before uploading
 // originals. One reimbursement record becomes one Seal document with many invoices.
-// The shared Service implements Submit; Review below only adapts the frozen input.
+// The shared app/review Service implements Submit; Review below adapts the frozen input.
 func (g *Gateway) Review(ctx context.Context, request core.Request) (core.Submission, error) {
 	batch := request.Document
 	uploads := make(map[string]seal.UploadResponse, len(batch.Invoices))

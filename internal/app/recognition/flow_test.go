@@ -1,4 +1,4 @@
-package flow
+package recognition_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yunyingk/twc-approval-go-bridge/internal/app/recognition"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/events"
 )
@@ -48,8 +49,8 @@ func (s *testScanner) ScanAttachmentRecords(ctx context.Context, base, table, fi
 }
 
 func TestPollUsesSameDeduplicationAsEvents(t *testing.T) {
-	results := make(chan Result, 2)
-	p, err := New(Config{BaseToken: "base", TableID: "table", FieldID: "attachment"}, testReader{}, testRecognizer{}, func(_ context.Context, r Result) error { results <- r; return nil }, nil)
+	results := make(chan recognition.Result, 2)
+	p, err := recognition.New(recognition.Config{BaseToken: "base", TableID: "table", FieldID: "attachment"}, testReader{}, testRecognizer{}, func(_ context.Context, r recognition.Result) error { results <- r; return nil }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,8 +82,8 @@ func TestPollUsesSameDeduplicationAsEvents(t *testing.T) {
 }
 
 func TestPollCanProcessExistingAttachments(t *testing.T) {
-	results := make(chan Result, 1)
-	p, err := New(Config{BaseToken: "base", TableID: "table", FieldID: "attachment"}, testReader{}, testRecognizer{}, func(_ context.Context, r Result) error { results <- r; return nil }, nil)
+	results := make(chan recognition.Result, 1)
+	p, err := recognition.New(recognition.Config{BaseToken: "base", TableID: "table", FieldID: "attachment"}, testReader{}, testRecognizer{}, func(_ context.Context, r recognition.Result) error { results <- r; return nil }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,8 +102,8 @@ func TestPollCanProcessExistingAttachments(t *testing.T) {
 }
 
 func TestAttachmentChangeRecognizesOnlyNewFile(t *testing.T) {
-	results := make(chan Result, 2)
-	p, err := New(Config{BaseToken: "base", TableID: "table", FieldID: "attachment"}, testReader{}, testRecognizer{}, func(_ context.Context, r Result) error { results <- r; return nil }, nil)
+	results := make(chan recognition.Result, 2)
+	p, err := recognition.New(recognition.Config{BaseToken: "base", TableID: "table", FieldID: "attachment"}, testReader{}, testRecognizer{}, func(_ context.Context, r recognition.Result) error { results <- r; return nil }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +111,7 @@ func TestAttachmentChangeRecognizesOnlyNewFile(t *testing.T) {
 	defer cancel()
 	go p.Run(ctx)
 	event := events.Event{ID: "evt", Payload: json.RawMessage(`{"event":{"file_token":"base","table_id":"table","action_list":[{"action":"record_edited","record_id":"rec","before_value":[{"field_id":"attachment","field_value":"[{\"file_token\":\"old\"}]"}],"after_value":[{"field_id":"attachment","field_value":"[{\"file_token\":\"old\"},{\"file_token\":\"new\"}]"}]}]}}`)}
-	if err := p.Sink(ctx, event); err != nil {
+	if err := events.NewAttachmentSink(recognition.Config{BaseToken: "base", TableID: "table", FieldID: "attachment"}, p).Sink(ctx, event); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -121,7 +122,7 @@ func TestAttachmentChangeRecognizesOnlyNewFile(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("recognition was not delivered")
 	}
-	if err := p.Sink(ctx, event); err != nil {
+	if err := events.NewAttachmentSink(recognition.Config{BaseToken: "base", TableID: "table", FieldID: "attachment"}, p).Sink(ctx, event); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -130,7 +131,7 @@ func TestAttachmentChangeRecognizesOnlyNewFile(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 	event.Payload = json.RawMessage(`{"event":{"file_token":"different","table_id":"table"}}`)
-	if err := p.Sink(ctx, event); err != nil {
+	if err := events.NewAttachmentSink(recognition.Config{BaseToken: "base", TableID: "table", FieldID: "attachment"}, p).Sink(ctx, event); err != nil {
 		t.Fatal(err)
 	}
 	select {

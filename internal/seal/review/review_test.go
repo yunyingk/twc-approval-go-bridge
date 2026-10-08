@@ -7,10 +7,12 @@ import (
 	"testing"
 	"time"
 
+	app "github.com/yunyingk/twc-approval-go-bridge/internal/app/review"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/dupcheck"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 	core "github.com/yunyingk/twc-approval-go-bridge/internal/core/review"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/state"
 )
 
 type fakeSource struct {
@@ -18,17 +20,17 @@ type fakeSource struct {
 	transactions *core.TransactionEvidence
 }
 
-func (s fakeSource) ReadDetail(context.Context, string) (Detail, error) {
-	return Detail{DocumentID: "detail-1", DocumentSN: "SN-1", RecordID: "rec1", StartTime: time.Unix(100, 0),
-		Files: []File{{Token: "b", Attachment: invoice.Attachment{Name: "b.jpg", ContentType: "image/jpeg", Data: []byte("b")}},
+func (s fakeSource) ReadDetail(context.Context, string) (core.Detail, error) {
+	return core.Detail{DocumentID: "detail-1", DocumentSN: "SN-1", RecordID: "rec1", StartTime: time.Unix(100, 0),
+		Files: []core.File{{Token: "b", Attachment: invoice.Attachment{Name: "b.jpg", ContentType: "image/jpeg", Data: []byte("b")}},
 			{Token: "a", Attachment: invoice.Attachment{Name: "a.jpg", ContentType: "image/jpeg", Data: []byte("a")}}}, Transactions: s.transactions}, nil
 }
 
-func (s fakeSource) ReadLedgerEntry(_ context.Context, key string) (LedgerEntry, error) {
+func (s fakeSource) ReadLedgerEntry(_ context.Context, key string) (core.LedgerEntry, error) {
 	if s.missing && key == "rec1:b" {
-		return LedgerEntry{}, errors.New("missing OCR")
+		return core.LedgerEntry{}, errors.New("missing OCR")
 	}
-	return LedgerEntry{RecordID: "ledger-" + key,
+	return core.LedgerEntry{RecordID: "ledger-" + key,
 		Recognition: invoice.Recognition{Raw: json.RawMessage(`{"outputs":{"Number":"N-1"}}`),
 			Outputs: map[string]json.RawMessage{"Number": json.RawMessage(`"N-1"`),
 				"currency": json.RawMessage(`"USD"`), "total": json.RawMessage(`"10"`),
@@ -60,7 +62,7 @@ func (s *fakeSeal) SubmitDocument(_ context.Context, document seal.DocumentReque
 
 func TestSubmitAggregatesTwoLedgerInvoicesAndUploadsBothOriginals(t *testing.T) {
 	gateway := &fakeSeal{}
-	service, _ := New(fakeSource{}, gateway)
+	service := testService(t, fakeSource{}, gateway)
 	result, err := service.Submit(context.Background(), "rec1")
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +76,7 @@ func TestSubmitAggregatesTwoLedgerInvoicesAndUploadsBothOriginals(t *testing.T) 
 
 func TestSubmitDoesNotUploadPartialLedger(t *testing.T) {
 	gateway := &fakeSeal{}
-	service, _ := New(fakeSource{missing: true}, gateway)
+	service := testService(t, fakeSource{missing: true}, gateway)
 	if _, err := service.Submit(context.Background(), "rec1"); err == nil {
 		t.Fatal("missing ledger row must stop submission")
 	}
@@ -86,7 +88,7 @@ func TestSubmitDoesNotUploadPartialLedger(t *testing.T) {
 func TestGatewayPreservesSharedPaymentEvidenceWithoutInventingClaims(t *testing.T) {
 	evidence := &core.TransactionEvidence{Source: "payments", LinkedRecordIDs: []string{"payment"}, Transactions: []core.Transaction{{RecordID: "payment", OriginalAmount: "9007199254740993.01", OriginalCurrency: "USD", BookedAmountCNY: "700.00"}}, Issues: []core.EvidenceIssue{{Code: "missing_merchant"}}}
 	gateway := &fakeSeal{}
-	service, _ := New(fakeSource{transactions: evidence}, gateway)
+	service := testService(t, fakeSource{transactions: evidence}, gateway)
 	if _, err := service.Submit(context.Background(), "rec1"); err != nil {
 		t.Fatal(err)
 	}
@@ -117,4 +119,21 @@ func TestGatewayPreservesSharedPaymentEvidenceWithoutInventingClaims(t *testing.
 			t.Fatal("payment facts invented allocation")
 		}
 	}
+}
+
+func testService(t *testing.T, source app.Source, client SealGateway) *app.Service {
+	t.Helper()
+	gateway, err := NewGateway(client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := state.NewFiles(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := app.New(source, gateway, app.Options{Provider: "seal", Versioned: true, Store: store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
 }

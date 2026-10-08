@@ -27,7 +27,7 @@ type checkedTable struct {
 
 func runBusinessCheck(ctx context.Context, cfg config.Config, output io.Writer) error {
 	if cfg.Business == nil || !cfg.FeishuEnabled() {
-		return fmt.Errorf("check-business-config requires BUSINESS_CONFIG_FILE and Feishu app credentials")
+		return fmt.Errorf("check-business-config requires a complete configuration and Feishu app credentials")
 	}
 	return checkBusiness(ctx, cfg.Business, base.NewLedgerClient(cfg.FeishuAppID, cfg.FeishuAppSecret), output)
 }

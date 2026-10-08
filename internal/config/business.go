@@ -1,15 +1,12 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 	"time"
 )
 
-// BusinessProfile binds business roles to physical tables. It contains no credentials.
+// BusinessProfile binds business roles to physical tables inside the single document.
 // A process selects one complete profile; display names never identify task state.
 type BusinessProfile struct {
 	Version     int                 `json:"version"`
@@ -38,13 +35,18 @@ type TableBinding struct {
 }
 
 type RecognitionSettings struct {
-	Provider    string `json:"provider"`
-	TriggerMode string `json:"trigger_mode"`
+	Provider     string        `json:"provider"`
+	TriggerMode  string        `json:"trigger_mode"`
+	PollInterval string        `json:"poll_interval,omitempty"`
+	PollStartup  string        `json:"poll_startup,omitempty"`
+	Model        ModelSettings `json:"model"`
 }
 
 // ContextFields and ResultFields both belong to the reimbursement-details table.
-// Local rules are configured separately and used only by the model provider.
+// Inline local rules are used only by the model provider.
 type ReviewSettings struct {
+	Model                  ModelSettings     `json:"model"`
+	Rules                  *LocalReviewRules `json:"rules,omitempty"`
 	ResubmitOnDetailChange bool              `json:"resubmit_on_detail_change,omitempty"`
 	ResubmitOnSourceChange bool              `json:"resubmit_on_source_change,omitempty"`
 	ChangeDebounce         string            `json:"change_debounce,omitempty"`
@@ -53,31 +55,6 @@ type ReviewSettings struct {
 	TriggerMode            string            `json:"trigger_mode"`
 	ContextFields          map[string]string `json:"context_fields"`
 	ResultFields           map[string]string `json:"result_fields"`
-}
-
-func LoadBusinessProfile(path string) (*BusinessProfile, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("BUSINESS_CONFIG_FILE: %w", err)
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || info.Size() > 1<<20 {
-		return nil, fmt.Errorf("BUSINESS_CONFIG_FILE: cannot read file or file exceeds 1 MiB")
-	}
-	decoder := json.NewDecoder(io.LimitReader(file, 1<<20))
-	decoder.DisallowUnknownFields()
-	var profile BusinessProfile
-	if err := decoder.Decode(&profile); err != nil {
-		return nil, fmt.Errorf("BUSINESS_CONFIG_FILE: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return nil, fmt.Errorf("BUSINESS_CONFIG_FILE: expected exactly one JSON object")
-	}
-	if err := profile.validate(); err != nil {
-		return nil, fmt.Errorf("BUSINESS_CONFIG_FILE: %w", err)
-	}
-	return &profile, nil
 }
 
 func (p *BusinessProfile) validate() error {

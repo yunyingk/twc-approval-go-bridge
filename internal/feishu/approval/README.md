@@ -1,5 +1,7 @@
 # 飞书原生审批
 
+2026-10-08 更新：配置已收敛到唯一私有 `config.json`，旧环境变量和分文件示例不再生效；下文保留历史阶段说明。当前入口、迁移和验证以[单文件配置记录](../../../docs/progress/2026-10-08-single-config.md)为准。
+
 `definitions.go` 实现审批模板（审批定义）的创建和读取，复用飞书官方 Go SDK 的完整请求类型。`approvals.go` 继续定义分组草稿、创建审批实例和读取审批结果的接口；实例业务尚未实现。多维表格的记录和附件操作位于 `../base/`；SealAI 的审核单据位于 `internal/seal/`。
 
 2026-10-05 已新增实例传输客户端与明细表单映射，详见下方；旧 `approvals.go` 是保留的历史接口，不是当前实例实现。共用分组、持久化来源版本映射、实例业务接入和人工结果回写仍需继续实施。
@@ -65,7 +67,7 @@ go run ./cmd/approval-template -app personal -file configs/feishu/approval-templ
 
 程序不自动加载 `.env`。`-app` 必填，选定凭证缺失时直接报错，不回退到另一应用。创建成功输出 `approval_code` 和 `approval_id`，后续保存 Code 来读取模板或创建审批实例。工具没有自动重跑或服务启动调用；请求发送后若响应丢失，应先核查审批后台，避免重复创建。
 
-[`configs/feishu/approval-template.example.json`](../../../configs/feishu/approval-template.example.json) 是本项目按官方协议编写的测试配置，**不是官方原文，也不是当前企业模板的复制件**。它包含一个 `fieldList` 明细和 14 个子控件（含真正的 `attachmentV2` 附件控件），审批人由发起人选择，允许后台修改表单和流程。所有业务名称、字段和流程均在 JSON 内，客户端不硬编码这些内容。金额示例默认 CNY，可按生产要求修改币种范围。
+[完整配置示例（现已统一）](../../../configs/config.example.json) 是本项目按官方协议编写的测试配置，**不是官方原文，也不是当前企业模板的复制件**。它包含一个 `fieldList` 明细和 14 个子控件（含真正的 `attachmentV2` 附件控件），审批人由发起人选择，允许后台修改表单和流程。所有业务名称、字段和流程均在 JSON 内，客户端不硬编码这些内容。金额示例默认 CNY，可按生产要求修改币种范围。
 
 调用权限：应用身份具备 `approval:definition` 或 `approval:approval` 任意一个。2026-09-30 个人版应用 `cli_aa39f558f7799cbb` 初次创建返回 `99991672`，开通权限后完成真实创建。联系人控件首次校验返回 `1390001: widget contact value can not be nil`，因此示例显式配置 `value: {"ignore": false, "multi": false}`，不能依赖文档所述可选默认值。
 

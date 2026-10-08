@@ -1,4 +1,5 @@
 # Local configuration and secrets
+/config.json
 .env
 .env.*
 !.env.example

@@ -1,5 +1,7 @@
 # 当前业务实现与交接
 
+2026-10-08 更新：配置已收敛到唯一私有 `config.json`，旧环境变量和分文件示例不再生效；下文保留历史阶段说明。当前入口、迁移和验证以[单文件配置记录](progress/2026-10-08-single-config.md)为准。
+
 更新：2026-10-05。本文记录实际实现；[架构评审](architecture-review.md)保留为实施前的评审快照，[迁移任务](architecture-tasks.md)保留原有目标和后续验收依据。
 
 业务来源已收敛到[显式业务配置文件](business-configuration.md)：本机选择 `configs/business/enterprise-test.json`，按角色声明流水、明细、台账及提供方和触发方式。以下环境变量说明保留给未选择 `BUSINESS_CONFIG_FILE` 的兼容模式；选中文件后，对应业务变量不再覆盖文件。凭证和运行参数继续由环境提供。
@@ -121,7 +123,7 @@ go run ./cmd/server apply-seal-result /absolute/path/to/verified-callback.json
 
 ### 自有审核
 
-`REVIEW_MODEL_API_KEY`、`REVIEW_MODEL_BASE_URL`、`REVIEW_MODEL_NAME` 与识别模型配置独立；`REVIEW_RULES_FILE` 只供此路径使用。示例见 [本地规则文件](../configs/review/rules.example.json)。缺少要求的上下文直接输出待复核，默认将模型批准/驳回建议转换为人工复核；只有经确认的本地规则显式允许自动决定时才保留模型决定。
+`REVIEW_MODEL_API_KEY`、`REVIEW_MODEL_BASE_URL`、`REVIEW_MODEL_NAME` 与识别模型配置独立；`REVIEW_RULES_FILE` 只供此路径使用。示例见 [完整配置示例（现已统一）](../configs/config.example.json)。缺少要求的上下文直接输出待复核，默认将模型批准/驳回建议转换为人工复核；只有经确认的本地规则显式允许自动决定时才保留模型决定。
 
 自有识别支持图片、纯 JSON 和单个 Markdown JSON 围栏；拒绝被 token 上限截断的响应，发现多票标记时明确报错。PDF/多页拆分尚未实现。自有审核目前提供基于结构化事实的受控语义评审，不代表已等价覆盖 Seal 的验真、历史占用、外部数据查询与全部规则。
 

@@ -13,7 +13,7 @@ import (
 // runReviewPreview exercises the same source and revision calculation as submit.
 // It never begins an attempt, calls a reviewer or writes a business record.
 func runReviewPreview(ctx context.Context, cfg config.Config, recordID string, output io.Writer) error {
-	service, err := newReviewService(cfg, cfg.ReviewProvider, true)
+	service, err := newReviewService(cfg)
 	if err != nil {
 		return err
 	}

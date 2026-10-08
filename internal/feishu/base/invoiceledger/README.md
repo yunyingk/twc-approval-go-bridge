@@ -1,6 +1,6 @@
 # 发票台账映射
 
-本目录只把 `flow.Result` 中的识别结果转换为台账字段值，并通过 `Store` 接口写入；飞书鉴权、字段查询和记录 API 留在 `internal/feishu`。字段由 `RECEIPT_LEDGER_FIELD_IDS` 中的稳定字段 ID 配置，改列名无需修改映射代码。
+本目录只把 `recognition.Result` 中的识别结果转换为台账字段值，并通过 `Store` 接口写入；飞书鉴权、字段查询和记录 API 留在 `internal/feishu`。字段由 `RECEIPT_LEDGER_FIELD_IDS` 中的稳定字段 ID 配置，改列名无需修改映射代码。
 
 每个来源记录 ID 与附件 token 组成「识别来源键」，用于重复处理时更新同一台账行。Anyreceipt 的 `traceId` 写入「发票唯一键」；没有 `traceId` 的可选模型结果使用稳定哈希。原始响应完整保存在「识别原始JSON」。每张台账发票关联一条报销明细，报销明细可以关联多张发票。
 

@@ -18,8 +18,8 @@
 - 本服务使用飞书**应用身份**（`tenant_access_token`），凭 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET` 访问获授权的资源；不要为本项目发起用户 OAuth、要求用户扫码，或把用户身份的 `lark-cli --as user` 当作服务权限验证。
 - 读取线上多维表格时，以项目应用身份和该应用的资源授权为准。先只读验证 Base、Table、字段及少量记录；权限不足时核对应用权限和资源授权，不擅自切换为用户身份。
 - 多维表格记录变更事件需同时核对后台的应用身份与用户身份 `bitable:app` 权限，以及目标 Base 的云文档订阅；开通用户身份权限不等于运行时改用用户 OAuth。具体要求和企业测试验收见 [飞书事件联调](docs/feishu-event-verification.md)。
-- 本地 `.env` 含敏感配置，不提交、不输出密钥；当前程序从进程环境变量读取配置，不能假定它会自动加载 `.env`。
-- 项目凭证统一保存在私有 `.env`（0600）；`.env.public-debug` 只保存调试参数，不重复声明凭证，也不以空值覆盖 `.env` 的密钥。运行包装器按示例、`.env`、调试参数的顺序加载。
+- 2026-10-08 起运行只读一份私有 `config.json`（0600、Git 忽略），涵盖业务、凭证、服务参数及自有规则；不输出完整配置或密钥。
+- `CONFIG_FILE` 仅选择该文件的路径；不合并 `.env`、调试文件、旧业务环境变量或规则文件。仓库只保留 `configs/config.example.json` 完整脱敏示例。历史配置已私有归档，不作为后备入口。
 - 上级 `doc/` 已记录测试用 Base ID、Table ID、字段和审批模板。这些是已有线索；实现前仍要核对线上结构，不能把历史方案中的示例当作当前接口契约。
 
 ## 实现边界与验证
@@ -53,3 +53,9 @@
 - 同日后续补 `retry-approval` 显式重试原批次。完整重核后只重开有原拒绝/放弃/同调用方未发送证明的失败，Plan/Audit/UUID/body 不变；原始证明与历次轮次独立于最新查询诊断。原子比较观察的 run 并重查成员预约，旧轮次结果不能覆盖新轮；保存意图报错时，只有未调用 RPC 且 audit/run/标记完全匹配的原调用方能证明未发送，证明保存失败继续 submitting。unknown/60012 不重发、另一批审计不改绑，旧无证据不补造。隔离 SDK/并发/故障已测，企业配置/监督服务未变，未真实建单/人工交付；见 [重试记录](docs/progress/2026-10-05-approval-retry.md)。
 - 同日新增独立可选 `approval.observation`，关闭创建仍能按原应用/UUID 观察历史实例。1.0 approval_instance 通知先持久化再真实查询，重复意图幂等，查询/保存失败跨重启恢复，定时补查 finished 后撤销；事件值不作权威结果，不释放财务占用。共用传输移至 internal/feishu/events，Base 筛选仍在原目录；同应用一条连接，独立应用另开。subscribe-approval-events 仅显式订阅配置模板，1390007 不视为确认有效。企业配置/监督服务未启用，未真实订阅/审批事件验收，Base/Seal 人工交付仍待实现；见 [监听记录](docs/progress/2026-10-05-approval-observation.md)。
 - 同日补 ResultSnapshot v1：原 UUID GET 同次保存中立任务/原应用 open ID/毫秒时间、评论/时间线与不含临时 URL 的附件元数据；内容版本和历史只追加，重复查询仅更新新鲜度。晚到查询不覆盖新证据，最新失败或仅状态 gateway 不将旧流程当当前，审计包装保留 rich/status_only 边界。唯一末次人工任务才提取决定，自动/同时多候选/缺身份时间/未知流程保留问题；普通评论不冒充驳回理由。企业配置/监督服务未启用，姓名邮箱解析、原生表单对照、Base/Seal 人工交付仍待实现；见 [结果记录](docs/progress/2026-10-05-approval-results.md)。
+
+## 单文件配置与迁移收尾（2026-10-08）
+
+- 用户要求未上线阶段不要承担旧入口兼容债务，所有项目运行设置收敛到一份配置。`24d5489` 的供应商编排迁移与 `cd45de0` 的业务配置迁移是旧包装/双配置的来源；它们不是线上版本兼容要求。
+- 当前加载、部署及命令以 `config.json` 和 `docs/business-configuration.md` 为准，上文各历史日期的 `.env`/BUSINESS_CONFIG_FILE 描述只作过程证据。Anyreceipt 旧 flow/ledger、Seal Service 包装及 submit-seal 已移除；submit-review 始终版本化并持久化。
+- 两种构建与提供方独立切换保留；Seal 规则由外部系统管理，自有规则位于 review.rules。没有开启新的人工审批或财务业务。

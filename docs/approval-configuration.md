@@ -1,12 +1,14 @@
 # 人工审批配置与只读预检
 
+2026-10-08 更新：配置已收敛到唯一私有 `config.json`，旧环境变量和分文件示例不再生效；下文保留历史阶段说明。当前入口、迁移和验证以[单文件配置记录](progress/2026-10-08-single-config.md)为准。
+
 2026-10-05，业务来源仍由选中的 `BUSINESS_CONFIG_FILE` 决定。新增可选 `approval` 对象；当前企业配置没有启用它，既有 Anyreceipt/Seal 与自动送审设置不变。
 
 ```json
 "approval": { "mode": "disabled" }
 ```
 
-[关闭示例](../configs/approval/disabled.fragment.example.json)是配置片段，不是完整业务文件。`disabled` 允许保留不完整草稿；未知 JSON 属性仍拒绝。`manual` 表示显式人工选择的配置口径，**本阶段没有建单命令或自动建单装配**，不会仅因改此值创建审批。
+[完整配置示例（现已统一）](../configs/config.example.json)是配置片段，不是完整业务文件。`disabled` 允许保留不完整草稿；未知 JSON 属性仍拒绝。`manual` 表示显式人工选择的配置口径，**本阶段没有建单命令或自动建单装配**，不会仅因改此值创建审批。
 
 上述“没有建单命令”保留初版预检阶段范围。后续已新增显式 `submit-approval` 与状态/恢复命令，见[建单与恢复](#显式建单与恢复)。仍无自动建单，仅配置 manual 不触发实例创建；当前企业配置未启用 approval。
 
@@ -171,7 +173,7 @@ go run ./cmd/server retry-approval <preparation_id>
 }
 ```
 
-[监听片段](../configs/approval/observation.fragment.example.json)必须合并进完整业务来源文件；不是可直接选中的 BUSINESS_CONFIG_FILE。省略 observation 或 enabled=false 不装配监听 worker。poll_interval 默认 5m，启用时范围 1m～24h；target_identity 必须明确选择 bridge/approval，所选原应用须有完整且唯一的凭证组，不能回退。每个进程只观察当前来源 Base/Table 下该应用的历史计划；切换来源/应用不会自动观察其他 registry，原批次仍可 check-approval 对账。
+[完整配置示例（现已统一）](../configs/config.example.json)必须合并进完整业务来源文件；不是可直接选中的 BUSINESS_CONFIG_FILE。省略 observation 或 enabled=false 不装配监听 worker。poll_interval 默认 5m，启用时范围 1m～24h；target_identity 必须明确选择 bridge/approval，所选原应用须有完整且唯一的凭证组，不能回退。每个进程只观察当前来源 Base/Table 下该应用的历史计划；切换来源/应用不会自动观察其他 registry，原批次仍可 check-approval 对账。
 
 同一应用的 Base 与审批事件共用一条 SDK 长连接，独立审批应用另建连接。Base 仅轮询时也可以启用审批长连接。共用传输位于 `internal/feishu/events`，Base 附件与来源筛选留在 `internal/feishu/base/events`。审批事件不经过 Base 原始载荷日志，即使 FEISHU_LOG_RAW_EVENTS=true；没有新增公网 HTTP 接收端点。
 

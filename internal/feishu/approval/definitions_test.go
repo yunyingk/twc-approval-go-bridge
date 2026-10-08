@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 
@@ -23,12 +23,12 @@ func definitionResponse(body string) *http.Response {
 
 func exampleDefinition(t *testing.T) *larkapproval.ApprovalCreate {
 	t.Helper()
-	body, err := os.ReadFile("../../../configs/feishu/approval-template.example.json")
+	cfg, err := config.LoadFile("../../../configs/config.example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var definition larkapproval.ApprovalCreate
-	if err := json.Unmarshal(body, &definition); err != nil {
+	if err := json.Unmarshal(cfg.ApprovalTemplate, &definition); err != nil {
 		t.Fatal(err)
 	}
 	return &definition
