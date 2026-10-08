@@ -22,10 +22,11 @@ func newModel(apiKey, baseURL, name string) (invoice.Recognizer, error) {
 }
 
 func newModelReview(cfg config.Config) (appreview.Reviewer, string, string, error) {
-	if strings.TrimSpace(cfg.ReviewRulesFile) == "" {
+	rulesFile := cfg.ReviewRulesFile()
+	if strings.TrimSpace(rulesFile) == "" {
 		return nil, "", "", fmt.Errorf("review.rules_file is required for the model provider")
 	}
-	path := cfg.ReviewRulesFile
+	path := rulesFile
 	if !filepath.IsAbs(path) {
 		if _, err := os.Stat(path); err != nil {
 			path = filepath.Join(filepath.Dir(cfg.ConfigFile), path)
@@ -39,7 +40,7 @@ func newModelReview(cfg config.Config) (appreview.Reviewer, string, string, erro
 	if err != nil {
 		return nil, "", "", err
 	}
-	client, err := modelreview.New(cfg.ReviewModelAPIKey, cfg.ReviewModelBaseURL, cfg.ReviewModelName, rules)
+	client, err := modelreview.New(cfg.Model.APIKey, cfg.Model.BaseURL, cfg.Model.Name, rules)
 	hash := sha256.Sum256(data)
-	return client, rules.Version, cfg.ReviewModelName + ":" + hex.EncodeToString(hash[:]), err
+	return client, rules.Version, cfg.Model.Name + ":" + hex.EncodeToString(hash[:]), err
 }

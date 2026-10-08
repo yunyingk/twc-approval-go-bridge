@@ -12,7 +12,7 @@ import (
 )
 
 func runReviewInspection(ctx context.Context, cfg config.Config, recordID string, live bool, output io.Writer) error {
-	store, err := state.OpenFiles(cfg.StateDir)
+	store, err := state.OpenFiles(cfg.Runtime.StateDir)
 	if err != nil {
 		return err
 	}
@@ -23,14 +23,15 @@ func runReviewInspection(ctx context.Context, cfg config.Config, recordID string
 			return err
 		}
 	}
-	inspector, err := app.NewInspector(source, store, len(cfg.ReviewResultFieldIDs) > 0, cfg.ReviewProvider)
+	inspector, err := app.NewInspector(source, store, len(cfg.Business.Review.ResultFields) > 0, cfg.ReviewProvider())
 	if err != nil {
 		return err
 	}
 	if recordID == "all" {
 		recordID = ""
 	}
-	report, err := inspector.Inspect(ctx, "feishu:"+cfg.ReceiptBaseToken+":"+cfg.ReceiptTableID, recordID, live)
+	detail := cfg.Business.Tables.ReimbursementDetails
+	report, err := inspector.Inspect(ctx, "feishu:"+detail.BaseToken+":"+detail.TableID, recordID, live)
 	if err != nil {
 		return err
 	}

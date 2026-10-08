@@ -17,19 +17,19 @@ Anyreceipt、SealAI 与飞书审批的接口原文保存在仓库顶层的 [`ext
 需要 Go 1.24.13。项目通过 `go.mod` 的 `toolchain` 指令、CI 和 Docker 构建镜像统一固定到该版本。
 
 ```bash
-cp configs/config.example.toml config.toml
-chmod 600 config.toml
+cp configs/config.example.toml configs/config.toml
+chmod 600 configs/config.toml
 make test
 make vet
 make build
 ./bin/twc-approval-go-bridge
 ```
 
-服务默认读取工作目录中的 `config.toml`。所有表字段、提供方、触发方式、凭证、服务端点和运行参数都在同一文件中；不加载 `.env`，不合并调试文件或旧环境变量。`CONFIG_FILE=/absolute/path/config.toml` 只用于选择这一份文件，不支持字段覆盖；文件缺失或无效直接报错。
+服务默认读取工作目录中的 `configs/config.toml`。所有提供方、触发方式、凭证、服务端点和运行参数都在主配置文件中，业务多维表格拓扑与字段映射通过 `tables_file` 独立挂载（支持相对路径双通道查找：优先当前工作目录，未命中时相对主配置所在目录解析）；不加载 `.env`，不合并调试文件或旧环境变量。`CONFIG_FILE=/absolute/path/config.toml` 只用于显式指定主配置文件，不支持字段覆盖；文件缺失或无效直接报错。
 
 监听地址、日志和停止等待时间分别修改 `runtime.http_addr`、`runtime.log_level`、`runtime.shutdown_timeout`。复制示例后默认关闭识别及人工审批，可先启动健康检查；启用 `recognition.provider=anyreceipt` 前填写 `feishu.app_id/app_secret` 和 `anyreceipt.api_key`。
 
-三张业务表及字段、识别和审核提供方、送审方式在同一 TOML 的 `tables`、`recognition`、`review` 中。Seal 凭证和回调配置在 `seal`；自有识别与审核的模型参数各自位于 `recognition.model`、`review.model`，自有审核通过 `review.rules_file` 引用独立规则 JSON（仅 model 路径读取，相对主配置目录解析）。Base/Table/View 概念、更换文档和只读核验见[配置说明](docs/business-configuration.md)。当前本机采用识别完成自动送审，明细与台账须同 Base。
+业务多维表格拓扑独立存放于 `configs/tables/*.json`（模板见 `configs/tables/enterprise.example.json`），主配置通过 `tables_file` 引用。海外小票识别提供方和触发方式在 `recognition`，单据机审在 `review`。Seal 凭证和通道配置在 `seal`（由 `base_url` 与 `webhook_id` 组装接入点）；自有识别与审核共享全局 `model` 段连接配置，自有审核通过 `review.rules_file` 引用独立规则 JSON（仅 model 路径读取）。Base/Table/View 概念、更换文档和只读核验见[配置说明](docs/business-configuration.md)。当前本机采用识别完成自动送审，明细与台账须同 Base。
 
 企业配置已启用 `review.include_transactions=true`：按明细原生关联只读获取交易流水，精确金额、币种、商户、时间及资料质量问题供 Seal 与自有审核共同使用并参与审核版本。`preview-review <明细记录ID>` 可预览实际快照，复用已有 OCR 台账而不送审或回写。真实读取、两份完整快照预览及启用验证见[交易流水开发记录](docs/progress/2026-10-05-transaction-review.md)；本次没有新增付费审核验收。
 

@@ -19,7 +19,17 @@ import (
 func TestLocalReviewCommandNeedsNoProviderAndDoesNotCreateOrRewriteFiles(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	cfg := config.Config{StateDir: root, ReceiptBaseToken: "base", ReceiptTableID: "details", ReviewProvider: "model"}
+	cfg := config.Config{
+		Runtime: config.RuntimeConfig{StateDir: root},
+		Business: &config.BusinessProfile{
+			Tables: config.BusinessTables{
+				ReimbursementDetails: config.TableBinding{BaseToken: "base", TableID: "details"},
+			},
+			Review: config.ReviewSettings{
+				Provider: "model",
+			},
+		},
+	}
 	store, err := state.NewFiles(root)
 	if err != nil {
 		t.Fatal(err)
@@ -43,11 +53,11 @@ func TestLocalReviewCommandNeedsNoProviderAndDoesNotCreateOrRewriteFiles(t *test
 	if !reflect.DeepEqual(before, stateContents(t, root)) {
 		t.Fatal("read-only command rewrote state or created locks")
 	}
-	cfg.StateDir = filepath.Join(root, "missing")
+	cfg.Runtime.StateDir = filepath.Join(root, "missing")
 	if err := runReviewInspection(ctx, cfg, "all", false, &output); err == nil {
 		t.Fatal("missing state accepted")
 	}
-	if _, err := os.Stat(cfg.StateDir); !os.IsNotExist(err) {
+	if _, err := os.Stat(cfg.Runtime.StateDir); !os.IsNotExist(err) {
 		t.Fatal("inspection created a state directory")
 	}
 }

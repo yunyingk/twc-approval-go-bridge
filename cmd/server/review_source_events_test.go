@@ -31,7 +31,7 @@ func TestReviewSourceBindingsUseEvidenceFieldsWithoutWorkflowFeedback(t *testing
 	if len(reviewSourceBindings(p)) != 1 {
 		t.Fatal("disabled payment source still watched")
 	}
-	cfg := config.Config{Business: p, ReceiptTriggerMode: "poll"}
+	cfg := config.Config{Business: p}
 	if reviewChangesEnabled(cfg) {
 		t.Fatal("default configuration enabled change events")
 	}

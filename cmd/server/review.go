@@ -17,15 +17,20 @@ import (
 )
 
 func newReviewSource(cfg config.Config) (*base.ReviewSource, error) {
-	source, err := base.NewReviewSource(cfg.FeishuAppID, cfg.FeishuAppSecret, cfg.ReceiptBaseToken, cfg.ReceiptTableID, cfg.ReceiptFieldID, cfg.ReceiptSourceDetailFieldID, cfg.ReceiptLedgerTableID, cfg.ReceiptLedgerFieldIDs)
+	if cfg.Business == nil {
+		return nil, fmt.Errorf("business configuration is required")
+	}
+	details := cfg.Business.Tables.ReimbursementDetails
+	ledger := cfg.Business.Tables.InvoiceLedger
+	source, err := base.NewReviewSource(cfg.Feishu.AppID, cfg.Feishu.AppSecret, details.BaseToken, details.TableID, details.Fields["attachments"], details.Fields["ledger_relation"], ledger.TableID, ledger.Fields)
 	if err != nil {
 		return nil, err
 	}
-	source.WithContextFields(cfg.ReviewContextFieldIDs)
-	if cfg.Business != nil && cfg.Business.Review.IncludeTransactions {
+	source.WithContextFields(cfg.Business.Review.ContextFields)
+	if cfg.Business.Review.IncludeTransactions {
 		table := cfg.Business.Tables.Transactions
 		if _, err := source.WithTransactions(base.TransactionConfig{BaseToken: table.BaseToken, TableID: table.TableID,
-			RelationFieldID: cfg.Business.Tables.ReimbursementDetails.Fields["transaction_relation"], Fields: table.Fields}); err != nil {
+			RelationFieldID: details.Fields["transaction_relation"], Fields: table.Fields}); err != nil {
 			return nil, err
 		}
 	}
@@ -37,12 +42,12 @@ func newReviewService(cfg config.Config) (*appreview.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	provider := cfg.ReviewProvider
+	provider := cfg.ReviewProvider()
 	options := appreview.Options{Provider: provider, Versioned: true}
 	var gateway appreview.Reviewer
 	switch provider {
 	case "seal":
-		client, err := seal.NewClient(seal.Config{DocumentURL: cfg.SealDocumentURL, BearerToken: cfg.SealBearerToken}, nil)
+		client, err := seal.NewClient(seal.Config{DocumentURL: cfg.Seal.DocumentURL, BearerToken: cfg.Seal.BearerToken}, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -50,7 +55,7 @@ func newReviewService(cfg config.Config) (*appreview.Service, error) {
 		if err != nil {
 			return nil, err
 		}
-		options.ProviderVersion = cfg.SealDocumentURL
+		options.ProviderVersion = cfg.Seal.DocumentURL
 	case "model":
 		gateway, options.RulesVersion, options.ProviderVersion, err = newModelReview(cfg)
 		if err != nil {
@@ -59,13 +64,13 @@ func newReviewService(cfg config.Config) (*appreview.Service, error) {
 	default:
 		return nil, fmt.Errorf("unsupported review provider")
 	}
-	store, err := state.NewFiles(cfg.StateDir)
+	store, err := state.NewFiles(cfg.Runtime.StateDir)
 	if err != nil {
 		return nil, err
 	}
 	options.Store = store
-	if len(cfg.ReviewResultFieldIDs) > 0 {
-		writer, err := base.NewReviewWriter(base.NewLedgerClient(cfg.FeishuAppID, cfg.FeishuAppSecret), cfg.ReceiptBaseToken, cfg.ReceiptTableID, cfg.ReviewResultFieldIDs)
+	if cfg.Business != nil && len(cfg.Business.Review.ResultFields) > 0 {
+		writer, err := base.NewReviewWriter(base.NewLedgerClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret), cfg.Business.Tables.ReimbursementDetails.BaseToken, cfg.Business.Tables.ReimbursementDetails.TableID, cfg.Business.Review.ResultFields)
 		if err != nil {
 			return nil, err
 		}
@@ -79,13 +84,13 @@ func newReviewDeliveryService(cfg config.Config) (*appreview.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	store, err := state.NewFiles(cfg.StateDir)
+	store, err := state.NewFiles(cfg.Runtime.StateDir)
 	if err != nil {
 		return nil, err
 	}
 	var writer appreview.Writer
-	if len(cfg.ReviewResultFieldIDs) > 0 {
-		writer, err = base.NewReviewWriter(base.NewLedgerClient(cfg.FeishuAppID, cfg.FeishuAppSecret), cfg.ReceiptBaseToken, cfg.ReceiptTableID, cfg.ReviewResultFieldIDs)
+	if cfg.Business != nil && len(cfg.Business.Review.ResultFields) > 0 {
+		writer, err = base.NewReviewWriter(base.NewLedgerClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret), cfg.Business.Tables.ReimbursementDetails.BaseToken, cfg.Business.Tables.ReimbursementDetails.TableID, cfg.Business.Review.ResultFields)
 		if err != nil {
 			return nil, err
 		}
@@ -101,7 +106,7 @@ func runReviewSubmit(ctx context.Context, cfg config.Config, recordID string, lo
 	if err != nil {
 		return err
 	}
-	logger.InfoContext(ctx, "review submitted", "provider", cfg.ReviewProvider, "document_id", result.DocumentID, "status", result.Status, "attachment_count", result.AttachmentCount, "structured_invoices", result.StructuredInvoices, "duplicate_candidates", result.DuplicateCandidates)
+	logger.InfoContext(ctx, "review submitted", "provider", cfg.ReviewProvider(), "document_id", result.DocumentID, "status", result.Status, "attachment_count", result.AttachmentCount, "structured_invoices", result.StructuredInvoices, "duplicate_candidates", result.DuplicateCandidates)
 	return json.NewEncoder(os.Stdout).Encode(result)
 }
 

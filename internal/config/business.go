@@ -255,19 +255,6 @@ func (p *BusinessProfile) validate() error {
 	return nil
 }
 
-func (p *BusinessProfile) apply(cfg *Config) {
-	detail, ledger := p.Tables.ReimbursementDetails, p.Tables.InvoiceLedger
-	cfg.ReceiptBaseToken, cfg.ReceiptTableID = detail.BaseToken, detail.TableID
-	cfg.ReceiptFieldID, cfg.ReceiptSourceDetailFieldID = detail.Fields["attachment"], detail.Fields["detail_id"]
-	cfg.ReceiptLedgerTableID, cfg.ReceiptLedgerFieldIDs = ledger.TableID, ledger.Fields
-	cfg.ReceiptProvider, cfg.ReceiptTriggerMode = p.Recognition.Provider, p.Recognition.TriggerMode
-	if cfg.ReceiptProvider == "disabled" {
-		cfg.ReceiptProvider = ""
-	}
-	cfg.ReviewProvider, cfg.ReviewTriggerMode = p.Review.Provider, p.Review.TriggerMode
-	cfg.ReviewContextFieldIDs, cfg.ReviewResultFieldIDs = p.Review.ContextFields, p.Review.ResultFields
-}
-
 func validateFieldMapping(label string, fields map[string]string) error {
 	used := make(map[string]bool)
 	for semantic, id := range fields {

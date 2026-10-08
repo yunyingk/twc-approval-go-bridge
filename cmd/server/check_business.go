@@ -29,7 +29,7 @@ func runBusinessCheck(ctx context.Context, cfg config.Config, output io.Writer) 
 	if cfg.Business == nil || !cfg.FeishuEnabled() {
 		return fmt.Errorf("check-business-config requires a complete configuration and Feishu app credentials")
 	}
-	return checkBusiness(ctx, cfg.Business, base.NewLedgerClient(cfg.FeishuAppID, cfg.FeishuAppSecret), output)
+	return checkBusiness(ctx, cfg.Business, base.NewLedgerClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret), output)
 }
 
 func checkBusiness(ctx context.Context, profile *config.BusinessProfile, inspector schemaInspector, output io.Writer) error {

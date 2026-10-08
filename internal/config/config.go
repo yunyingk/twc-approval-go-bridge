@@ -56,7 +56,6 @@ type AnyreceiptSettings struct {
 }
 type SealSettings struct {
 	BaseURL       string `json:"base_url,omitempty" toml:"base_url,omitempty"`
-	Host          string `json:"host,omitempty" toml:"host,omitempty"`
 	WebhookID     string `json:"webhook_id,omitempty" toml:"webhook_id,omitempty"`
 	DocumentURL   string `json:"document_url,omitempty" toml:"document_url,omitempty"`
 	BearerToken   string `json:"bearer_token" toml:"bearer_token"`
@@ -69,57 +68,32 @@ type ModelSettings struct {
 	Name    string `json:"name" toml:"name"`
 }
 
+type RuntimeConfig struct {
+	HTTPAddr        string
+	LogLevel        slog.Level
+	ShutdownTimeout time.Duration
+	StateDir        string
+}
+
 // Config contains runtime settings for the service shell.
 type Config struct {
-	ConfigFile                 string
-	TablesFile                 string
-	Business                   *BusinessProfile
-	HTTPAddr                   string
-	LogLevel                   slog.Level
-	ShutdownTimeout            time.Duration
-	FeishuAppID                string
-	FeishuAppSecret            string
-	FeishuEventType            string
-	FeishuLogRawEvents         bool
-	ReceiptBaseToken           string
-	ReceiptTableID             string
-	ReceiptFieldID             string
-	ReceiptProvider            string
-	ReceiptTriggerMode         string
-	ReceiptPollInterval        time.Duration
-	ReceiptPollStartup         string
-	AnyreceiptAPIKey           string
-	ReceiptModelAPIKey         string
-	ReceiptModelBaseURL        string
-	ReceiptModelName           string
-	ReceiptLedgerTableID       string
-	ReceiptSourceDetailFieldID string
-	ReceiptLedgerFieldIDs      map[string]string
-	SealDocumentURL            string
-	SealBaseURL                string
-	SealWebhookID              string
-	StateDir                   string
-	SealCallbackToken          string
-	ReviewProvider             string
-	ReviewTriggerMode          string
-	ReviewModelAPIKey          string
-	ReviewModelBaseURL         string
-	ReviewModelName            string
-	ReviewRulesFile            string
-	ReviewContextFieldIDs      map[string]string
-	ReviewResultFieldIDs       map[string]string
-	SealBearerToken            string
+	ConfigFile          string
+	TablesFile          string
+	Runtime             RuntimeConfig
+	Feishu              FeishuSettings
+	Anyreceipt          AnyreceiptSettings
+	Seal                SealSettings
+	Model               ModelSettings
+	Business            *BusinessProfile
+	ReceiptPollInterval time.Duration
+	ReceiptPollStartup  string
 }
 
 // Load selects a single file. CONFIG_FILE selects its path, never field overrides.
 func Load() (Config, error) {
 	path := strings.TrimSpace(os.Getenv("CONFIG_FILE"))
 	if path == "" {
-		if _, err := os.Stat("configs/config.toml"); err == nil {
-			path = "configs/config.toml"
-		} else {
-			path = "config.toml"
-		}
+		path = "configs/config.toml"
 	}
 	return LoadFile(path)
 }
@@ -151,10 +125,7 @@ func LoadFile(path string) (Config, error) {
 	if strings.TrimSpace(document.Seal.DocumentURL) == "" && strings.TrimSpace(document.Seal.WebhookID) != "" {
 		host := strings.TrimSpace(document.Seal.BaseURL)
 		if host == "" {
-			host = strings.TrimSpace(document.Seal.Host)
-		}
-		if host == "" {
-			return Config{}, fmt.Errorf("seal.base_url or seal.host is required when seal.webhook_id is set")
+			return Config{}, fmt.Errorf("seal.base_url is required when seal.webhook_id is set")
 		}
 		if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
 			host = "https://" + host
@@ -162,7 +133,7 @@ func LoadFile(path string) (Config, error) {
 		host = strings.TrimRight(host, "/")
 		webhookID := strings.Trim(strings.TrimSpace(document.Seal.WebhookID), "/")
 		document.Seal.DocumentURL = fmt.Sprintf("%s/api/v1/integrations/webhook/%s/document", host, webhookID)
-	} else if strings.TrimSpace(document.Seal.DocumentURL) == "" && (strings.TrimSpace(document.Seal.BaseURL) != "" || strings.TrimSpace(document.Seal.Host) != "") {
+	} else if strings.TrimSpace(document.Seal.DocumentURL) == "" && strings.TrimSpace(document.Seal.BaseURL) != "" {
 		return Config{}, fmt.Errorf("seal.webhook_id is required when seal.base_url is set")
 	}
 	if document.Version != 0 && document.Version != 1 {
@@ -173,6 +144,9 @@ func LoadFile(path string) (Config, error) {
 	}
 	tablesPath := document.TablesFile
 	if !filepath.IsAbs(tablesPath) {
+		// 相对路径解析双通道兜底：
+		// 1. 优先尝试相对于当前工作目录（CWD），支持从项目根目录启动（如 tables_file = "configs/tables/xxx.json"）
+		// 2. 若当前工作目录不存在该文件，则回退为相对于主 TOML 配置文件所在的目录拼接解析
 		if _, err := os.Stat(tablesPath); err != nil {
 			tablesPath = filepath.Join(filepath.Dir(path), tablesPath)
 		}
@@ -213,32 +187,29 @@ func LoadFile(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	feishu := document.Feishu
+	feishu.EventType = fallback(feishu.EventType, "drive.file.bitable_record_changed_v1")
 	cfg := Config{
-		ConfigFile: path, TablesFile: tablesPath, Business: &document.BusinessProfile,
-		HTTPAddr: fallback(document.Runtime.HTTPAddr, ":8080"), LogLevel: level,
-		ShutdownTimeout: shutdown, StateDir: fallback(document.Runtime.StateDir, "data"),
-		FeishuAppID:        document.Feishu.AppID,
-		FeishuAppSecret:    document.Feishu.AppSecret,
-		FeishuEventType:    fallback(document.Feishu.EventType, "drive.file.bitable_record_changed_v1"),
-		FeishuLogRawEvents: document.Feishu.LogRawEvents,
-		ReceiptPollInterval: poll, ReceiptPollStartup: fallback(document.Recognition.PollStartup, "baseline"),
-		AnyreceiptAPIKey:    document.Anyreceipt.APIKey,
-		ReceiptModelAPIKey:  document.Model.APIKey,
-		ReceiptModelBaseURL: document.Model.BaseURL, ReceiptModelName: document.Model.Name,
-		SealDocumentURL: document.Seal.DocumentURL,
-		SealBaseURL:     fallback(document.Seal.BaseURL, document.Seal.Host),
-		SealWebhookID:   document.Seal.WebhookID,
-		SealBearerToken: document.Seal.BearerToken,
-		SealCallbackToken:  document.Seal.CallbackToken,
-		ReviewModelAPIKey:  document.Model.APIKey,
-		ReviewModelBaseURL: document.Model.BaseURL, ReviewModelName: document.Model.Name,
-		ReviewRulesFile: document.Review.RulesFile,
+		ConfigFile: path,
+		TablesFile: tablesPath,
+		Runtime: RuntimeConfig{
+			HTTPAddr:        fallback(document.Runtime.HTTPAddr, ":8080"),
+			LogLevel:        level,
+			ShutdownTimeout: shutdown,
+			StateDir:        fallback(document.Runtime.StateDir, "data"),
+		},
+		Feishu:              feishu,
+		Anyreceipt:          document.Anyreceipt,
+		Seal:                document.Seal,
+		Model:               document.Model,
+		Business:            &document.BusinessProfile,
+		ReceiptPollInterval: poll,
+		ReceiptPollStartup:  fallback(document.Recognition.PollStartup, "baseline"),
 	}
-	document.BusinessProfile.apply(&cfg)
 	if (document.Feishu.AppID == "") != (document.Feishu.AppSecret == "") {
 		return Config{}, fmt.Errorf("Feishu app_id and app_secret must be set together")
 	}
-	contextFields, resultFields := cfg.ReviewContextFieldIDs, cfg.ReviewResultFieldIDs
+	contextFields, resultFields := cfg.Business.Review.ContextFields, cfg.Business.Review.ResultFields
 	for semantic := range resultFields {
 		switch semantic {
 		case "decision", "comment", "document_id", "revision", "provider", "external_id", "url":
@@ -246,11 +217,13 @@ func LoadFile(path string) (Config, error) {
 			return Config{}, fmt.Errorf("unsupported review result field %q", semantic)
 		}
 	}
-	if cfg.ReceiptProvider != "" {
-		if cfg.ReceiptLedgerTableID != "" && (cfg.ReceiptLedgerFieldIDs["source_key"] == "" || cfg.ReceiptLedgerFieldIDs["raw_json"] == "") {
+	detail := cfg.Business.Tables.ReimbursementDetails
+	ledger := cfg.Business.Tables.InvoiceLedger
+	if cfg.ReceiptProvider() != "" {
+		if ledger.TableID != "" && (ledger.Fields["source_key"] == "" || ledger.Fields["raw_json"] == "") {
 			return Config{}, fmt.Errorf("ledger writing requires source_key and raw_json field IDs")
 		}
-		switch cfg.ReceiptTriggerMode {
+		switch cfg.ReceiptTriggerMode() {
 		case "event", "poll", "both":
 		default:
 			return Config{}, fmt.Errorf("recognition.trigger_mode must be event, poll or both")
@@ -260,40 +233,40 @@ func LoadFile(path string) (Config, error) {
 		default:
 			return Config{}, fmt.Errorf("recognition.poll_startup must be baseline or process")
 		}
-		if !cfg.FeishuEnabled() || cfg.ReceiptBaseToken == "" || cfg.ReceiptTableID == "" || cfg.ReceiptFieldID == "" {
+		if !cfg.FeishuEnabled() || detail.BaseToken == "" || detail.TableID == "" || detail.Fields["attachment"] == "" {
 			return Config{}, fmt.Errorf("receipt recognition requires Feishu credentials and Base, Table and attachment field IDs")
 		}
-		switch cfg.ReceiptProvider {
+		switch cfg.ReceiptProvider() {
 		case "anyreceipt":
-			if cfg.AnyreceiptAPIKey == "" {
+			if cfg.Anyreceipt.APIKey == "" {
 				return Config{}, fmt.Errorf("anyreceipt.api_key is required")
 			}
 		case "model":
-			if cfg.ReceiptModelAPIKey == "" || cfg.ReceiptModelName == "" {
+			if cfg.Model.APIKey == "" || cfg.Model.Name == "" {
 				return Config{}, fmt.Errorf("receipt model API key and name are required")
 			}
 		default:
-			return Config{}, fmt.Errorf("unsupported recognition.provider %q", cfg.ReceiptProvider)
+			return Config{}, fmt.Errorf("unsupported recognition.provider %q", cfg.ReceiptProvider())
 		}
 	}
-	if cfg.ReviewProvider != "seal" && cfg.ReviewProvider != "model" {
+	if cfg.ReviewProvider() != "seal" && cfg.ReviewProvider() != "model" {
 		return Config{}, fmt.Errorf("review.provider must be seal or model")
 	}
-	if cfg.ReviewTriggerMode != "manual" && cfg.ReviewTriggerMode != "after_recognition" {
+	if cfg.ReviewTriggerMode() != "manual" && cfg.ReviewTriggerMode() != "after_recognition" {
 		return Config{}, fmt.Errorf("review.trigger_mode must be manual or after_recognition")
 	}
-	if cfg.ReviewTriggerMode == "after_recognition" {
-		if cfg.ReceiptProvider == "" || cfg.ReceiptLedgerTableID == "" {
+	if cfg.ReviewTriggerMode() == "after_recognition" {
+		if cfg.ReceiptProvider() == "" || ledger.TableID == "" {
 			return Config{}, fmt.Errorf("automatic review requires receipt recognition and invoice-ledger delivery")
 		}
 		if resultFields["decision"] == "" || resultFields["document_id"] == "" || resultFields["revision"] == "" {
 			return Config{}, fmt.Errorf("automatic review requires dedicated decision, document_id and revision result fields")
 		}
-		if cfg.ReviewProvider == "seal" && cfg.SealCallbackToken == "" {
+		if cfg.ReviewProvider() == "seal" && cfg.Seal.CallbackToken == "" {
 			return Config{}, fmt.Errorf("automatic Seal review requires the configured result callback")
 		}
 	}
-	if cfg.SealCallbackToken != "" && !regexp.MustCompile(`^[A-Za-z0-9_-]{32,}$`).MatchString(cfg.SealCallbackToken) {
+	if cfg.Seal.CallbackToken != "" && !regexp.MustCompile(`^[A-Za-z0-9_-]{32,}$`).MatchString(cfg.Seal.CallbackToken) {
 		return Config{}, fmt.Errorf("seal.callback_token must have at least 32 URL-safe characters")
 	}
 	for _, id := range resultFields {
@@ -302,7 +275,7 @@ func LoadFile(path string) (Config, error) {
 				return Config{}, fmt.Errorf("review context and result fields must not overlap")
 			}
 		}
-		if id == cfg.ReceiptFieldID || id == cfg.ReceiptSourceDetailFieldID {
+		if id == detail.Fields["attachment"] || id == detail.Fields["detail_id"] {
 			return Config{}, fmt.Errorf("review result fields must not overwrite source attachment or detail ID")
 		}
 	}
@@ -313,7 +286,42 @@ func LoadFile(path string) (Config, error) {
 
 // FeishuEnabled reports whether the optional long-connection client is configured.
 func (c Config) FeishuEnabled() bool {
-	return c.FeishuAppID != "" && c.FeishuAppSecret != ""
+	return c.Feishu.AppID != "" && c.Feishu.AppSecret != ""
+}
+
+func (c Config) ReceiptProvider() string {
+	if c.Business == nil || c.Business.Recognition.Provider == "disabled" {
+		return ""
+	}
+	return c.Business.Recognition.Provider
+}
+
+func (c Config) ReceiptTriggerMode() string {
+	if c.Business == nil {
+		return ""
+	}
+	return c.Business.Recognition.TriggerMode
+}
+
+func (c Config) ReviewProvider() string {
+	if c.Business == nil {
+		return ""
+	}
+	return c.Business.Review.Provider
+}
+
+func (c Config) ReviewTriggerMode() string {
+	if c.Business == nil {
+		return ""
+	}
+	return c.Business.Review.TriggerMode
+}
+
+func (c Config) ReviewRulesFile() string {
+	if c.Business == nil {
+		return ""
+	}
+	return c.Business.Review.RulesFile
 }
 
 func fallback(input, defaultValue string) string {

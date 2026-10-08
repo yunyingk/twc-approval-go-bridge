@@ -37,13 +37,14 @@ func reviewSourceBindings(profile *config.BusinessProfile) []events.ReviewSource
 }
 
 func newReviewSourceChanges(cfg config.Config, automatic *app.Automatic, logger *slog.Logger) (*app.SourceChanges, *events.ReviewSourceChangeSink, error) {
-	scope := "feishu:" + cfg.ReceiptBaseToken + ":" + cfg.ReceiptTableID
+	details := cfg.Business.Tables.ReimbursementDetails
+	scope := "feishu:" + details.BaseToken + ":" + details.TableID
 	bindings := reviewSourceBindings(cfg.Business)
 	sources := make(map[app.SourceKind]string, len(bindings))
 	for _, binding := range bindings {
 		sources[binding.Kind] = "feishu:" + binding.BaseToken + ":" + binding.TableID
 	}
-	store, err := state.NewFiles(cfg.StateDir)
+	store, err := state.NewFiles(cfg.Runtime.StateDir)
 	if err != nil {
 		return nil, nil, err
 	}

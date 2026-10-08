@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -35,7 +36,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.Runtime.LogLevel}))
 	if len(os.Args) > 1 {
 		if (os.Args[1] == "check-business-config" && len(os.Args) != 2) || (os.Args[1] != "check-business-config" && len(os.Args) != 3) {
 			logger.Error("usage: server check-business-config | {review-status|check-review|preview-review|submit-review|retry-writeback|apply-seal-result} <record-id-document-id-or-file>")
@@ -68,27 +69,29 @@ func main() {
 		return
 	}
 	if cfg.Business != nil {
+		details := cfg.Business.Tables.ReimbursementDetails
+		ledger := cfg.Business.Tables.InvoiceLedger
 		logger.Info("business profile selected", "profile", cfg.Business.Name, "config_file", cfg.ConfigFile,
-			"source_base", cfg.ReceiptBaseToken, "source_table", cfg.ReceiptTableID, "ledger_table", cfg.ReceiptLedgerTableID,
-			"receipt_provider", cfg.ReceiptProvider, "review_provider", cfg.ReviewProvider, "review_trigger", cfg.ReviewTriggerMode,
+			"source_base", details.BaseToken, "source_table", details.TableID, "ledger_table", ledger.TableID,
+			"receipt_provider", cfg.ReceiptProvider(), "review_provider", cfg.ReviewProvider(), "review_trigger", cfg.ReviewTriggerMode(),
 			"include_transactions", cfg.Business.Review.IncludeTransactions)
 		logger.Info("review change settings", "resubmit_on_detail_change", cfg.Business.Review.ResubmitOnDetailChange,
 			"resubmit_on_source_change", cfg.Business.Review.ResubmitOnSourceChange,
 			"change_debounce", cfg.Business.Review.ChangeDebounce)
 	}
-	server := httpserver.New(cfg.HTTPAddr, logger, version.Version)
+	server := httpserver.New(cfg.Runtime.HTTPAddr, logger, version.Version)
 	server.Register("POST /seal/callback/mock", seal.MockCallback(logger))
 
 	var reviewService *appreview.Service
-	if cfg.SealCallbackToken != "" {
+	if cfg.Seal.CallbackToken != "" {
 		reviewService, err = newReviewDeliveryService(cfg)
 		if err != nil {
 			logger.Error("configure Seal callback", "error", err)
 			os.Exit(1)
 		}
-		server.Register("POST /seal/callback/{token}", seal.CallbackHandler(cfg.SealCallbackToken, reviewService))
+		server.Register("POST /seal/callback/{token}", seal.CallbackHandler(cfg.Seal.CallbackToken, reviewService))
 	}
-	if reviewService == nil && len(cfg.ReviewResultFieldIDs) > 0 {
+	if reviewService == nil && cfg.Business != nil && len(cfg.Business.Review.ResultFields) > 0 {
 		reviewService, err = newReviewDeliveryService(cfg)
 		if err != nil {
 			logger.Error("configure review writeback", "error", err)
@@ -97,20 +100,21 @@ func main() {
 	}
 	var automaticReview *appreview.Automatic
 	var sourceChanges *appreview.SourceChanges
-	if cfg.ReviewTriggerMode == "after_recognition" {
-		// Automatic submissions follow REVIEW_PROVIDER independently of a Seal
+	if cfg.ReviewTriggerMode() == "after_recognition" {
+		// Automatic submissions follow review provider independently of a Seal
 		// callback receiver that may still finish older in-flight Seal requests.
 		submitter, err := newReviewService(cfg)
 		if err != nil {
 			logger.Error("configure automatic review provider", "error", err)
 			os.Exit(1)
 		}
-		triggers, storeErr := state.NewFiles(cfg.StateDir)
+		triggers, storeErr := state.NewFiles(cfg.Runtime.StateDir)
 		if storeErr != nil {
 			logger.Error("configure automatic review state", "error", storeErr)
 			os.Exit(1)
 		}
-		automaticReview, err = appreview.NewAutomatic(submitter, triggers, "feishu:"+cfg.ReceiptBaseToken+":"+cfg.ReceiptTableID, logger)
+		details := cfg.Business.Tables.ReimbursementDetails
+		automaticReview, err = appreview.NewAutomatic(submitter, triggers, "feishu:"+details.BaseToken+":"+details.TableID, logger)
 		if err != nil {
 			logger.Error("configure automatic review", "error", err)
 			os.Exit(1)
@@ -130,28 +134,31 @@ func main() {
 	var receiptFlow *recognition.Processor
 	var attachmentClient *base.AttachmentClient
 	if cfg.FeishuEnabled() {
-		sink := events.LoggingSink(logger, cfg.FeishuLogRawEvents)
-		if cfg.ReceiptProvider != "" {
+		sink := events.LoggingSink(logger, cfg.Feishu.LogRawEvents)
+		receiptProvider := cfg.ReceiptProvider()
+		if receiptProvider != "" {
 			var recognizer invoice.Recognizer
-			switch cfg.ReceiptProvider {
+			switch receiptProvider {
 			case "anyreceipt":
-				recognizer, err = newAnyreceipt(cfg.AnyreceiptAPIKey)
+				recognizer, err = newAnyreceipt(cfg.Anyreceipt.APIKey)
 			case "model":
-				recognizer, err = newModel(cfg.ReceiptModelAPIKey, cfg.ReceiptModelBaseURL, cfg.ReceiptModelName)
+				recognizer, err = newModel(cfg.Model.APIKey, cfg.Model.BaseURL, cfg.Model.Name)
 			default:
-				err = errors.New("unsupported RECEIPT_PROVIDER")
+				err = fmt.Errorf("unsupported receipt recognition provider %q", receiptProvider)
 			}
 			if err != nil {
 				logger.Error("configure receipt recognizer", "error", err)
 				os.Exit(1)
 			}
-			attachmentClient = base.NewAttachmentClient(cfg.FeishuAppID, cfg.FeishuAppSecret)
+			attachmentClient = base.NewAttachmentClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret)
 			resultHandler := recognition.ResultHandler(func(ctx context.Context, result recognition.Result) error {
 				logger.InfoContext(ctx, "receipt recognized", "trigger", result.Trigger, "record_id", result.RecordID, "file_name", result.FileName, "output_fields", len(result.Recognition.Outputs))
 				return nil
 			})
-			if cfg.ReceiptLedgerTableID != "" {
-				ledgerHandler, ledgerErr := invoiceledger.New(invoiceledger.Config{BaseToken: cfg.ReceiptBaseToken, SourceTableID: cfg.ReceiptTableID, SourceDetailFieldID: cfg.ReceiptSourceDetailFieldID, TableID: cfg.ReceiptLedgerTableID, Fields: cfg.ReceiptLedgerFieldIDs}, base.NewLedgerClient(cfg.FeishuAppID, cfg.FeishuAppSecret), logger)
+			details := cfg.Business.Tables.ReimbursementDetails
+			ledger := cfg.Business.Tables.InvoiceLedger
+			if ledger.TableID != "" {
+				ledgerHandler, ledgerErr := invoiceledger.New(invoiceledger.Config{BaseToken: details.BaseToken, SourceTableID: details.TableID, SourceDetailFieldID: details.Fields["ledger_relation"], TableID: ledger.TableID, Fields: ledger.Fields}, base.NewLedgerClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret), logger)
 				if ledgerErr != nil {
 					logger.Error("configure invoice ledger", "error", ledgerErr)
 					os.Exit(1)
@@ -166,12 +173,12 @@ func main() {
 					return nil
 				}
 			}
-			receiptFlow, err = recognition.New(recognition.Config{BaseToken: cfg.ReceiptBaseToken, TableID: cfg.ReceiptTableID, FieldID: cfg.ReceiptFieldID}, attachmentClient, recognizer, resultHandler, logger)
+			receiptFlow, err = recognition.New(recognition.Config{BaseToken: details.BaseToken, TableID: details.TableID, FieldID: details.Fields["attachments"]}, attachmentClient, recognizer, resultHandler, logger)
 			if err != nil {
 				logger.Error("configure receipt flow", "error", err)
 				os.Exit(1)
 			}
-			checkpoints, cacheErr := state.NewFiles(cfg.StateDir)
+			checkpoints, cacheErr := state.NewFiles(cfg.Runtime.StateDir)
 			if cacheErr != nil {
 				logger.Error("configure receipt state", "error", cacheErr)
 				os.Exit(1)
@@ -179,8 +186,8 @@ func main() {
 			scopeData, _ := json.Marshal(struct {
 				Base, Table, Field, Provider, Model, Endpoint, Ledger string
 				Fields                                                map[string]string
-			}{cfg.ReceiptBaseToken, cfg.ReceiptTableID, cfg.ReceiptFieldID, cfg.ReceiptProvider, cfg.ReceiptModelName, cfg.ReceiptModelBaseURL, cfg.ReceiptLedgerTableID, cfg.ReceiptLedgerFieldIDs})
-			lease, leaseErr := checkpoints.AcquireWorker(cfg.ReceiptBaseToken + ":" + cfg.ReceiptTableID + ":" + cfg.ReceiptFieldID)
+			}{details.BaseToken, details.TableID, details.Fields["attachments"], receiptProvider, cfg.Model.Name, cfg.Model.BaseURL, ledger.TableID, ledger.Fields})
+			lease, leaseErr := checkpoints.AcquireWorker(details.BaseToken + ":" + details.TableID + ":" + details.Fields["attachments"])
 			if leaseErr != nil {
 				logger.Error("claim receipt worker", "error", leaseErr)
 				os.Exit(1)
@@ -188,9 +195,9 @@ func main() {
 			defer lease.Close()
 			scopeHash := sha256.Sum256(scopeData)
 			receiptFlow.WithCheckpoints(checkpoints, hex.EncodeToString(scopeHash[:]))
-			if cfg.ReceiptTriggerMode != "poll" {
+			if cfg.ReceiptTriggerMode() != "poll" {
 				logEvent := sink
-				attachmentSink := baseevents.NewAttachmentSink(recognition.Config{BaseToken: cfg.ReceiptBaseToken, TableID: cfg.ReceiptTableID, FieldID: cfg.ReceiptFieldID}, receiptFlow).Sink
+				attachmentSink := baseevents.NewAttachmentSink(recognition.Config{BaseToken: details.BaseToken, TableID: details.TableID, FieldID: details.Fields["attachments"]}, receiptFlow).Sink
 				sink = func(ctx context.Context, event events.Event) error {
 					if err := logEvent(ctx, event); err != nil {
 						return err
@@ -200,14 +207,15 @@ func main() {
 			}
 		}
 		if automaticReview != nil && cfg.Business != nil && cfg.Business.Review.ResubmitOnDetailChange {
-			fieldIDs := []string{cfg.ReceiptFieldID, cfg.ReceiptSourceDetailFieldID}
-			for _, id := range cfg.ReviewContextFieldIDs {
+			details := cfg.Business.Tables.ReimbursementDetails
+			fieldIDs := []string{details.Fields["attachments"], details.Fields["ledger_relation"]}
+			for _, id := range cfg.Business.Review.ContextFields {
 				fieldIDs = append(fieldIDs, id)
 			}
 			if cfg.Business.Review.IncludeTransactions {
-				fieldIDs = append(fieldIDs, cfg.Business.Tables.ReimbursementDetails.Fields["transaction_relation"])
+				fieldIDs = append(fieldIDs, details.Fields["transaction_relation"])
 			}
-			changeSink, changeErr := baseevents.NewReviewChangeSink(cfg.ReceiptBaseToken, cfg.ReceiptTableID, fieldIDs, automaticReview)
+			changeSink, changeErr := baseevents.NewReviewChangeSink(details.BaseToken, details.TableID, fieldIDs, automaticReview)
 			if changeErr != nil {
 				logger.Error("configure review change events", "error", changeErr)
 				os.Exit(1)
@@ -235,7 +243,7 @@ func main() {
 				return sourceSink.Sink(ctx, event)
 			}
 		}
-		if cfg.ReceiptProvider == "" || cfg.ReceiptTriggerMode != "poll" || reviewChangesEnabled(cfg) {
+		if cfg.ReceiptProvider() == "" || cfg.ReceiptTriggerMode() != "poll" || reviewChangesEnabled(cfg) {
 			baseEventSink = sink
 		}
 	} else {
@@ -243,11 +251,11 @@ func main() {
 	}
 	var listeners []*events.Listener
 	if baseEventSink != nil {
-		eventType := strings.TrimSpace(cfg.FeishuEventType)
+		eventType := strings.TrimSpace(cfg.Feishu.EventType)
 		if eventType == "" {
 			eventType = events.DefaultEventType
 		}
-		listener, err := events.New(cfg.FeishuAppID, cfg.FeishuAppSecret, eventType, baseEventSink, logger)
+		listener, err := events.New(cfg.Feishu.AppID, cfg.Feishu.AppSecret, eventType, baseEventSink, logger)
 		if err != nil {
 			logger.Error("create Feishu listener", "error", err)
 			os.Exit(1)
@@ -281,14 +289,14 @@ func main() {
 	}
 	if receiptFlow != nil {
 		go receiptFlow.Run(ctx)
-		if cfg.ReceiptTriggerMode != "event" {
+		if cfg.ReceiptTriggerMode() != "event" {
 			go receiptFlow.Poll(ctx, attachmentClient, cfg.ReceiptPollInterval, cfg.ReceiptPollStartup == "process")
 		}
 	}
 
 	serverErr := make(chan error, 1)
 	go func() {
-		logger.Info("http server started", "addr", cfg.HTTPAddr, "version", version.Version)
+		logger.Info("http server started", "addr", cfg.Runtime.HTTPAddr, "version", version.Version)
 		serverErr <- server.ListenAndServe()
 	}()
 
@@ -306,7 +314,7 @@ func main() {
 
 	shutdown := func() {
 		stop()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Runtime.ShutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Error("graceful shutdown failed", "error", err)

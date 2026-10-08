@@ -90,10 +90,12 @@ func TestProfileSwitchIsCompleteAndOverridesStaleEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ReceiptBaseToken != "base" || cfg.ReceiptTableID != "details" || cfg.ReceiptFieldID != "attachment" ||
-		cfg.ReceiptLedgerTableID != "ledger" || cfg.ReceiptSourceDetailFieldID != "detail" || cfg.ReceiptProvider != "" ||
-		cfg.ReviewTriggerMode != "manual" || !reflect.DeepEqual(cfg.ReviewContextFieldIDs, first.Review.ContextFields) ||
-		!reflect.DeepEqual(cfg.ReviewResultFieldIDs, first.Review.ResultFields) || !reflect.DeepEqual(cfg.ReceiptLedgerFieldIDs, first.Tables.InvoiceLedger.Fields) {
+	detail := cfg.Business.Tables.ReimbursementDetails
+	ledger := cfg.Business.Tables.InvoiceLedger
+	if detail.BaseToken != "base" || detail.TableID != "details" || detail.Fields["attachment"] != "attachment" ||
+		ledger.TableID != "ledger" || detail.Fields["detail_id"] != "detail" || cfg.ReceiptProvider() != "" ||
+		cfg.ReviewTriggerMode() != "manual" || !reflect.DeepEqual(cfg.Business.Review.ContextFields, first.Review.ContextFields) ||
+		!reflect.DeepEqual(cfg.Business.Review.ResultFields, first.Review.ResultFields) || !reflect.DeepEqual(ledger.Fields, first.Tables.InvoiceLedger.Fields) {
 		t.Fatal("selected file did not supply the complete binding set")
 	}
 	second := testProfile()
@@ -112,9 +114,11 @@ func TestProfileSwitchIsCompleteAndOverridesStaleEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Business.Name != second.Name || cfg.ReceiptBaseToken != "new-base" || cfg.ReceiptTableID != "new-details" ||
-		cfg.ReceiptFieldID != "new-attachment" || cfg.ReceiptLedgerTableID != "new-ledger" ||
-		cfg.ReceiptLedgerFieldIDs["source_key"] != "new-source" || cfg.ReviewResultFieldIDs["decision"] != "new-decision" ||
+	detail2 := cfg.Business.Tables.ReimbursementDetails
+	ledger2 := cfg.Business.Tables.InvoiceLedger
+	if cfg.Business.Name != second.Name || detail2.BaseToken != "new-base" || detail2.TableID != "new-details" ||
+		detail2.Fields["attachment"] != "new-attachment" || ledger2.TableID != "new-ledger" ||
+		ledger2.Fields["source_key"] != "new-source" || cfg.Business.Review.ResultFields["decision"] != "new-decision" ||
 		cfg.Business.Tables.Transactions.BaseToken != "transaction-base" {
 		t.Fatal("switch mixed old and new business bindings")
 	}
@@ -128,7 +132,7 @@ func TestSingleDocumentCredentialsAndAutomaticReview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.FeishuAppSecret != "file-secret" || cfg.AnyreceiptAPIKey != "file-key" || cfg.ReceiptProvider != "anyreceipt" || cfg.ReviewTriggerMode != "after_recognition" {
+	if cfg.Feishu.AppSecret != "file-secret" || cfg.Anyreceipt.APIKey != "file-key" || cfg.ReceiptProvider() != "anyreceipt" || cfg.ReviewTriggerMode() != "after_recognition" {
 		t.Fatal("complete document did not supply automatic review")
 	}
 	d.Seal.CallbackToken = ""

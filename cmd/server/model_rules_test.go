@@ -20,7 +20,18 @@ func TestModelRulesResolveFromMainFileAndKeepContentVersion(t *testing.T) {
 	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{ConfigFile: filepath.Join(dir, "config.toml"), ReviewRulesFile: "rules/audit.json", ReviewModelAPIKey: "test-key", ReviewModelName: "test-model"}
+	cfg := config.Config{
+		ConfigFile: filepath.Join(dir, "config.toml"),
+		Business: &config.BusinessProfile{
+			Review: config.ReviewSettings{
+				RulesFile: "rules/audit.json",
+			},
+		},
+		Model: config.ModelSettings{
+			APIKey: "test-key",
+			Name:   "test-model",
+		},
+	}
 	_, version, provider, err := newModelReview(cfg)
 	if err != nil || version != "v1" {
 		t.Fatalf("relative rules file failed: %v", err)
@@ -32,7 +43,7 @@ func TestModelRulesResolveFromMainFileAndKeepContentVersion(t *testing.T) {
 	if err != nil || provider != reformatted {
 		t.Fatal("formatting changed the review content version")
 	}
-	cfg.ReviewRulesFile = "rules/missing.json"
+	cfg.Business.Review.RulesFile = "rules/missing.json"
 	if _, _, _, err := newModelReview(cfg); err == nil {
 		t.Fatal("missing selected rules accepted")
 	}

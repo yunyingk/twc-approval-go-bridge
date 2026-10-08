@@ -113,10 +113,10 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.HTTPAddr != ":8080" || cfg.LogLevel != slog.LevelInfo || cfg.ShutdownTimeout != 10*time.Second || cfg.FeishuEnabled() {
+	if cfg.Runtime.HTTPAddr != ":8080" || cfg.Runtime.LogLevel != slog.LevelInfo || cfg.Runtime.ShutdownTimeout != 10*time.Second || cfg.FeishuEnabled() {
 		t.Fatal("unexpected runtime defaults")
 	}
-	if cfg.FeishuEventType != "drive.file.bitable_record_changed_v1" || cfg.ReceiptTriggerMode != "both" || cfg.ReceiptPollStartup != "baseline" || cfg.ReceiptPollInterval != 5*time.Minute || cfg.ReviewTriggerMode != "manual" {
+	if cfg.Feishu.EventType != "drive.file.bitable_record_changed_v1" || cfg.ReceiptTriggerMode() != "both" || cfg.ReceiptPollStartup != "baseline" || cfg.ReceiptPollInterval != 5*time.Minute || cfg.ReviewTriggerMode() != "manual" {
 		t.Fatal("unexpected event or trigger defaults")
 	}
 }
@@ -163,7 +163,7 @@ func TestLoadParsesLedgerFieldIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ReceiptLedgerTableID != "ledger" || cfg.ReceiptLedgerFieldIDs["source_key"] != "source-id" || cfg.ReceiptModelAPIKey != "key" {
+	if cfg.Business.Tables.InvoiceLedger.TableID != "ledger" || cfg.Business.Tables.InvoiceLedger.Fields["source_key"] != "source-id" || cfg.Model.APIKey != "key" {
 		t.Fatal("single-file model or ledger configuration was lost")
 	}
 }
@@ -227,7 +227,7 @@ func TestOnlySelectedFileSuppliesCredentialsAndRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.FeishuAppID != "file-app" || cfg.FeishuAppSecret != "file-secret" || cfg.HTTPAddr != ":9090" || cfg.AnyreceiptAPIKey != "" || cfg.ReviewRulesFile != "not-present/rules.json" {
+	if cfg.Feishu.AppID != "file-app" || cfg.Feishu.AppSecret != "file-secret" || cfg.Runtime.HTTPAddr != ":9090" || cfg.Anyreceipt.APIKey != "" || cfg.ReviewRulesFile() != "not-present/rules.json" {
 		t.Fatal("environment affected single-file configuration")
 	}
 }
@@ -386,7 +386,7 @@ trigger_mode = "manual"
 	if err != nil {
 		t.Fatalf("LoadFile failed with Chinese sections: %v", err)
 	}
-	if cfg.ReceiptTriggerMode != "both" || cfg.ReviewProvider != "seal" || cfg.ReviewTriggerMode != "manual" {
+	if cfg.ReceiptTriggerMode() != "both" || cfg.ReviewProvider() != "seal" || cfg.ReviewTriggerMode() != "manual" {
 		t.Fatalf("unexpected settings from Chinese sections: %+v", cfg)
 	}
 }
@@ -433,14 +433,11 @@ callback_token = "abcdefghijklmnopqrstuvwxyz012345"
 		t.Fatalf("LoadFile failed: %v", err)
 	}
 	expectedURL := "https://mediastorm-test.sealai.cc/api/v1/integrations/webhook/wh_1790692906316_6z2eao6/document"
-	if cfg.SealDocumentURL != expectedURL {
-		t.Fatalf("expected DocumentURL %q, got %q", expectedURL, cfg.SealDocumentURL)
-	}
-	if cfg.SealBaseURL != "https://mediastorm-test.sealai.cc" || cfg.SealWebhookID != "wh_1790692906316_6z2eao6" {
-		t.Fatalf("unexpected BaseURL %q or WebhookID %q", cfg.SealBaseURL, cfg.SealWebhookID)
+	if cfg.Seal.DocumentURL != expectedURL {
+		t.Fatalf("expected DocumentURL %q, got %q", expectedURL, cfg.Seal.DocumentURL)
 	}
 
-	// 2. host (without https://) + webhook_id
+	// 2. base_url (without https://) + webhook_id
 	tomlContent2 := `
 tables_file = "tables.json"
 [recognition]
@@ -450,7 +447,7 @@ trigger_mode = "both"
 provider = "seal"
 trigger_mode = "manual"
 [seal]
-host = "mediastorm-test.sealai.cc"
+base_url = "mediastorm-test.sealai.cc"
 webhook_id = "wh_custom_123"
 bearer_token = "test-bearer"
 callback_token = "abcdefghijklmnopqrstuvwxyz012345"
@@ -461,11 +458,11 @@ callback_token = "abcdefghijklmnopqrstuvwxyz012345"
 	}
 	cfg2, err := LoadFile(tomlPath2)
 	if err != nil {
-		t.Fatalf("LoadFile failed with host: %v", err)
+		t.Fatalf("LoadFile failed with base_url without scheme: %v", err)
 	}
 	expectedURL2 := "https://mediastorm-test.sealai.cc/api/v1/integrations/webhook/wh_custom_123/document"
-	if cfg2.SealDocumentURL != expectedURL2 {
-		t.Fatalf("expected DocumentURL %q, got %q", expectedURL2, cfg2.SealDocumentURL)
+	if cfg2.Seal.DocumentURL != expectedURL2 {
+		t.Fatalf("expected DocumentURL %q, got %q", expectedURL2, cfg2.Seal.DocumentURL)
 	}
 
 	// 3. direct document_url (backward compatibility)
@@ -490,11 +487,11 @@ callback_token = "abcdefghijklmnopqrstuvwxyz012345"
 	if err != nil {
 		t.Fatalf("LoadFile failed with document_url: %v", err)
 	}
-	if cfg3.SealDocumentURL != "https://legacy.sealai.cc/api/v1/integrations/webhook/legacy_id/document" {
-		t.Fatalf("unexpected DocumentURL: %q", cfg3.SealDocumentURL)
+	if cfg3.Seal.DocumentURL != "https://legacy.sealai.cc/api/v1/integrations/webhook/legacy_id/document" {
+		t.Fatalf("unexpected DocumentURL: %q", cfg3.Seal.DocumentURL)
 	}
 
-	// 4. webhook_id without host/base_url -> error
+	// 4. webhook_id without base_url -> error
 	tomlContent4 := `
 tables_file = "tables.json"
 [recognition]
@@ -510,8 +507,8 @@ webhook_id = "wh_only"
 	if err := os.WriteFile(tomlPath4, []byte(tomlContent4), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadFile(tomlPath4); err == nil || !strings.Contains(err.Error(), "seal.base_url or seal.host is required") {
-		t.Fatalf("expected error for missing host/base_url, got %v", err)
+	if _, err := LoadFile(tomlPath4); err == nil || !strings.Contains(err.Error(), "seal.base_url is required") {
+		t.Fatalf("expected error for missing base_url, got %v", err)
 	}
 
 	// 5. base_url without webhook_id -> error
@@ -532,6 +529,69 @@ base_url = "https://mediastorm.sealai.cc"
 	}
 	if _, err := LoadFile(tomlPath5); err == nil || !strings.Contains(err.Error(), "seal.webhook_id is required") {
 		t.Fatalf("expected error for missing webhook_id, got %v", err)
+	}
+}
+
+func TestTablesFileDualChannelResolution(t *testing.T) {
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "configs")
+	if err := os.MkdirAll(subDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	p := testProfile()
+	tablesProfile := TablesProfile{
+		Version: 1,
+		Name:    p.Name,
+		Tables: TablesSchema{
+			Transactions: p.Tables.Transactions,
+			ReimbursementDetails: ReimbursementDetailsBinding{
+				Name:          p.Tables.ReimbursementDetails.Name,
+				Source:        p.Tables.ReimbursementDetails.Source,
+				Access:        p.Tables.ReimbursementDetails.Access,
+				BaseToken:     p.Tables.ReimbursementDetails.BaseToken,
+				TableID:       p.Tables.ReimbursementDetails.TableID,
+				Fields:        p.Tables.ReimbursementDetails.Fields,
+				ContextFields: p.Review.ContextFields,
+				ResultFields:  p.Review.ResultFields,
+			},
+			InvoiceLedger: p.Tables.InvoiceLedger,
+		},
+	}
+	tablesRaw, err := json.Marshal(tablesProfile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 位于 TOML 目录下的 tables.json（CWD 根目录中没有该相对路径）
+	tablesInSubDir := filepath.Join(subDir, "tables-relative-to-toml.json")
+	if err := os.WriteFile(tablesInSubDir, tablesRaw, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	tomlContent := `
+tables_file = "tables-relative-to-toml.json"
+[recognition]
+provider = "disabled"
+trigger_mode = "both"
+[review]
+provider = "seal"
+trigger_mode = "manual"
+[seal]
+base_url = "https://mediastorm.sealai.cc"
+webhook_id = "wh_123"
+`
+	tomlPath := filepath.Join(subDir, "config.toml")
+	if err := os.WriteFile(tomlPath, []byte(tomlContent), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadFile(tomlPath)
+	if err != nil {
+		t.Fatalf("channel fallback to toml dir failed: %v", err)
+	}
+	if cfg.TablesFile != tablesInSubDir {
+		t.Fatalf("expected tables file resolved to %s, got %s", tablesInSubDir, cfg.TablesFile)
 	}
 }
 
