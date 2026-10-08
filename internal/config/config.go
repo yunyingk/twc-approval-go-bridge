@@ -55,7 +55,10 @@ type AnyreceiptSettings struct {
 	APIKey string `json:"api_key" toml:"api_key"`
 }
 type SealSettings struct {
-	DocumentURL   string `json:"document_url" toml:"document_url"`
+	BaseURL       string `json:"base_url,omitempty" toml:"base_url,omitempty"`
+	Host          string `json:"host,omitempty" toml:"host,omitempty"`
+	WebhookID     string `json:"webhook_id,omitempty" toml:"webhook_id,omitempty"`
+	DocumentURL   string `json:"document_url,omitempty" toml:"document_url,omitempty"`
 	BearerToken   string `json:"bearer_token" toml:"bearer_token"`
 	CallbackToken string `json:"callback_token" toml:"callback_token"`
 }
@@ -93,6 +96,8 @@ type Config struct {
 	ReceiptSourceDetailFieldID string
 	ReceiptLedgerFieldIDs      map[string]string
 	SealDocumentURL            string
+	SealBaseURL                string
+	SealWebhookID              string
 	StateDir                   string
 	SealCallbackToken          string
 	ReviewProvider             string
@@ -142,6 +147,23 @@ func LoadFile(path string) (Config, error) {
 	}
 	if document.Review.Provider == "" && document.ReviewCN.Provider != "" {
 		document.Review = document.ReviewCN
+	}
+	if strings.TrimSpace(document.Seal.DocumentURL) == "" && strings.TrimSpace(document.Seal.WebhookID) != "" {
+		host := strings.TrimSpace(document.Seal.BaseURL)
+		if host == "" {
+			host = strings.TrimSpace(document.Seal.Host)
+		}
+		if host == "" {
+			return Config{}, fmt.Errorf("seal.base_url or seal.host is required when seal.webhook_id is set")
+		}
+		if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
+			host = "https://" + host
+		}
+		host = strings.TrimRight(host, "/")
+		webhookID := strings.Trim(strings.TrimSpace(document.Seal.WebhookID), "/")
+		document.Seal.DocumentURL = fmt.Sprintf("%s/api/v1/integrations/webhook/%s/document", host, webhookID)
+	} else if strings.TrimSpace(document.Seal.DocumentURL) == "" && (strings.TrimSpace(document.Seal.BaseURL) != "" || strings.TrimSpace(document.Seal.Host) != "") {
+		return Config{}, fmt.Errorf("seal.webhook_id is required when seal.base_url is set")
 	}
 	if document.Version != 0 && document.Version != 1 {
 		return Config{}, fmt.Errorf("configuration version must be 1")
@@ -203,7 +225,10 @@ func LoadFile(path string) (Config, error) {
 		AnyreceiptAPIKey:    document.Anyreceipt.APIKey,
 		ReceiptModelAPIKey:  document.Model.APIKey,
 		ReceiptModelBaseURL: document.Model.BaseURL, ReceiptModelName: document.Model.Name,
-		SealDocumentURL: document.Seal.DocumentURL, SealBearerToken: document.Seal.BearerToken,
+		SealDocumentURL: document.Seal.DocumentURL,
+		SealBaseURL:     fallback(document.Seal.BaseURL, document.Seal.Host),
+		SealWebhookID:   document.Seal.WebhookID,
+		SealBearerToken: document.Seal.BearerToken,
 		SealCallbackToken:  document.Seal.CallbackToken,
 		ReviewModelAPIKey:  document.Model.APIKey,
 		ReviewModelBaseURL: document.Model.BaseURL, ReviewModelName: document.Model.Name,

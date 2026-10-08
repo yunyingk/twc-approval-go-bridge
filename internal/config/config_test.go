@@ -391,4 +391,149 @@ trigger_mode = "manual"
 	}
 }
 
+func TestLoadFile_SealBaseURLAndWebhookID(t *testing.T) {
+	dir := t.TempDir()
+	tablesPath := filepath.Join(dir, "tables.json")
+	validJSON := `{
+		"version": 1,
+		"name": "seal-test",
+		"tables": {
+			"transactions": {"name": "流水", "source": "webhook", "access": "read_only", "base_token": "base1", "table_id": "tbl_trans", "fields": {"transaction_id": "fld_tid"}},
+			"reimbursement_details": {"name": "明细", "source": "employee", "access": "read_write", "base_token": "base1", "table_id": "tbl_details", "fields": {"attachment": "fld_att"}},
+			"invoice_ledger": {"name": "台账", "source": "bridge", "access": "read_write", "base_token": "base1", "table_id": "tbl_ledger", "fields": {"source_key": "fld_sk", "raw_json": "fld_raw"}}
+		}
+	}`
+	if err := os.WriteFile(tablesPath, []byte(validJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. base_url + webhook_id
+	tomlContent := `
+tables_file = "tables.json"
+[runtime]
+http_addr = ":8080"
+[recognition]
+provider = "disabled"
+trigger_mode = "both"
+[review]
+provider = "seal"
+trigger_mode = "manual"
+[seal]
+base_url = "https://mediastorm-test.sealai.cc"
+webhook_id = "wh_1790692906316_6z2eao6"
+bearer_token = "test-bearer"
+callback_token = "abcdefghijklmnopqrstuvwxyz012345"
+`
+	tomlPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(tomlPath, []byte(tomlContent), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadFile(tomlPath)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+	expectedURL := "https://mediastorm-test.sealai.cc/api/v1/integrations/webhook/wh_1790692906316_6z2eao6/document"
+	if cfg.SealDocumentURL != expectedURL {
+		t.Fatalf("expected DocumentURL %q, got %q", expectedURL, cfg.SealDocumentURL)
+	}
+	if cfg.SealBaseURL != "https://mediastorm-test.sealai.cc" || cfg.SealWebhookID != "wh_1790692906316_6z2eao6" {
+		t.Fatalf("unexpected BaseURL %q or WebhookID %q", cfg.SealBaseURL, cfg.SealWebhookID)
+	}
+
+	// 2. host (without https://) + webhook_id
+	tomlContent2 := `
+tables_file = "tables.json"
+[recognition]
+provider = "disabled"
+trigger_mode = "both"
+[review]
+provider = "seal"
+trigger_mode = "manual"
+[seal]
+host = "mediastorm-test.sealai.cc"
+webhook_id = "wh_custom_123"
+bearer_token = "test-bearer"
+callback_token = "abcdefghijklmnopqrstuvwxyz012345"
+`
+	tomlPath2 := filepath.Join(dir, "config2.toml")
+	if err := os.WriteFile(tomlPath2, []byte(tomlContent2), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg2, err := LoadFile(tomlPath2)
+	if err != nil {
+		t.Fatalf("LoadFile failed with host: %v", err)
+	}
+	expectedURL2 := "https://mediastorm-test.sealai.cc/api/v1/integrations/webhook/wh_custom_123/document"
+	if cfg2.SealDocumentURL != expectedURL2 {
+		t.Fatalf("expected DocumentURL %q, got %q", expectedURL2, cfg2.SealDocumentURL)
+	}
+
+	// 3. direct document_url (backward compatibility)
+	tomlContent3 := `
+tables_file = "tables.json"
+[recognition]
+provider = "disabled"
+trigger_mode = "both"
+[review]
+provider = "seal"
+trigger_mode = "manual"
+[seal]
+document_url = "https://legacy.sealai.cc/api/v1/integrations/webhook/legacy_id/document"
+bearer_token = "test-bearer"
+callback_token = "abcdefghijklmnopqrstuvwxyz012345"
+`
+	tomlPath3 := filepath.Join(dir, "config3.toml")
+	if err := os.WriteFile(tomlPath3, []byte(tomlContent3), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg3, err := LoadFile(tomlPath3)
+	if err != nil {
+		t.Fatalf("LoadFile failed with document_url: %v", err)
+	}
+	if cfg3.SealDocumentURL != "https://legacy.sealai.cc/api/v1/integrations/webhook/legacy_id/document" {
+		t.Fatalf("unexpected DocumentURL: %q", cfg3.SealDocumentURL)
+	}
+
+	// 4. webhook_id without host/base_url -> error
+	tomlContent4 := `
+tables_file = "tables.json"
+[recognition]
+provider = "disabled"
+trigger_mode = "both"
+[review]
+provider = "seal"
+trigger_mode = "manual"
+[seal]
+webhook_id = "wh_only"
+`
+	tomlPath4 := filepath.Join(dir, "config4.toml")
+	if err := os.WriteFile(tomlPath4, []byte(tomlContent4), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFile(tomlPath4); err == nil || !strings.Contains(err.Error(), "seal.base_url or seal.host is required") {
+		t.Fatalf("expected error for missing host/base_url, got %v", err)
+	}
+
+	// 5. base_url without webhook_id -> error
+	tomlContent5 := `
+tables_file = "tables.json"
+[recognition]
+provider = "disabled"
+trigger_mode = "both"
+[review]
+provider = "seal"
+trigger_mode = "manual"
+[seal]
+base_url = "https://mediastorm.sealai.cc"
+`
+	tomlPath5 := filepath.Join(dir, "config5.toml")
+	if err := os.WriteFile(tomlPath5, []byte(tomlContent5), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadFile(tomlPath5); err == nil || !strings.Contains(err.Error(), "seal.webhook_id is required") {
+		t.Fatalf("expected error for missing webhook_id, got %v", err)
+	}
+}
+
+
 

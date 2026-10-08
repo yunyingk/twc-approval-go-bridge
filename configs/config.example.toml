@@ -41,8 +41,20 @@ api_key = ""
 # 5. SealAI 单据通道与回调凭据（规则在 Seal 系统维护）
 # ==========================================
 [seal]
-document_url = "https://mediastorm-test.sealai.cc/api/v1/integrations/webhook/wh_1790692906316_6z2eao6/document"
+# SealAI 服务地址（支持域名或完整 URL，如 https://mediastorm-test.sealai.cc）
+base_url = "https://mediastorm-test.sealai.cc"
+
+# Webhook 接入通道 ID（SealAI 控制台分配的 Webhook 标识）
+webhook_id = "wh_1790692906316_6z2eao6"
+
+# 送审身份令牌（Bridge -> SealAI）：
+# 本桥接服务主动向 SealAI 提交发票/单据时，在 HTTP Header 携带 Authorization: Bearer <bearer_token>
+# 用于向 SealAI 证明发单者身份并核验调用额度。
 bearer_token = ""
+
+# 回调防伪令牌（SealAI -> Bridge）：
+# SealAI 机审完成后，向本服务公网回调地址（POST /seal/callback/<callback_token>）推送异步审批结果。
+# 用于校验回调确实来自真实的 SealAI，防止公网恶意请求伪造审批结果篡改多维表格（需 >= 32 位随机字符）。
 callback_token = ""
 
 # ==========================================
