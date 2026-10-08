@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -16,12 +17,18 @@ import (
 // Document is the only runtime configuration source, including credentials.
 // The private file is not committed; the repository contains a redacted example.
 type Document struct {
-	BusinessProfile
-	Runtime    RuntimeSettings    `json:"runtime" toml:"runtime"`
-	Feishu     FeishuSettings     `json:"feishu" toml:"feishu"`
-	Anyreceipt AnyreceiptSettings `json:"anyreceipt" toml:"anyreceipt"`
-	Seal       SealSettings       `json:"seal" toml:"seal"`
-	Model      ModelSettings      `json:"model" toml:"model"`
+	Version     int                 `json:"version,omitempty" toml:"version,omitempty"`
+	Name        string              `json:"name,omitempty" toml:"name,omitempty"`
+	TablesFile  string              `json:"tables_file" toml:"tables_file"`
+	Recognition RecognitionSettings `json:"recognition" toml:"recognition"`
+	Review      ReviewSettings      `json:"review" toml:"review"`
+	Runtime     RuntimeSettings     `json:"runtime" toml:"runtime"`
+	Feishu      FeishuSettings      `json:"feishu" toml:"feishu"`
+	Anyreceipt  AnyreceiptSettings  `json:"anyreceipt" toml:"anyreceipt"`
+	Seal        SealSettings        `json:"seal" toml:"seal"`
+	Model       ModelSettings       `json:"model" toml:"model"`
+
+	BusinessProfile BusinessProfile `json:"-" toml:"-"`
 }
 
 type RuntimeSettings struct {
@@ -60,6 +67,7 @@ type ModelSettings struct {
 // Config contains runtime settings for the service shell.
 type Config struct {
 	ConfigFile                 string
+	TablesFile                 string
 	Business                   *BusinessProfile
 	HTTPAddr                   string
 	LogLevel                   slog.Level
@@ -123,6 +131,37 @@ func LoadFile(path string) (Config, error) {
 		// Do not echo private TOML values or unknown keys into application logs.
 		return Config{}, fmt.Errorf("invalid configuration TOML or unknown field")
 	}
+	if document.Version != 0 && document.Version != 1 {
+		return Config{}, fmt.Errorf("configuration version must be 1")
+	}
+	if strings.TrimSpace(document.TablesFile) == "" {
+		return Config{}, fmt.Errorf("tables_file is required")
+	}
+	tablesPath := document.TablesFile
+	if !filepath.IsAbs(tablesPath) {
+		tablesPath = filepath.Join(filepath.Dir(path), tablesPath)
+	}
+	tablesProfile, err := LoadTablesFile(tablesPath)
+	if err != nil {
+		return Config{}, fmt.Errorf("load tables file: %w", err)
+	}
+	document.BusinessProfile = BusinessProfile{
+		Version: tablesProfile.Version,
+		Name:    tablesProfile.Name,
+		Tables: BusinessTables{
+			Transactions:         tablesProfile.Tables.Transactions,
+			ReimbursementDetails: tablesProfile.Tables.ReimbursementDetails.TableBinding(),
+			InvoiceLedger:        tablesProfile.Tables.InvoiceLedger,
+		},
+		Recognition: document.Recognition,
+		Review:      document.Review,
+	}
+	if document.Name != "" {
+		document.BusinessProfile.Name = document.Name
+	}
+	document.BusinessProfile.Review.ContextFields = tablesProfile.Tables.ReimbursementDetails.ContextFields
+	document.BusinessProfile.Review.ResultFields = tablesProfile.Tables.ReimbursementDetails.ResultFields
+
 	if err := document.BusinessProfile.validate(); err != nil {
 		return Config{}, err
 	}
@@ -139,7 +178,7 @@ func LoadFile(path string) (Config, error) {
 		return Config{}, err
 	}
 	cfg := Config{
-		ConfigFile: path, Business: &document.BusinessProfile,
+		ConfigFile: path, TablesFile: tablesPath, Business: &document.BusinessProfile,
 		HTTPAddr: fallback(document.Runtime.HTTPAddr, ":8080"), LogLevel: level,
 		ShutdownTimeout: shutdown, StateDir: fallback(document.Runtime.StateDir, "data"),
 		FeishuAppID:        document.Feishu.AppID,

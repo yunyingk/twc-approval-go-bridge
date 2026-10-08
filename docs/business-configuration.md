@@ -38,33 +38,38 @@ Table 类似普通表格的 Sheet；View 是同一张 Table 的另一种展示�
 
 当前一个进程运行一份配置，编辑后重启生效；没有同时监听多套业务来源或热更新能力。未来接入更多来源时，继续增加角色适配和编排，不能把额外表 ID 塞入供应商模块。
 
-## 主配置入口
+## 主配置与数据表拓扑解耦
 
-默认读取工作目录下的 `config.toml`；只有 `CONFIG_FILE` 可以指定这份文件的其他路径。文件不存在、TOML 无效、未知属性或绑定不成立时直接报错；没有环境变量后备或配置叠加。
+自 2026-10-08 起，系统凭证与多维表格字段映射彻底解耦：
+1. **主运行配置**：私有 `config.toml`（0600、Git 忽略），仅包含服务运行参数、系统凭据（Feishu、Seal、Anyreceipt、自建模型）及通过 `tables_file` 对业务数据表拓扑的显式路径引用。
+2. **数据表拓扑配置**：独立 JSON 文件（如 `configs/tables/enterprise-test.json`，脱敏模板为 `configs/tables/enterprise.example.json`），纯净描述交易流水、报销明细、发票台账三张表的 Base/Table ID、常规字段映射，以及报销明细表的机审上下文列（`context_fields`）与 AI 回写结果列（`result_fields`）。
 
-| 同一文件内的部分 | 内容 |
-| --- | --- |
-| `runtime` | HTTP 地址、日志级别、停止等待、状态目录 |
-| `feishu` | 应用 ID/Secret、长连接事件类型与日志开关、可选独立审批应用 |
-| `tables` | 流水、员工明细、台账三个角色的 Base/Table/Field ID、来源与访问约定 |
-| `recognition` | `provider=anyreceipt|model|disabled`、`trigger_mode=event|poll|both`、轮询间隔及首次扫描方式、独立模型连接 |
-| `anyreceipt` | 识别 API key |
-| `seal` | 单据通道 URL、Bearer 密钥、回调鉴权 token |
-| `review` | `provider=seal|model`、`trigger_mode=manual|after_recognition`、流水/修改重审开关、上下文与 AI 专用字段、独立模型连接及独立自有规则文件路径 |
-| `approval` | 可选人工审批配置；当前本机没有启用 |
+默认读取工作目录下的 `config.toml`；只有 `CONFIG_FILE` 可以指定该文件的其他路径。文件不存在、TOML/JSON 无效、未知属性或绑定不成立时直接报错；没有环境变量后备或隐式合并。
 
-识别与审核分别选择提供方。Seal 规则在 SealAI 系统维护；`review.rules_file` 只用于自有模型。两个 `model` 对象分别保存 `api_key`、`base_url` 和 `name`，不跨能力复用密钥。切换模型还需包含 Anthropic 的构建；修改 TOML 不能向 `no_anthropic` 二进制加入 SDK。
+| 配置入口 | 文件格式 | 内容职责 |
+| --- | --- | --- |
+| `tables_file` | JSON（引用） | 流水、员工明细、台账三个角色的 Base/Table/Field ID，以及明细表的上下文与回写字段集中定义 |
+| `runtime` | TOML（节） | HTTP 地址、日志级别、停止等待、状态目录 |
+| `feishu` | TOML（节） | 应用 ID/Secret、长连接事件类型与日志开关 |
+| `recognition` | TOML（节） | `provider=anyreceipt\|model\|disabled`、`trigger_mode=event\|poll\|both`、轮询间隔及首次扫描方式 |
+| `anyreceipt` | TOML（节） | 识别 API key |
+| `seal` | TOML（节） | 单据通道 URL、Bearer 密钥、回调鉴权 token |
+| `review` | TOML（节） | `provider=seal\|model`、`trigger_mode=manual\|after_recognition`、流水/修改重审开关及独立自有规则文件路径 |
+| `model` | TOML（节） | 统一自建 Anthropic 兼容模型连接（`api_key`、`base_url`、`name`），供识别与审核复用 |
 
-`recognition.poll_startup=baseline|process` 决定首次扫描只记录基线还是处理已有附件；默认 baseline。`review.result_fields` 支持 decision、comment、document_id、revision、provider、external_id、url，必须绑定独立 AI 文本列，不得覆盖员工输入。自动审核要求识别、台账交付及 decision/document_id/revision 字段；Seal 自动审核还要求回调 token。
+识别与审核分别选择提供方。Seal 规则在 SealAI 系统维护；`review.rules_file` 只用于自有模型。切换模型还需包含 Anthropic 的构建；修改 TOML 不能向 `no_anthropic` 二进制加入 SDK。
 
-实际密钥只放私有 config.toml，不提交到 Git，不输出完整配置。旧配置注释与模板说明保存在[迁移前记录](progress/2026-10-08-previous-config-notes.md)，不是运行入口。
+`recognition.poll_startup=baseline|process` 决定首次扫描只记录基线还是处理已有附件；默认 baseline。报销明细表中的 `result_fields` 支持 decision、comment、document_id、revision、provider、external_id、url，必须绑定独立 AI 文本列，不得覆盖员工输入。自动审核要求识别、台账交付及 decision/document_id/revision 字段；Seal 自动审核还要求回调 token。
+
+实际密钥只放私有 `config.toml`，私有数据表映射放 `configs/tables/*.json`，均保持 0600 权限且受 Git 忽略保护。
 
 ## 独立模板与自有规则
 
-- `templates/feishu/approval-template.example.json`：一次性创建飞书原生审批模板的请求。由 `approval-template -file` 读取，运行服务不加载。
+- `configs/tables/enterprise.example.json`：多维表格三表拓扑与字段映射示例模板。
+- `templates/feishu/approval-template.example.json`：一次性创建飞书原生审批模板的请求（历史归档参考）。
 - `rules/review.example.json`：自有审核示例规则。只有 `review.provider = "model"` 才读取 `review.rules_file`；相对路径以主 TOML 所在目录为准。SealAI 路径不要求文件存在。
 
-主配置顺序为识别/审核提供方、连接凭证、运行参数、可选模型连接、表及字段映射。TOML 支持 `#` 注释和分节；重复键/节、错误类型及未知结构字段会报错。字段映射中的语义名称仍按现有业务校验处理，不是完整白名单。旧 JSON 主配置不再受新加载器支持，没有兼容回退。当前监督服务仍运行上一阶段二进制与私有 JSON，尚未部署本次改动，见[交接记录](progress/2026-10-08-config-toml.md)。
+主配置顺序为 `tables_file` 路径引用、识别/审核提供方、连接凭证、运行参数、自建模型连接。TOML 与 JSON 均开启严格的未知字段检测（`DisallowUnknownFields`）；重复键/节、错误类型及未知结构字段会立即报错。旧 JSON 主配置及旧版 TOML 内嵌 `[tables]` 语法不再受新加载器支持，没有兼容回退。当前监督服务仍运行上一阶段二进制与私有 JSON，尚未部署本次改动，见[交接记录](progress/2026-10-08-config-toml.md)。
 
 ## 可选的明细修改重审
 

@@ -68,15 +68,12 @@ func TestSourceChangeConfigurationIsIndependentAndRequiresInvoiceNumber(t *testi
 
 func writeProfile(t *testing.T, profile BusinessProfile) string {
 	t.Helper()
-	raw, err := toml.Marshal(profile)
-	if err != nil {
-		t.Fatal(err)
+	d := Document{
+		BusinessProfile: profile,
+		Recognition:     profile.Recognition,
+		Review:          profile.Review,
 	}
-	path := filepath.Join(t.TempDir(), "business.toml")
-	if err := os.WriteFile(path, raw, 0600); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return writeDocument(t, d)
 }
 
 func TestProfileSwitchIsCompleteAndOverridesStaleEnvironment(t *testing.T) {
