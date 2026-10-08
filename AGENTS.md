@@ -2,7 +2,7 @@
 
 ## 范围与工作目录
 
-- 本文件适用于 `twc-approval-go-bridge/` 仓库；它是独立 Git 仓库，业务资料在上级目录的 `doc/`。在本仓库开发前先读 `README.md` 和相关需求文档。
+- 本文件适用于 `twc-approval-go-bridge/` 仓库；本仓库为完全独立、自包含的 Git 仓库，所有业务逻辑、设计文档（`docs/`）、配置模板（`configs/`）与规则（`rules/`）均完整内置在本项目内，不需要、也不要读取或依赖上级目录。在本仓库开发前先读 `README.md` 和 `docs/` 中的相关需求与架构文档。
 - 项目级规则统一放在 `AGENTS.md`。需要项目技能时使用 `.agents/skills`，不要创建 `.codex/skills`。
 - 结对编程，回答精炼；重大架构或业务改动先对齐方案，轻量修复可直接实施。遵循最小 Diff，保留已有注释和文档；破坏性文件或 Git 操作前取得显式确认。
 - 完成一个经验证的阶段后及时创建本地 Git commit，避免后续改动混在未提交的工作区中。
@@ -18,9 +18,9 @@
 - 本服务使用飞书**应用身份**（`tenant_access_token`），凭 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET` 访问获授权的资源；不要为本项目发起用户 OAuth、要求用户扫码，或把用户身份的 `lark-cli --as user` 当作服务权限验证。
 - 读取线上多维表格时，以项目应用身份和该应用的资源授权为准。先只读验证 Base、Table、字段及少量记录；权限不足时核对应用权限和资源授权，不擅自切换为用户身份。
 - 多维表格记录变更事件需同时核对后台的应用身份与用户身份 `bitable:app` 权限，以及目标 Base 的云文档订阅；开通用户身份权限不等于运行时改用用户 OAuth。具体要求和企业测试验收见 [飞书事件联调](docs/feishu-event-verification.md)。
-- 2026-10-08 起运行只读一份私有 `config.toml`（0600、Git 忽略），涵盖业务、凭证和服务参数；模板及自有审核规则各自独立保存；不输出完整配置或密钥。
-- `CONFIG_FILE` 仅选择该文件的路径；不合并 `.env`、调试文件或旧业务环境变量。仓库主配置示例为 `configs/config.example.toml`；仅自有审核加载 `review.rules_file`，Seal 不读取本地规则。历史配置已私有归档，不作为后备入口。
-- 上级 `doc/` 已记录测试用 Base ID、Table ID、字段和审批模板。这些是已有线索；实现前仍要核对线上结构，不能把历史方案中的示例当作当前接口契约。
+- 2026-10-08 起运行主配置统一收敛于 `configs/config.toml`（0600、Git 忽略，亦兼容根目录），业务数据表拓扑独立存放于 `configs/tables/` 目录；模板及自有审核规则各自独立保存；不输出完整配置或密钥。
+- `CONFIG_FILE` 仅选择该配置文件的路径；不合并 `.env`、调试文件或旧业务环境变量。主配置示例为 `configs/config.example.toml`，数据表映射示例为 `configs/tables/enterprise.example.json`；仅自有审核加载 `review.rules_file`，Seal 不读取本地规则。历史配置已私有归档，不作为后备入口。
+- 测试用多维表格 Base ID、Table ID、字段映射已完整收敛在 `configs/tables/` 模板及私有配置文件中，严格自包含，不要引用上级历史目录。修改或新增字段映射时，直接在 `configs/tables/` 维护。
 
 ## 实现边界与验证
 
@@ -62,3 +62,5 @@
 
 - 2026-10-08 按用户要求改用 TOML 并独立模板/规则。本阶段只完成配置改动和验证，监督服务仍为前阶段 JSON 二进制与包装器；切换需同步部署，见 docs/progress/2026-10-08-config-toml.md。用户要求此后移交 Gemini review，不再自动扩展。
 - 2026-10-08 按用户确认的方案 A，将未上线的飞书原生审批扩展（13,300+ 行）整体归档至分支 `archive/feishu-native-approval` 与标签 `archive/native-approval-20261008`，并从主线干净剥离。主线服务回归轻量纯粹的 OCR 识别与 AI 审核回写，详见 docs/progress/2026-10-08-archive-native-approval.md。
+- 2026-10-08 完成多维表格数据表拓扑与系统凭证彻底解耦，统一配置目录为 `configs/`。主配置位于 `configs/config.toml`（示例为 `configs/config.example.toml`），数据表映射独立收敛于 `configs/tables/`（示例为 `configs/tables/enterprise.example.json`）。仓库完全自包含，不读取或依赖任何上级外部目录。
+
