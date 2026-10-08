@@ -102,7 +102,7 @@ go run ./cmd/server submit-review <个人报销明细记录ID>
 
 聚合位于独立的 `internal/core/invoice/aggregate/aggregate.go`，结构不依赖 Anyreceipt 或 SealAI；`internal/seal/mapper/` 负责 Seal 协议转换。自有模型可复用 `internal/core/invoice` 的识别接口与聚合结构。历史测试通道的回调地址曾指向本地 mock；SealAI 服务器不能连接到开发者电脑的 `127.0.0.1`。新入口 `submit-review` 及识别完成自动触发共用版本化送审、密钥 URL 结果接收和 AI 结果回写；企业测试专用列已通过真实验收，业务冻结仍待完善。旧 `submit-seal` 已移除，显式和自动送审都使用同一版本化流程。
 
-Anyreceipt 始终编入，启用识别时使用 `recognition.provider=anyreceipt` 和 `ANYRECEIPT_API_KEY`，可识别图片和 PDF。自有模型是可选能力：默认构建包含 Anthropic Go SDK；`go build -tags no_anthropic ./cmd/server` 可在编译时排除模型适配器及 SDK。模型模式配置 `recognition.provider=model`、`RECEIPT_MODEL_API_KEY`、`RECEIPT_MODEL_BASE_URL`、`RECEIPT_MODEL_NAME`；当前只接受图片，PDF/DOCX 转换留给后续独立模块。DeepSeek 测试模型实际返回过 Markdown 围栏 JSON，当前适配器已兼容纯 JSON 与单个 JSON 围栏，并拒绝被 token 上限截断的响应。附件下载还要求飞书应用身份具备 `docs:document.media:download` 或等价权限，并有目标 Base 的资源授权。当前任务按来源、配置范围、记录 ID 和附件 token 持久化；已识别结果可用于跨重启补交付。进程在外部成功与本地保存之间崩溃仍可能重复识别。
+Anyreceipt 始终编入，启用识别时使用 `recognition.provider=anyreceipt` 和 `anyreceipt.api_key`，可识别图片和 PDF。自有模型是可选能力：默认构建包含 Anthropic Go SDK；`go build -tags no_anthropic ./cmd/server` 可在编译时排除模型适配器及 SDK。模型模式配置 `recognition.provider=model`、`recognition.model.api_key`、`recognition.model.base_url`、`recognition.model.name`；当前只接受图片，PDF/DOCX 转换留给后续独立模块。DeepSeek 测试模型实际返回过 Markdown 围栏 JSON，当前适配器已兼容纯 JSON 与单个 JSON 围栏，并拒绝被 token 上限截断的响应。附件下载还要求飞书应用身份具备 `docs:document.media:download` 或等价权限，并有目标 Base 的资源授权。当前任务按来源、配置范围、记录 ID 和附件 token 持久化；已识别结果可用于跨重启补交付。进程在外部成功与本地保存之间崩溃仍可能重复识别。
 
 以下保留 2026-09-29 的旧环境排查记录；当前企业测试环境的成功投递证据见[飞书事件联调](docs/feishu-event-verification.md)。旧测试 Base 已用项目应用身份订阅云文档事件；开放平台已添加「多维表格记录变更」事件并选用长连接。2026-09-29 在独立测试行 `reczz28HJVvAm8NM`（`明细ID=OCR-TEST-20260929-175848`）修改记录后，开发者后台事件日志暂无投递记录；应用发布新版本后再次通过 API 修改并恢复测试行，长连接已就绪但监听器仍未收到事件，仍需排查投递链路。该测试行保留了一张样本 JPEG 附件；同日已用真实 Anyreceipt 识别 21 个输出字段，并通过正式服务的轮询入口完成台账回写与双向关联验证。Anyreceipt 的完整输出键及接口见[业务资料](../doc/Anyreceipt-API与完整返回结构.md)。
 
@@ -112,11 +112,11 @@ Anyreceipt 始终编入，启用识别时使用 `recognition.provider=anyreceipt
 
 ```bash
 go run ./cmd/approval-template -app bridge
-# 注入个人版 FEISHU_APP_ID / FEISHU_APP_SECRET 后执行创建
+# 确认 config.json 的 feishu 应用及模板设置后显式创建
 go run ./cmd/approval-template -app bridge -apply
 ```
 
-企业租户选 `-app enterprise`，使用独立的 `FEISHU_APPROVAL_APP_ID` / `FEISHU_APPROVAL_APP_SECRET`，不会回退到个人版凭证。工具不自动加载 `.env`，也不随服务启动运行。模板创建需要 `approval:definition` 或 `approval:approval` 写权限；2026-09-30 初次个人版测试因缺少写权限返回 `99991672`，开通权限后已成功创建「海外易商卡-接口测试」（Code：`EA296788-7BFC-47A2-91D7-6B7D8D2D0B11`），并通过正式客户端读取验证为 `ACTIVE`、一个明细、14 个子控件和 3 个流程节点。官方接口创建的模板不能停用或删除，正式创建前应审核模板配置。示例包含真实附件类型；完整约定见 [`internal/feishu/approval/README.md`](internal/feishu/approval/README.md)。创建审批实例和结果回写仍待接入。
+需要独立审批应用时选 `-app approval`，使用同一文件的 `feishu.approval_app.app_id/app_secret`，不会回退到桥接应用。模板请求来自 `feishu.approval_template`；工具也只读这一份 config.json，不随服务启动运行。模板创建需要 `approval:definition` 或 `approval:approval` 写权限；2026-09-30 初次个人版测试因缺少写权限返回 `99991672`，开通权限后已成功创建「海外易商卡-接口测试」（Code：`EA296788-7BFC-47A2-91D7-6B7D8D2D0B11`），并通过正式客户端读取验证为 `ACTIVE`、一个明细、14 个子控件和 3 个流程节点。官方接口创建的模板不能停用或删除，正式创建前应审核模板配置。示例包含真实附件类型；完整约定见 [`internal/feishu/approval/README.md`](internal/feishu/approval/README.md)。创建审批实例和结果回写仍待接入。
 
 人工审批准备现已支持 `preview-approval`、显式 `prepare-approval-files`/`retry-approval-files` 和 `prepare-approval`。最后一个命令核对整组选中行、全部原生表单和当前 AI，将实际 SDK 请求、精确业务值、来源版本及审核证据原子保存为 0600 私有审计文件，便于建单前 review；输出只有摘要，不上传或创建实例。完整配置、命令及限制见[审批配置](docs/approval-configuration.md#完整请求准备)和[阶段记录](docs/progress/2026-10-05-approval-requests.md)。当前企业配置和监督服务未启用原生审批，真实建单与人工结果闭环仍待完成。
 
@@ -191,7 +191,7 @@ cmd/approval-template/main.go    独立的一次性审批模板初始化工具
 internal/
 ├── app/                       共用识别、审核和人工审批业务编排
 ├── state/                     单主机持久化状态
-├── receiptcompat/             历史 OCR 数据兼容读取
+├── receiptcompat/             供应商结果标准化与台账读取
 ├── core/                      不调用外部服务的业务核心
 │   ├── invoice/                标准票据事实、识别接口及多票聚合
 │   ├── review/                 中立审核请求、结果和版本
@@ -199,19 +199,18 @@ internal/
 │   ├── dupcheck/               台账查重证据
 │   └── dedupe/                 变化去重边界
 ├── anyreceipt/                必编的 Anyreceipt 客户端
-│   ├── flow/                   旧识别流程兼容门面
-│   └── ledger/                 旧台账处理兼容门面
 ├── anthropic/                 可选的 Messages SDK 适配层
 │   ├── model/                  自有多模态识别器
 │   └── review/                 自有规则审核器
 ├── feishu/                    飞书产品边界
 │   ├── base/                   多维表格记录、附件、台账映射及审核结果写入
-│   │   └── events/             多维表格变更长连接
+│   │   └── events/             多维表格事件过滤与附件变更解码
+│   ├── events/                共用长连接传输
 │   └── approval/               原生审批模板、实例、明细映射和 gateway
 ├── seal/                      SealAI HTTP 客户端与 mock 回调
 │   ├── mapper/                 聚合结果转 SealAI 单据格式
-│   └── review/                 Seal 上传、提交适配与旧入口门面
-├── config/                    环境变量配置
+│   └── review/                 Seal 上传、映射与提交适配
+├── config/                    单份 JSON 读取与校验
 ├── httpserver/                基础 HTTP 服务
 └── version/                   构建版本变量
 configs/                       配置示例

@@ -32,17 +32,17 @@ DNS 已解析到 `118.31.4.210`。nginx 当前采用域名白名单，因此新�
 | 桥接服务 | `com.yingqing.twc-approval-debug` | `deploy/run-local-debug.py` |
 | 本机 FRP | `com.yingqing.twc-approval-frpc` | `data/public-debug/frpc.toml` |
 
-plist 位于 `~/Library/LaunchAgents/`。运行日志在 `data/public-debug/`，识别与审核状态在 `data/public-debug/state/`。FRP 配置、`.env` 及 `.env.public-debug` 权限为 0600，均被 Git 忽略。项目凭证统一保存在 `.env`；`.env.public-debug` 只保存调试参数，不重复或清空凭证。FRP 复用已有服务器鉴权，未修改密钥。
+plist 位于 `~/Library/LaunchAgents/`。运行日志在 data/public-debug，识别与审核状态在 config.json 的 runtime.state_dir（当前仍为 data/public-debug/state）。FRP 配置保持原有私有文件；这是独立转发程序的配置，不参与桥接业务配置加载。
 
-[运行包装器](../deploy/run-local-debug.py)明确依次加载 `configs/config.example.env`、`.env`、`.env.public-debug`，后者覆盖前者；不执行 shell 展开。Go 程序本身仍不自动读取 `.env`。
+[启动包装器](../deploy/run-local-debug.py)只定位根目录 config.json 并执行监督服务二进制，不读取 .env 或调试配置。原两个私有 env 文件已移入权限为 0700 的 data/private-config-archive-20261008，作为备份，不会参与加载。桥接唯一私有配置权限为 0600，Git 与 Docker 构建忽略。
 
-本机已在 `.env.public-debug` 选择 `BUSINESS_CONFIG_FILE=configs/business/enterprise-test.json`，三张业务表、字段、提供方和触发方式统一由[业务配置文件](business-configuration.md)决定；对应旧业务覆盖项已移出调试文件。当前有效设置与迁移前一致，状态目录继续使用。
+2026-10-08 已部署 public-debug-20261008-single-config：本地与公网 healthz/readyz/version 均为 200，WebSocket connected 与 Feishu long connection ready 已确认，8 个状态 JSON 内容不变。迁移保留 Base/Table/Field、密钥及轮询/自动送审策略，不创建新识别或审核任务。实际部署证据见[配置收敛记录](progress/2026-10-08-single-config.md)。
 
 2026-10-05 在同一业务文件启用 `review.include_transactions=true`。新审核准备和回写前核验会读取关联流水，事实和资料质量问题纳入审核版本；第三方流水只读，识别基线、已有任务和状态目录保持不变。真实读取及快照预览见[过程记录](progress/2026-10-05-transaction-review.md)。
 
-本调试进程启用 Seal 结果接收及 `RECEIPT_PROVIDER=anyreceipt`，`RECEIPT_TRIGGER_MODE=both`；首次扫描使用 `baseline`，已有附件不会因此批量识别。`REVIEW_RESULT_FIELD_IDS` 已映射七个专用文本列，真实审核结果保存到本地状态并回写 AI 建议，不覆盖人工审批或结算字段。字段映射与验收见[阶段过程记录](progress/2026-10-04-seal-review.md)。当前二进制使用 `no_anthropic` 构建，调试外部系统主线。
+本调试进程启用 Seal 结果接收及 `recognition.provider=anyreceipt`，`recognition.trigger_mode=both`；首次扫描使用 `baseline`，已有附件不会因此批量识别。`review.result_fields` 已映射七个专用文本列，真实审核结果保存到本地状态并回写 AI 建议，不覆盖人工审批或结算字段。字段映射与验收见[阶段过程记录](progress/2026-10-04-seal-review.md)。当前二进制使用 `no_anthropic` 构建，调试外部系统主线。
 
-按用户选择，本机有效送审方式为 `after_recognition`：识别并交付完整台账后自动送审。现在修改 JSON 的 `review.trigger_mode` 为 `manual` 并重启即可恢复仅手动提交；旧 `REVIEW_TRIGGER_MODE` 不覆盖选中的文件。规则和提供方选择保持独立。持久化意图及验收见[自动送审过程记录](progress/2026-10-04-automatic-review.md)。
+按用户选择，本机有效送审方式为 `after_recognition`：识别并交付完整台账后自动送审。现在修改 JSON 的 `review.trigger_mode` 为 `manual` 并重启即可恢复仅手动提交；旧环境变量不再参与加载。规则和提供方选择保持独立。持久化意图及验收见[自动送审过程记录](progress/2026-10-04-automatic-review.md)。
 
 ```bash
 # 查询进程
@@ -50,7 +50,7 @@ launchctl list com.yingqing.twc-approval-debug
 launchctl list com.yingqing.twc-approval-frpc
 
 # 修改 Go 代码后重新构建，再仅重启自己的服务
-go build -tags no_anthropic -ldflags '-X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version=public-debug-20261005-review-recovery' -o bin/twc-approval-public-debug ./cmd/server
+go build -tags no_anthropic -ldflags '-X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version=public-debug-20261008-single-config' -o bin/twc-approval-public-debug ./cmd/server
 launchctl kickstart -k gui/$(id -u)/com.yingqing.twc-approval-debug
 
 # 使用同一套私有配置与状态目录手动送审
