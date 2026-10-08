@@ -21,6 +21,7 @@ type Document struct {
 	Feishu     FeishuSettings     `json:"feishu" toml:"feishu"`
 	Anyreceipt AnyreceiptSettings `json:"anyreceipt" toml:"anyreceipt"`
 	Seal       SealSettings       `json:"seal" toml:"seal"`
+	Model      ModelSettings      `json:"model" toml:"model"`
 }
 
 type RuntimeSettings struct {
@@ -147,12 +148,12 @@ func LoadFile(path string) (Config, error) {
 		FeishuLogRawEvents: document.Feishu.LogRawEvents,
 		ReceiptPollInterval: poll, ReceiptPollStartup: fallback(document.Recognition.PollStartup, "baseline"),
 		AnyreceiptAPIKey:    document.Anyreceipt.APIKey,
-		ReceiptModelAPIKey:  document.Recognition.Model.APIKey,
-		ReceiptModelBaseURL: document.Recognition.Model.BaseURL, ReceiptModelName: document.Recognition.Model.Name,
+		ReceiptModelAPIKey:  document.Model.APIKey,
+		ReceiptModelBaseURL: document.Model.BaseURL, ReceiptModelName: document.Model.Name,
 		SealDocumentURL: document.Seal.DocumentURL, SealBearerToken: document.Seal.BearerToken,
 		SealCallbackToken:  document.Seal.CallbackToken,
-		ReviewModelAPIKey:  document.Review.Model.APIKey,
-		ReviewModelBaseURL: document.Review.Model.BaseURL, ReviewModelName: document.Review.Model.Name,
+		ReviewModelAPIKey:  document.Model.APIKey,
+		ReviewModelBaseURL: document.Model.BaseURL, ReviewModelName: document.Model.Name,
 		ReviewRulesFile: document.Review.RulesFile,
 	}
 	document.BusinessProfile.apply(&cfg)

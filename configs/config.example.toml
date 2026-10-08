@@ -43,17 +43,11 @@ log_level = "info"
 shutdown_timeout = "10s"
 state_dir = "data"
 
-# 仅对应 provider = "model" 时使用这组模型连接。
-[recognition.model]
+# 自有 Anthropic 兼容模型连接（当 recognition.provider = "model" 或 review.provider = "model" 时使用）。
+[model]
 api_key = ""
 base_url = "https://api.deepseek.com/anthropic"
 name = "deepseek-flash"
-
-# 仅对应 provider = "model" 时使用这组模型连接。
-[review.model]
-api_key = ""
-base_url = ""
-name = ""
 
 # 业务角色 transactions：文档 Base → 数据表 Table → 列 Field。
 [tables.transactions]

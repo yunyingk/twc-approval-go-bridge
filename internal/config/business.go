@@ -34,17 +34,15 @@ type TableBinding struct {
 }
 
 type RecognitionSettings struct {
-	Provider     string        `json:"provider" toml:"provider"`
-	TriggerMode  string        `json:"trigger_mode" toml:"trigger_mode"`
-	PollInterval string        `json:"poll_interval,omitempty" toml:"poll_interval,omitempty"`
-	PollStartup  string        `json:"poll_startup,omitempty" toml:"poll_startup,omitempty"`
-	Model        ModelSettings `json:"model" toml:"model"`
+	Provider     string `json:"provider" toml:"provider"`
+	TriggerMode  string `json:"trigger_mode" toml:"trigger_mode"`
+	PollInterval string `json:"poll_interval,omitempty" toml:"poll_interval,omitempty"`
+	PollStartup  string `json:"poll_startup,omitempty" toml:"poll_startup,omitempty"`
 }
 
 // ContextFields and ResultFields both belong to the reimbursement-details table.
 // The optional rules file is read only when the model reviewer is constructed.
 type ReviewSettings struct {
-	Model                  ModelSettings     `json:"model" toml:"model"`
 	RulesFile              string            `json:"rules_file,omitempty" toml:"rules_file,omitempty"`
 	ResubmitOnDetailChange bool              `json:"resubmit_on_detail_change,omitempty" toml:"resubmit_on_detail_change,omitempty"`
 	ResubmitOnSourceChange bool              `json:"resubmit_on_source_change,omitempty" toml:"resubmit_on_source_change,omitempty"`

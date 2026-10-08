@@ -78,7 +78,7 @@ func TestLoadRejectsInvalidReceiptTrigger(t *testing.T) {
 func TestLoadParsesLedgerFieldIDs(t *testing.T) {
 	d := Document{BusinessProfile: testProfile(), Feishu: FeishuSettings{AppCredentials: AppCredentials{AppID: "app", AppSecret: "secret"}}}
 	d.Recognition.Provider = "model"
-	d.Recognition.Model = ModelSettings{APIKey: "key", Name: "model"}
+	d.Model = ModelSettings{APIKey: "key", Name: "model"}
 	d.Tables.InvoiceLedger.Fields["source_key"] = "source-id"
 	cfg, err := loadDocument(t, d)
 	if err != nil {
