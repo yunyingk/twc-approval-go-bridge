@@ -64,26 +64,33 @@
       "access": "read_write",
       "base_token": "K5EhbDdEKa8wbJsTCpmcmeVwnHc",
       "table_id": "tblsCc7P4NRwJytk",
-      "fields": {
-        "source_key": "fldDYxci6g",
-        "raw_json": "fldFnFXBX2",
-        "unique_key": "fldwN62xku",
-        "title": "fld7zDhGgQ",
-        "invoice_number": "fld2n9chom",
-        "receipt_type": "fldvbLnBuR",
-        "business_category": "fldthjY1Xq",
-        "seller": "fld2W2npaf",
-        "buyer": "fld7lWZGzK",
-        "currency": "fld3j34HrN",
-        "pretax_amount": "fldjKawaXS",
-        "tax_amount": "fld6rDFkSs",
-        "tax_rate": "fld4908DL5",
-        "total_amount": "fld1ZDUvQM",
-        "issue_date": "fld23kZeY4",
-        "country": "fldazXlajz",
-        "ai_summary": "fld6rwXbaf",
-        "relation": "fldq9ViHzN"
-      }
+      "ordered_fields": [
+        { "order": 10,  "key": "bridge_unique_key",        "name": "发票唯一键",   "source": "bridge_computed", "id": "fldwN62xku" },
+        { "order": 20,  "key": "feishu_origin_attachment",  "name": "发票原件",     "source": "feishu_lookup",   "id": "fld2x4g6tg" },
+        { "order": 30,  "key": "feishu_detail_relation",    "name": "关联明细ID",   "source": "feishu_relation", "id": "fldq9ViHzN" },
+        { "order": 40,  "key": "ocr_seller",                "name": "开票方名称",   "source": "anyreceipt_ocr",  "id": "fld2W2npaf" },
+        { "order": 50,  "key": "ocr_total_amount",          "name": "含税总额",     "source": "anyreceipt_ocr",  "id": "fld1ZDUvQM" },
+        { "order": 60,  "key": "ocr_currency",              "name": "币种",         "source": "anyreceipt_ocr",  "id": "fld3j34HrN" },
+        { "order": 70,  "key": "ocr_issue_date",            "name": "开票日期",     "source": "anyreceipt_ocr",  "id": "fld23kZeY4" },
+        { "order": 80,  "key": "bridge_recognition_status", "name": "识别状态",     "source": "bridge_computed", "id": "fld7nFqUQP" },
+        { "order": 90,  "key": "ocr_summary",               "name": "AI消费概要",   "source": "anyreceipt_ocr",  "id": "fld6rwXbaf" },
+        { "order": 100, "key": "ocr_title",                "name": "发票摘要",     "source": "anyreceipt_ocr",  "id": "fld7zDhGgQ" },
+        { "order": 110, "key": "ocr_invoice_number",       "name": "发票号",       "source": "anyreceipt_ocr",  "id": "fld2n9chom" },
+        { "order": 120, "key": "ocr_country",              "name": "国家",         "source": "anyreceipt_ocr",  "id": "fldazXlajz" },
+        { "order": 130, "key": "ocr_receipt_type",         "name": "票据类型",     "source": "anyreceipt_ocr",  "id": "fldvbLnBuR" },
+        { "order": 140, "key": "ocr_business_category",    "name": "业务分类",     "source": "anyreceipt_ocr",  "id": "fldthjY1Xq" },
+        { "order": 150, "key": "ocr_pretax_amount",        "name": "不含税金额",   "source": "anyreceipt_ocr",  "id": "fldjKawaXS" },
+        { "order": 160, "key": "ocr_tax_amount",           "name": "税额",         "source": "anyreceipt_ocr",  "id": "fld6rDFkSs" },
+        { "order": 170, "key": "ocr_tax_rate",             "name": "税率",         "source": "anyreceipt_ocr",  "id": "fld4908DL5" },
+        { "order": 180, "key": "ocr_buyer",                "name": "购买方名称",   "source": "anyreceipt_ocr",  "id": "fld7lWZGzK" },
+        { "order": 190, "key": "audit_confidence",         "name": "置信度",       "source": "audit_rule",      "id": "fld4H6vHJ7" },
+        { "order": 200, "key": "audit_duplicate_flag",     "name": "重复标记",     "source": "audit_rule",      "id": "fld2oDijAP" },
+        { "order": 210, "key": "audit_tips",               "name": "审核提示",     "source": "audit_rule",      "id": "fld4RbS69W" },
+        { "order": 220, "key": "audit_whitelist_hit",      "name": "白名单命中",   "source": "audit_rule",      "id": "fld2Hm8A40" },
+        { "order": 230, "key": "audit_claim_status",       "name": "报销状态",     "source": "audit_rule",      "id": "fld1hiT8r6" },
+        { "order": 900, "key": "bridge_source_key",        "name": "识别来源键",   "source": "bridge_computed", "id": "fldDYxci6g" },
+        { "order": 910, "key": "bridge_raw_json",          "name": "识别原始JSON", "source": "anyreceipt_ocr",  "id": "fldFnFXBX2" }
+      ]
     }
   }
 }

@@ -38,6 +38,15 @@ type TablesSchema struct {
 	InvoiceLedger        TableBinding                `json:"invoice_ledger"`
 }
 
+// OrderedField defines an ordered field binding with explicit source and display metadata.
+type OrderedField struct {
+	Order  int    `json:"order"`
+	Key    string `json:"key"`
+	Name   string `json:"name"`
+	Source string `json:"source,omitempty"`
+	ID     string `json:"id"`
+}
+
 // ReimbursementDetailsBinding binds the reimbursement details table, including
 // regular fields, review context fields and AI review result write-back fields.
 type ReimbursementDetailsBinding struct {
@@ -46,7 +55,8 @@ type ReimbursementDetailsBinding struct {
 	Access        string            `json:"access"`
 	BaseToken     string            `json:"base_token"`
 	TableID       string            `json:"table_id"`
-	Fields        map[string]string `json:"fields"`
+	OrderedFields []OrderedField    `json:"ordered_fields,omitempty"`
+	Fields        map[string]string `json:"fields,omitempty"`
 	ContextFields map[string]string `json:"context_fields,omitempty"`
 	ResultFields  map[string]string `json:"result_fields,omitempty"`
 }
@@ -71,24 +81,26 @@ func (r ReimbursementDetailsBinding) DetailIDField() string {
 
 func (r ReimbursementDetailsBinding) TableBinding() TableBinding {
 	return TableBinding{
-		Name:      r.Name,
-		Source:    r.Source,
-		Access:    r.Access,
-		BaseToken: r.BaseToken,
-		TableID:   r.TableID,
-		Fields:    r.Fields,
+		Name:          r.Name,
+		Source:        r.Source,
+		Access:        r.Access,
+		BaseToken:     r.BaseToken,
+		TableID:       r.TableID,
+		OrderedFields: r.OrderedFields,
+		Fields:        r.Fields,
 	}
 }
 
 // Source describes who supplies records, not an HTTP endpoint or an authentication grant.
 // Access is the bridge's declared use; actual Feishu permissions still apply.
 type TableBinding struct {
-	Name      string            `json:"name" toml:"name"`
-	Source    string            `json:"source" toml:"source"`
-	Access    string            `json:"access" toml:"access"`
-	BaseToken string            `json:"base_token" toml:"base_token"`
-	TableID   string            `json:"table_id" toml:"table_id"`
-	Fields    map[string]string `json:"fields" toml:"fields"`
+	Name          string            `json:"name" toml:"name"`
+	Source        string            `json:"source" toml:"source"`
+	Access        string            `json:"access" toml:"access"`
+	BaseToken     string            `json:"base_token" toml:"base_token"`
+	TableID       string            `json:"table_id" toml:"table_id"`
+	OrderedFields []OrderedField    `json:"ordered_fields,omitempty"`
+	Fields        map[string]string `json:"fields,omitempty" toml:"fields"`
 }
 
 func (t TableBinding) AttachmentField() string {
@@ -153,10 +165,28 @@ func LoadTablesFile(path string) (TablesProfile, error) {
 	return profile, nil
 }
 
+func populateOrderedFields(fields *map[string]string, ordered []OrderedField) {
+	if len(ordered) == 0 {
+		return
+	}
+	if *fields == nil {
+		*fields = make(map[string]string, len(ordered))
+	}
+	for _, of := range ordered {
+		if of.Key != "" && of.ID != "" {
+			(*fields)[of.Key] = of.ID
+		}
+	}
+}
+
 func (tp *TablesProfile) validate() error {
 	if tp.Version != 1 || strings.TrimSpace(tp.Name) == "" {
 		return fmt.Errorf("version must be 1 and name must be set")
 	}
+	populateOrderedFields(&tp.Tables.Transactions.Fields, tp.Tables.Transactions.OrderedFields)
+	populateOrderedFields(&tp.Tables.ReimbursementDetails.Fields, tp.Tables.ReimbursementDetails.OrderedFields)
+	populateOrderedFields(&tp.Tables.InvoiceLedger.Fields, tp.Tables.InvoiceLedger.OrderedFields)
+
 	roles := []struct {
 		role, access string
 		table        TableBinding
@@ -192,9 +222,18 @@ func (tp *TablesProfile) validate() error {
 		// Reject an unsupported split before any worker or external write starts.
 		return fmt.Errorf("reimbursement_details and invoice_ledger must currently use the same Base; cross-Base ledger delivery is not implemented")
 	}
+	ledger := tp.Tables.InvoiceLedger.Fields
+	sourceKey := ledger["bridge_source_key"]
+	if sourceKey == "" {
+		sourceKey = ledger["source_key"]
+	}
+	rawJSON := ledger["bridge_raw_json"]
+	if rawJSON == "" {
+		rawJSON = ledger["raw_json"]
+	}
 	if tp.Tables.Transactions.Fields["transaction_id"] == "" ||
-		tp.Tables.ReimbursementDetails.Fields["attachment"] == "" ||
-		tp.Tables.InvoiceLedger.Fields["source_key"] == "" || tp.Tables.InvoiceLedger.Fields["raw_json"] == "" {
+		tp.Tables.ReimbursementDetails.AttachmentField() == "" ||
+		sourceKey == "" || rawJSON == "" {
 		return fmt.Errorf("transaction_id, attachment and ledger source_key/raw_json bindings are required")
 	}
 	if err := validateFieldMapping("review.context_fields", tp.Tables.ReimbursementDetails.ContextFields); err != nil {

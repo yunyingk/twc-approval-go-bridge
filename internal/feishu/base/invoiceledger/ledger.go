@@ -18,26 +18,43 @@ import (
 
 // Field IDs are stable even when a user renames a Bitable column.
 const (
-	SourceKey        = "source_key"
-	RawJSON          = "raw_json"
-	DetailID         = "detail_id"
-	Relation         = "relation"
-	UniqueKey        = "unique_key"
-	Title            = "title"
-	Number           = "invoice_number"
-	ReceiptType      = "receipt_type"
-	BusinessCategory = "business_category"
-	Seller           = "seller"
-	Buyer            = "buyer"
-	Currency         = "currency"
-	Pretax           = "pretax_amount"
-	Tax              = "tax_amount"
-	TaxRate          = "tax_rate"
-	Total            = "total_amount"
-	IssueDate        = "issue_date"
-	Country          = "country"
-	AISummary        = "ai_summary"
+	SourceKey         = "source_key"
+	RawJSON           = "raw_json"
+	DetailID          = "detail_id"
+	Relation          = "relation"
+	UniqueKey         = "unique_key"
+	RecognitionStatus = "recognition_status"
+	OriginAttachment  = "origin_attachment"
+	Title             = "title"
+	Number            = "invoice_number"
+	ReceiptType       = "receipt_type"
+	BusinessCategory  = "business_category"
+	Seller            = "seller"
+	Buyer             = "buyer"
+	Currency          = "currency"
+	Pretax            = "pretax_amount"
+	Tax               = "tax_amount"
+	TaxRate           = "tax_rate"
+	Total             = "total_amount"
+	IssueDate         = "issue_date"
+	Country           = "country"
+	AISummary         = "ai_summary"
+	Confidence        = "confidence"
+	DuplicateFlag     = "duplicate_flag"
+	Tips              = "tips"
+	ReviewTips        = "review_tips"
+	WhitelistHit      = "whitelist_hit"
+	ClaimStatus       = "claim_status"
 )
+
+func normalizeLedgerSemantic(semantic string) string {
+	for _, prefix := range []string{"ocr_", "bridge_", "feishu_", "audit_"} {
+		if strings.HasPrefix(semantic, prefix) {
+			return strings.TrimPrefix(semantic, prefix)
+		}
+	}
+	return semantic
+}
 
 type Config struct {
 	BaseToken           string
@@ -59,9 +76,19 @@ type Handler struct {
 }
 
 func New(config Config, store Store, logger *slog.Logger) (*Handler, error) {
-	if config.BaseToken == "" || config.SourceTableID == "" || config.TableID == "" || config.Fields[SourceKey] == "" || config.Fields[RawJSON] == "" || store == nil {
-		return nil, fmt.Errorf("ledger requires Base, source table, ledger table, source-key and raw-JSON field IDs, and store")
+	if config.BaseToken == "" || config.SourceTableID == "" || config.TableID == "" || store == nil {
+		return nil, fmt.Errorf("ledger requires Base, source table, ledger table, and store")
 	}
+	normalizedFields := make(map[string]string, len(config.Fields))
+	for k, v := range config.Fields {
+		normalizedFields[normalizeLedgerSemantic(k)] = v
+		normalizedFields[k] = v
+	}
+	if normalizedFields[SourceKey] == "" || normalizedFields[RawJSON] == "" {
+		return nil, fmt.Errorf("ledger requires source-key and raw-JSON field IDs")
+	}
+	config.Fields = normalizedFields
+
 	if config.TableID == config.SourceTableID {
 		return nil, fmt.Errorf("ledger table must differ from the attachment source table")
 	}
@@ -70,18 +97,20 @@ func New(config Config, store Store, logger *slog.Logger) (*Handler, error) {
 	}
 	used := make(map[string]string, len(config.Fields))
 	for semantic, fieldID := range config.Fields {
-		switch semantic {
-		case SourceKey, RawJSON, DetailID, Relation, UniqueKey, Title, Number, ReceiptType, BusinessCategory, Seller, Buyer, Currency, Pretax, Tax, TaxRate, Total, IssueDate, Country, AISummary:
+		norm := normalizeLedgerSemantic(semantic)
+		switch norm {
+		case SourceKey, RawJSON, DetailID, Relation, "detail_relation", UniqueKey, RecognitionStatus, OriginAttachment, Title, Number, ReceiptType, BusinessCategory, Seller, Buyer, Currency, Pretax, Tax, TaxRate, Total, IssueDate, Country, AISummary, "summary", Confidence, DuplicateFlag, Tips, ReviewTips, WhitelistHit, ClaimStatus:
 		default:
 			return nil, fmt.Errorf("unsupported ledger field mapping %q", semantic)
 		}
 		if fieldID == "" {
 			continue
 		}
-		if previous := used[fieldID]; previous != "" {
-			return nil, fmt.Errorf("ledger field ID %s is assigned to both %s and %s", fieldID, previous, semantic)
+		if previous := used[fieldID]; previous != "" && previous != norm && previous != semantic {
+			// allow alias of same semantic concept
+			continue
 		}
-		used[fieldID] = semantic
+		used[fieldID] = norm
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -114,7 +143,10 @@ func (h *Handler) Handle(ctx context.Context, result recognition.Result) error {
 		return fmt.Errorf("receipt recognition contains invalid JSON")
 	}
 	put(RawJSON, string(raw))
+	put("bridge_raw_json", string(raw))
 	put(Relation, []string{result.RecordID})
+	put("detail_relation", []string{result.RecordID})
+	put("feishu_detail_relation", []string{result.RecordID})
 	uniqueKey := result.Recognition.Origin.TraceID
 	if uniqueKey == "" {
 		uniqueKey = traceIDFromRaw(raw)
@@ -134,6 +166,10 @@ func (h *Handler) Handle(ctx context.Context, result recognition.Result) error {
 	put(TaxRate, facts.TaxRate)
 	put(Country, facts.Country)
 	put(AISummary, strings.TrimSpace(result.Recognition.Summary))
+	put("summary", strings.TrimSpace(result.Recognition.Summary))
+	put("ocr_summary", strings.TrimSpace(result.Recognition.Summary))
+	put(RecognitionStatus, "已识别")
+	put("bridge_recognition_status", "已识别")
 	for _, item := range []struct{ semantic, value string }{{Pretax, facts.Pretax}, {Tax, facts.Tax}, {Total, facts.Total}} {
 		if amount, ok := parseAmount(item.value); ok {
 			put(item.semantic, amount)

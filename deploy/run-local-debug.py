@@ -9,7 +9,7 @@ import sys
 if __name__ == "__main__":
     root = Path(__file__).resolve().parent.parent
     environment = dict(os.environ)
-    environment.setdefault("CONFIG_FILE", str(root / "config.json"))
-    binary = root / "bin/twc-approval-public-debug"
+    environment.setdefault("CONFIG_FILE", str(root / "configs/config.toml"))
+    binary = root / "bin/twc-approval-go-bridge"
     os.chdir(root)
     os.execve(binary, [str(binary), *sys.argv[1:]], environment)

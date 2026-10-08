@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base"
@@ -85,6 +86,7 @@ func checkBusiness(ctx context.Context, profile *config.BusinessProfile, inspect
 			links["invoice_relation"] = profile.Tables.InvoiceLedger.TableID
 		case "invoice_ledger":
 			links["relation"] = profile.Tables.ReimbursementDetails.TableID
+			links["feishu_detail_relation"] = profile.Tables.ReimbursementDetails.TableID
 		case "transactions":
 			if table.BaseToken == profile.Tables.ReimbursementDetails.BaseToken {
 				links["detail_relation"] = profile.Tables.ReimbursementDetails.TableID
@@ -121,13 +123,21 @@ func checkFieldType(role, semantic string, field base.TableField) error {
 			types = []int{1}
 		}
 	case "invoice_ledger":
-		switch semantic {
-		case "relation":
+		norm := semantic
+		for _, p := range []string{"ocr_", "bridge_", "feishu_", "audit_"} {
+			norm = strings.TrimPrefix(norm, p)
+		}
+		switch norm {
+		case "relation", "detail_relation":
 			types = []int{18, 21}
-		case "pretax_amount", "tax_amount", "tax_rate", "total_amount":
+		case "origin_attachment":
+			types = []int{17, 19}
+		case "pretax_amount", "tax_amount", "tax_rate", "total_amount", "confidence":
 			types = []int{1, 2}
 		case "issue_date":
 			types = []int{5}
+		case "recognition_status", "duplicate_flag", "whitelist_hit", "claim_status":
+			types = []int{1, 3}
 		default:
 			types = []int{1}
 		}

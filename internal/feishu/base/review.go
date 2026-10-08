@@ -28,9 +28,32 @@ type ReviewSource struct {
 	transactions                                                       *TransactionConfig
 }
 
+func (s *ReviewSource) ledgerField(semantic string) string {
+	if id := s.ledgerFields[semantic]; id != "" {
+		return id
+	}
+	for _, p := range []string{"ocr_", "bridge_", "feishu_", "audit_"} {
+		if id := s.ledgerFields[p+semantic]; id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
 func NewReviewSource(appID, appSecret, base, detailTable, attachmentFieldID, detailIDFieldID, ledgerTable string, ledgerFields map[string]string) (*ReviewSource, error) {
+	getField := func(semantic string) string {
+		if id := ledgerFields[semantic]; id != "" {
+			return id
+		}
+		for _, p := range []string{"ocr_", "bridge_", "feishu_", "audit_"} {
+			if id := ledgerFields[p+semantic]; id != "" {
+				return id
+			}
+		}
+		return ""
+	}
 	if appID == "" || appSecret == "" || base == "" || detailTable == "" || attachmentFieldID == "" || ledgerTable == "" ||
-		ledgerFields["source_key"] == "" || ledgerFields["raw_json"] == "" || ledgerFields["invoice_number"] == "" {
+		getField("source_key") == "" || getField("raw_json") == "" || getField("invoice_number") == "" {
 		return nil, fmt.Errorf("review requires Feishu credentials and detail, attachment and ledger field IDs")
 	}
 	return &ReviewSource{client: NewLedgerClient(appID, appSecret), base: base, detailTable: detailTable,
@@ -109,7 +132,7 @@ func (s *ReviewSource) createdAt(ctx context.Context, recordID string) (time.Tim
 }
 
 func (s *ReviewSource) ReadLedgerEntry(ctx context.Context, sourceKey string) (review.LedgerEntry, error) {
-	rows, names, err := s.search(ctx, s.ledgerFields["source_key"], sourceKey, 2)
+	rows, names, err := s.search(ctx, s.ledgerField("source_key"), sourceKey, 2)
 	if err != nil {
 		return review.LedgerEntry{}, err
 	}
@@ -124,7 +147,7 @@ func (s *ReviewSource) ReadLedgerEntry(ctx context.Context, sourceKey string) (r
 }
 
 func (s *ReviewSource) decodeLedgerEntry(row reviewRow, names map[string]string) (review.LedgerEntry, error) {
-	rawJSON := fieldText(row.Fields, names[s.ledgerFields["raw_json"]])
+	rawJSON := fieldText(row.Fields, names[s.ledgerField("raw_json")])
 	if rawJSON == "" {
 		return review.LedgerEntry{}, fmt.Errorf("%w: OCR JSON is empty", review.ErrLedgerIncomplete)
 	}
@@ -142,7 +165,7 @@ func (s *ReviewSource) decodeLedgerEntry(row reviewRow, names map[string]string)
 		"tax_rate": &facts.TaxRate, "total_amount": &facts.Total, "country": &facts.Country,
 	}
 	for semantic, target := range values {
-		if id := s.ledgerFields[semantic]; id != "" {
+		if id := s.ledgerField(semantic); id != "" {
 			name := names[id]
 			if name == "" {
 				return review.LedgerEntry{}, fmt.Errorf("configured ledger fact field %s is missing", semantic)
@@ -150,7 +173,7 @@ func (s *ReviewSource) decodeLedgerEntry(row reviewRow, names map[string]string)
 			*target = fieldText(row.Fields, name)
 		}
 	}
-	if id := s.ledgerFields["issue_date"]; id != "" {
+	if id := s.ledgerField("issue_date"); id != "" {
 		name := names[id]
 		if name == "" {
 			return review.LedgerEntry{}, fmt.Errorf("configured ledger date field is missing")
@@ -161,12 +184,12 @@ func (s *ReviewSource) decodeLedgerEntry(row reviewRow, names map[string]string)
 	facts.Currency = strings.ToUpper(facts.Currency)
 	recognized.Facts = &facts
 	return review.LedgerEntry{RecordID: row.ID, Recognition: recognized,
-		Facts: dupcheck.Invoice{RecordID: row.ID, SourceKey: fieldText(row.Fields, names[s.ledgerFields["source_key"]]), Number: facts.Number, Seller: facts.Seller, Type: facts.ReceiptType,
+		Facts: dupcheck.Invoice{RecordID: row.ID, SourceKey: fieldText(row.Fields, names[s.ledgerField("source_key")]), Number: facts.Number, Seller: facts.Seller, Type: facts.ReceiptType,
 			IssueDate: facts.IssueDate, Total: facts.Total, Currency: facts.Currency}}, nil
 }
 
 func (s *ReviewSource) FindInvoiceCandidates(ctx context.Context, number string) ([]dupcheck.Invoice, error) {
-	rows, names, err := s.search(ctx, s.ledgerFields["invoice_number"], number, 100)
+	rows, names, err := s.search(ctx, s.ledgerField("invoice_number"), number, 100)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +253,7 @@ func (s *ReviewSource) search(ctx context.Context, fieldID, value string, maxRow
 }
 
 func (s *ReviewSource) invoiceFacts(row reviewRow, names map[string]string) dupcheck.Invoice {
-	get := func(semantic string) string { return fieldText(row.Fields, names[s.ledgerFields[semantic]]) }
+	get := func(semantic string) string { return fieldText(row.Fields, names[s.ledgerField(semantic)]) }
 	return dupcheck.Invoice{RecordID: row.ID, SourceKey: get("source_key"), Number: get("invoice_number"),
 		Seller: get("seller"), Type: get("receipt_type"), IssueDate: ledgerIssueDate(get("issue_date")),
 		Total: get("total_amount"), Currency: strings.ToUpper(get("currency"))}

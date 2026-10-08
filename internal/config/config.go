@@ -220,7 +220,15 @@ func LoadFile(path string) (Config, error) {
 	detail := cfg.Business.Tables.ReimbursementDetails
 	ledger := cfg.Business.Tables.InvoiceLedger
 	if cfg.ReceiptProvider() != "" {
-		if ledger.TableID != "" && (ledger.Fields["source_key"] == "" || ledger.Fields["raw_json"] == "") {
+		sourceKey := ledger.Fields["bridge_source_key"]
+		if sourceKey == "" {
+			sourceKey = ledger.Fields["source_key"]
+		}
+		rawJSON := ledger.Fields["bridge_raw_json"]
+		if rawJSON == "" {
+			rawJSON = ledger.Fields["raw_json"]
+		}
+		if ledger.TableID != "" && (sourceKey == "" || rawJSON == "") {
 			return Config{}, fmt.Errorf("ledger writing requires source_key and raw_json field IDs")
 		}
 		switch cfg.ReceiptTriggerMode() {
@@ -233,7 +241,7 @@ func LoadFile(path string) (Config, error) {
 		default:
 			return Config{}, fmt.Errorf("recognition.poll_startup must be baseline or process")
 		}
-		if !cfg.FeishuEnabled() || detail.BaseToken == "" || detail.TableID == "" || detail.Fields["attachment"] == "" {
+		if !cfg.FeishuEnabled() || detail.BaseToken == "" || detail.TableID == "" || detail.AttachmentField() == "" {
 			return Config{}, fmt.Errorf("receipt recognition requires Feishu credentials and Base, Table and attachment field IDs")
 		}
 		switch cfg.ReceiptProvider() {
