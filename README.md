@@ -106,27 +106,9 @@ Anyreceipt 始终编入，启用识别时使用 `recognition.provider=anyreceipt
 
 以下保留 2026-09-29 的旧环境排查记录；当前企业测试环境的成功投递证据见[飞书事件联调](docs/feishu-event-verification.md)。旧测试 Base 已用项目应用身份订阅云文档事件；开放平台已添加「多维表格记录变更」事件并选用长连接。2026-09-29 在独立测试行 `reczz28HJVvAm8NM`（`明细ID=OCR-TEST-20260929-175848`）修改记录后，开发者后台事件日志暂无投递记录；应用发布新版本后再次通过 API 修改并恢复测试行，长连接已就绪但监听器仍未收到事件，仍需排查投递链路。该测试行保留了一张样本 JPEG 附件；同日已用真实 Anyreceipt 识别 21 个输出字段，并通过正式服务的轮询入口完成台账回写与双向关联验证。Anyreceipt 的完整输出键及接口见[业务资料](../doc/Anyreceipt-API与完整返回结构.md)。
 
-## 飞书审批模板初始化
+## 飞书原生审批状态（已归档）
 
-独立的一次性工具使用应用身份创建原生审批模板；表单和审批流程来自 JSON 配置，默认只校验，加 `-apply` 才发送创建请求：
-
-```bash
-go run ./cmd/approval-template -app bridge -file templates/feishu/approval-template.example.json
-# 确认 config.toml 的 feishu 应用和独立模板文件后显式创建
-go run ./cmd/approval-template -app bridge -file templates/feishu/approval-template.example.json -apply
-```
-
-需要独立审批应用时选 `-app approval`，使用同一文件的 `feishu.approval_app.app_id/app_secret`，不会回退到桥接应用。模板请求来自 `-file` 指定的独立 JSON；默认校验不读取主配置，只有 `-apply` 创建时才读取 config.toml 的凭证，不随服务启动运行。模板创建需要 `approval:definition` 或 `approval:approval` 写权限；2026-09-30 初次个人版测试因缺少写权限返回 `99991672`，开通权限后已成功创建「海外易商卡-接口测试」（Code：`EA296788-7BFC-47A2-91D7-6B7D8D2D0B11`），并通过正式客户端读取验证为 `ACTIVE`、一个明细、14 个子控件和 3 个流程节点。官方接口创建的模板不能停用或删除，正式创建前应审核模板配置。示例包含真实附件类型；完整约定见 [`internal/feishu/approval/README.md`](internal/feishu/approval/README.md)。创建审批实例和结果回写仍待接入。
-
-人工审批准备现已支持 `preview-approval`、显式 `prepare-approval-files`/`retry-approval-files` 和 `prepare-approval`。最后一个命令核对整组选中行、全部原生表单和当前 AI，将实际 SDK 请求、精确业务值、来源版本及审核证据原子保存为 0600 私有审计文件，便于建单前 review；输出只有摘要，不上传或创建实例。完整配置、命令及限制见[审批配置](docs/approval-configuration.md#完整请求准备)和[阶段记录](docs/progress/2026-10-05-approval-requests.md)。当前企业配置和监督服务未启用原生审批，真实建单与人工结果闭环仍待完成。
-
-后续已补 `submit-approval <preparation_id>` 显式建单、`approval-status` 本地查看、`check-approval` 原 UUID 对账及 `abandon-approval` 放弃未发送预约。先整批重核并原子预约，再逐组领取发送；每份尝试固定原审计和请求摘要，部分失败后保留已创建与未发送状态，未知不重发。隔离官方 SDK HTTP 联测通过；企业配置/监督服务仍未启用，未真实建单、未接人工结果交付。命令与边界见[建单与恢复](docs/approval-configuration.md#显式建单与恢复)和[阶段记录](docs/progress/2026-10-05-approval-submit.md)。
-
-现已新增 `retry-approval <preparation_id>`：修复明确拒绝后，重核原整批并保留同 UUID/审计请求显式再试，原失败证据及每轮历史不被查询错误覆盖。确切同调用方的未发送证明可恢复保存错误；未知、冲突或证明保存失败仍先对账。隔离 SDK、并发及故障测试通过，企业配置/监督服务尚未启用；人工结果闭环继续后续实施，见[重试说明](docs/approval-configuration.md#显式重试原请求)和[过程记录](docs/progress/2026-10-05-approval-retry.md)。
-
-可选 `approval.observation` 现已接服务：原生审批事件先持久化查询意图，再按原应用/UUID 保存真实状态，定时补查离线变化和后续撤销。同应用共用一条长连接，独立审批应用不回退；显式 `subscribe-approval-events` 订阅已配置模板，启动不会自动订阅。关闭创建仍可监听历史单。当前企业配置/监督服务未启用，未验收真实审批事件；Base/Seal 人工结果交付仍待实现。配置见[监听说明](docs/approval-configuration.md#原生审批结果监听)，验证见[监听记录](docs/progress/2026-10-05-approval-observation.md)。
-
-结果观察现已保存中立流程证据快照：任务、原应用身份、时间线、评论与附件元数据按内容版本仅追加，最新失败或仅状态查询不把旧证据当当前。明确区分唯一人工决定、自动动作与多人歧义；命令仅返回安全摘要。企业配置/服务仍未启用，身份姓名邮箱、原生表单对照与 Base/Seal 人工结果交付继续实现，见[结果说明](docs/approval-configuration.md#人工结果证据快照)和[结果记录](docs/progress/2026-10-05-approval-results.md)。
+飞书原生审批扩展（含审批模板初始化、`preview-approval`、`submit-approval`、实例监听等 13,300+ 行实现）已整体归档封存于独立分支 `archive/feishu-native-approval`（版本标签 `archive/native-approval-20261008`）。主线服务保持轻量纯粹的海外小票 OCR 识别与 AI 审核回写，详见 [归档记录](docs/progress/2026-10-08-archive-native-approval.md)。
 
 ## 业务边界
 
@@ -134,14 +116,14 @@ go run ./cmd/approval-template -app bridge -file templates/feishu/approval-templ
 | --- | --- | --- |
 | `internal/core/dedupe/` | 判断变化是否重复；由持久化实现提供原子领取 | 接口已定义，键规则和存储待定 |
 | `internal/feishu/base/events/` | 接收多维表格变更事件 | 已在企业测试 Base 验证真实附件事件触发识别和台账回写 |
-| `internal/feishu/events/` | 共用 SDK 长连接、事件格式与原生审批通知适配 | 支持同应用多个事件注册；审批查询意图可持久化恢复，真实审批事件尚未验收 |
+| `internal/feishu/events/` | 共用 SDK 长连接与事件格式适配 | 支持同应用多个事件注册 |
 | `internal/feishu/base/records.go`、`ledger.go` | 多维表格记录边界与发票台账新增/更新 | 台账写入已实现，其他记录操作仍待业务映射 |
-| `internal/feishu/approval/` | 飞书原生审批模板与单据 | 模板、实例、实时明细映射及共用用例 gateway 已实现；真实业务接入仍未启用 |
+| `internal/feishu/approval/` | 飞书原生审批模板与单据 | 已归档至分支 `archive/feishu-native-approval` |
 | `internal/feishu/base/permissions.go` | 多维表格记录权限分类与锁定 | 接口已定义，飞书能力待验证 |
 | `internal/seal/` | Seal Webhook 附件上传、单据提交和可选结果接收 | 已通过测试通道提交和公网真实回调验收 |
 | `internal/core/dupcheck/` | 从发票台账事实产生查重候选证据 | 首版按票号、开票方、票据类型比对 |
 | `internal/core/invoice/` | 识别接口、结果结构和多票聚合 | 已实现，不依赖外部服务 |
-| `internal/core/approval/`、`internal/app/approval/` | 人工审批分组、当前 AI 版本门禁、预约及恢复 | 共用用例、持久化和类型化来源预览已实现；真实建单及人工交付仍待接入 |
+| `internal/core/approval/`、`internal/app/approval/` | 人工审批分组、当前 AI 版本门禁、预约及恢复 | 已归档至分支 `archive/feishu-native-approval` |
 | `internal/anyreceipt/` | 必编的 Anyreceipt OCR 客户端及标准识别流程 | 已通过真实附件联调 |
 | `internal/app/recognition/` | 共用识别任务、轮询及持久化交付 | 已实现；旧包装已移除 |
 | `internal/feishu/base/invoiceledger/` | 标准票据事实映射与发票台账写入 | 已实现；台账代码仅由此目录负责 |
