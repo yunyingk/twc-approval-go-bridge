@@ -18,8 +18,8 @@
 - 本服务使用飞书**应用身份**（`tenant_access_token`），凭 `FEISHU_APP_ID` 和 `FEISHU_APP_SECRET` 访问获授权的资源；不要为本项目发起用户 OAuth、要求用户扫码，或把用户身份的 `lark-cli --as user` 当作服务权限验证。
 - 读取线上多维表格时，以项目应用身份和该应用的资源授权为准。先只读验证 Base、Table、字段及少量记录；权限不足时核对应用权限和资源授权，不擅自切换为用户身份。
 - 多维表格记录变更事件需同时核对后台的应用身份与用户身份 `bitable:app` 权限，以及目标 Base 的云文档订阅；开通用户身份权限不等于运行时改用用户 OAuth。具体要求和企业测试验收见 [飞书事件联调](docs/feishu-event-verification.md)。
-- 2026-10-08 起运行只读一份私有 `config.json`（0600、Git 忽略），涵盖业务、凭证、服务参数及自有规则；不输出完整配置或密钥。
-- `CONFIG_FILE` 仅选择该文件的路径；不合并 `.env`、调试文件、旧业务环境变量或规则文件。仓库只保留 `configs/config.example.json` 完整脱敏示例。历史配置已私有归档，不作为后备入口。
+- 2026-10-08 起运行只读一份私有 `config.toml`（0600、Git 忽略），涵盖业务、凭证和服务参数；模板及自有审核规则各自独立保存；不输出完整配置或密钥。
+- `CONFIG_FILE` 仅选择该文件的路径；不合并 `.env`、调试文件或旧业务环境变量。仓库主配置示例为 `configs/config.example.toml`；仅自有审核加载 `review.rules_file`，Seal 不读取本地规则。历史配置已私有归档，不作为后备入口。
 - 上级 `doc/` 已记录测试用 Base ID、Table ID、字段和审批模板。这些是已有线索；实现前仍要核对线上结构，不能把历史方案中的示例当作当前接口契约。
 
 ## 实现边界与验证
@@ -57,5 +57,7 @@
 ## 单文件配置与迁移收尾（2026-10-08）
 
 - 用户要求未上线阶段不要承担旧入口兼容债务，所有项目运行设置收敛到一份配置。`24d5489` 的供应商编排迁移与 `cd45de0` 的业务配置迁移是旧包装/双配置的来源；它们不是线上版本兼容要求。
-- 当前加载、部署及命令以 `config.json` 和 `docs/business-configuration.md` 为准，上文各历史日期的 `.env`/BUSINESS_CONFIG_FILE 描述只作过程证据。Anyreceipt 旧 flow/ledger、Seal Service 包装及 submit-seal 已移除；submit-review 始终版本化并持久化。
+- 当前代码加载及命令以 `config.toml` 和 `docs/business-configuration.md` 为准，上文各历史日期的 `.env`/BUSINESS_CONFIG_FILE 描述只作过程证据。Anyreceipt 旧 flow/ledger、Seal Service 包装及 submit-seal 已移除；submit-review 始终版本化并持久化。
 - 两种构建与提供方独立切换保留；Seal 规则由外部系统管理，自有规则位于 review.rules。没有开启新的人工审批或财务业务。
+
+- 2026-10-08 按用户要求改用 TOML 并独立模板/规则。本阶段只完成配置改动和验证，监督服务仍为前阶段 JSON 二进制与包装器；切换需同步部署，见 docs/progress/2026-10-08-config-toml.md。用户要求此后移交 Gemini review，不再自动扩展。

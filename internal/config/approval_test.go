@@ -2,6 +2,8 @@ package config
 
 import (
 	"encoding/json"
+
+	"github.com/pelletier/go-toml/v2"
 	"os"
 	"path/filepath"
 	"testing"
@@ -203,8 +205,8 @@ func TestApprovalDraftAndCredentialSelectionNeverFallBack(t *testing.T) {
 	var raw map[string]any
 	json.Unmarshal(encoded, &raw)
 	raw["approval"].(map[string]any)["app_secret"] = "MUST_NOT_LOAD"
-	encoded, _ = json.Marshal(raw)
-	path := filepath.Join(t.TempDir(), "invalid.json")
+	encoded, _ = toml.Marshal(raw)
+	path := filepath.Join(t.TempDir(), "invalid.toml")
 	os.WriteFile(path, encoded, 0600)
 	if _, err := LoadFile(path); err == nil {
 		t.Fatal("approval secret accepted in business file")

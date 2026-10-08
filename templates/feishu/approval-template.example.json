@@ -1,0 +1,122 @@
+{
+  "approval_name": "@i18n@approval_name",
+  "description": "@i18n@description",
+  "viewers": [
+    {
+      "viewer_type": "TENANT"
+    }
+  ],
+  "form": {
+    "form_content": "[{\"id\":\"details\",\"name\":\"@i18n@details\",\"type\":\"fieldList\",\"required\":true,\"value\":[{\"id\":\"cardholder\",\"name\":\"@i18n@cardholder\",\"type\":\"contact\",\"required\":true,\"value\":{\"ignore\":false,\"multi\":false}},{\"id\":\"card_last4\",\"name\":\"@i18n@card_last4\",\"type\":\"input\",\"required\":true},{\"id\":\"transaction_id\",\"name\":\"@i18n@transaction_id\",\"type\":\"input\",\"required\":true},{\"id\":\"transaction_time\",\"name\":\"@i18n@transaction_time\",\"type\":\"date\",\"required\":true,\"value\":\"YYYY-MM-DD hh:mm\"},{\"id\":\"merchant\",\"name\":\"@i18n@merchant\",\"type\":\"textarea\",\"required\":true},{\"id\":\"transaction_amount\",\"name\":\"@i18n@transaction_amount\",\"type\":\"amount\",\"required\":true,\"value\":\"CNY\",\"option\":{\"currencyRange\":[\"CNY\",\"USD\",\"EUR\",\"MYR\",\"HKD\"],\"keepDecimalPlaces\":2}},{\"id\":\"booked_amount\",\"name\":\"@i18n@booked_amount\",\"type\":\"amount\",\"required\":true,\"value\":\"CNY\",\"option\":{\"currencyRange\":[\"CNY\"],\"keepDecimalPlaces\":2}},{\"id\":\"transaction_region\",\"name\":\"@i18n@transaction_region\",\"type\":\"textarea\",\"required\":true},{\"id\":\"transaction_type\",\"name\":\"@i18n@transaction_type\",\"type\":\"input\",\"required\":true},{\"id\":\"project\",\"name\":\"@i18n@project\",\"type\":\"input\",\"required\":true},{\"id\":\"expense_category\",\"name\":\"@i18n@expense_category\",\"type\":\"input\",\"required\":true},{\"id\":\"invoice_files\",\"name\":\"@i18n@invoice_files\",\"type\":\"attachmentV2\",\"required\":false},{\"id\":\"supplier_allowlist\",\"name\":\"@i18n@supplier_allowlist\",\"type\":\"input\",\"required\":true},{\"id\":\"invoice_duplicate\",\"name\":\"@i18n@invoice_duplicate\",\"type\":\"input\",\"required\":true}],\"option\":{\"inputType\":\"LIST\",\"printType\":\"LIST\"}}]"
+  },
+  "node_list": [
+    {
+      "id": "START"
+    },
+    {
+      "id": "REVIEW",
+      "name": "@i18n@review",
+      "node_type": "AND",
+      "approver": [
+        {
+          "type": "Free"
+        }
+      ],
+      "approver_chosen_multi": false,
+      "approver_chosen_range": [
+        {
+          "type": "ALL"
+        }
+      ]
+    },
+    {
+      "id": "END"
+    }
+  ],
+  "config": {
+    "can_update_viewer": true,
+    "can_update_form": true,
+    "can_update_process": true,
+    "can_update_revert": true
+  },
+  "i18n_resources": [
+    {
+      "locale": "zh-CN",
+      "is_default": true,
+      "texts": [
+        {
+          "key": "@i18n@approval_name",
+          "value": "海外易商卡-接口测试"
+        },
+        {
+          "key": "@i18n@description",
+          "value": "桥接服务审批模板创建测试；表单与流程可以在后台编辑。"
+        },
+        {
+          "key": "@i18n@details",
+          "value": "明细"
+        },
+        {
+          "key": "@i18n@review",
+          "value": "人工审批"
+        },
+        {
+          "key": "@i18n@cardholder",
+          "value": "持卡人"
+        },
+        {
+          "key": "@i18n@card_last4",
+          "value": "卡号后四位"
+        },
+        {
+          "key": "@i18n@transaction_id",
+          "value": "交易流水号"
+        },
+        {
+          "key": "@i18n@transaction_time",
+          "value": "交易时间"
+        },
+        {
+          "key": "@i18n@merchant",
+          "value": "商户名称"
+        },
+        {
+          "key": "@i18n@transaction_amount",
+          "value": "交易金额(原币)"
+        },
+        {
+          "key": "@i18n@booked_amount",
+          "value": "记账金额CNY"
+        },
+        {
+          "key": "@i18n@transaction_region",
+          "value": "交易国家与地区"
+        },
+        {
+          "key": "@i18n@transaction_type",
+          "value": "交易类型"
+        },
+        {
+          "key": "@i18n@project",
+          "value": "项目"
+        },
+        {
+          "key": "@i18n@expense_category",
+          "value": "费用类目"
+        },
+        {
+          "key": "@i18n@invoice_files",
+          "value": "发票账单附件"
+        },
+        {
+          "key": "@i18n@supplier_allowlist",
+          "value": "供应商是否白名单"
+        },
+        {
+          "key": "@i18n@invoice_duplicate",
+          "value": "发票重复判断"
+        }
+      ]
+    }
+  ]
+}

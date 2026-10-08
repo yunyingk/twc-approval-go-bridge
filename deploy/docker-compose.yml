@@ -6,7 +6,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ../config.json:/config.json:ro
+      - ../config.toml:/config.toml:ro
       - bridge-state:/data
 
 volumes:

@@ -9,52 +9,52 @@ import (
 // BusinessProfile binds business roles to physical tables inside the single document.
 // A process selects one complete profile; display names never identify task state.
 type BusinessProfile struct {
-	Version     int                 `json:"version"`
-	Name        string              `json:"name"`
-	Tables      BusinessTables      `json:"tables"`
-	Recognition RecognitionSettings `json:"recognition"`
-	Review      ReviewSettings      `json:"review"`
-	Approval    *ApprovalSettings   `json:"approval,omitempty"`
+	Version     int                 `json:"version" toml:"version"`
+	Name        string              `json:"name" toml:"name"`
+	Tables      BusinessTables      `json:"tables" toml:"tables"`
+	Recognition RecognitionSettings `json:"recognition" toml:"recognition"`
+	Review      ReviewSettings      `json:"review" toml:"review"`
+	Approval    *ApprovalSettings   `json:"approval,omitempty" toml:"approval,omitempty"`
 }
 
 type BusinessTables struct {
-	Transactions         TableBinding `json:"transactions"`
-	ReimbursementDetails TableBinding `json:"reimbursement_details"`
-	InvoiceLedger        TableBinding `json:"invoice_ledger"`
+	Transactions         TableBinding `json:"transactions" toml:"transactions"`
+	ReimbursementDetails TableBinding `json:"reimbursement_details" toml:"reimbursement_details"`
+	InvoiceLedger        TableBinding `json:"invoice_ledger" toml:"invoice_ledger"`
 }
 
 // Source describes who supplies records, not an HTTP endpoint or an authentication grant.
 // Access is the bridge's declared use; actual Feishu permissions still apply.
 type TableBinding struct {
-	Name      string            `json:"name"`
-	Source    string            `json:"source"`
-	Access    string            `json:"access"`
-	BaseToken string            `json:"base_token"`
-	TableID   string            `json:"table_id"`
-	Fields    map[string]string `json:"fields"`
+	Name      string            `json:"name" toml:"name"`
+	Source    string            `json:"source" toml:"source"`
+	Access    string            `json:"access" toml:"access"`
+	BaseToken string            `json:"base_token" toml:"base_token"`
+	TableID   string            `json:"table_id" toml:"table_id"`
+	Fields    map[string]string `json:"fields" toml:"fields"`
 }
 
 type RecognitionSettings struct {
-	Provider     string        `json:"provider"`
-	TriggerMode  string        `json:"trigger_mode"`
-	PollInterval string        `json:"poll_interval,omitempty"`
-	PollStartup  string        `json:"poll_startup,omitempty"`
-	Model        ModelSettings `json:"model"`
+	Provider     string        `json:"provider" toml:"provider"`
+	TriggerMode  string        `json:"trigger_mode" toml:"trigger_mode"`
+	PollInterval string        `json:"poll_interval,omitempty" toml:"poll_interval,omitempty"`
+	PollStartup  string        `json:"poll_startup,omitempty" toml:"poll_startup,omitempty"`
+	Model        ModelSettings `json:"model" toml:"model"`
 }
 
 // ContextFields and ResultFields both belong to the reimbursement-details table.
-// Inline local rules are used only by the model provider.
+// The optional rules file is read only when the model reviewer is constructed.
 type ReviewSettings struct {
-	Model                  ModelSettings     `json:"model"`
-	Rules                  *LocalReviewRules `json:"rules,omitempty"`
-	ResubmitOnDetailChange bool              `json:"resubmit_on_detail_change,omitempty"`
-	ResubmitOnSourceChange bool              `json:"resubmit_on_source_change,omitempty"`
-	ChangeDebounce         string            `json:"change_debounce,omitempty"`
-	IncludeTransactions    bool              `json:"include_transactions,omitempty"`
-	Provider               string            `json:"provider"`
-	TriggerMode            string            `json:"trigger_mode"`
-	ContextFields          map[string]string `json:"context_fields"`
-	ResultFields           map[string]string `json:"result_fields"`
+	Model                  ModelSettings     `json:"model" toml:"model"`
+	RulesFile              string            `json:"rules_file,omitempty" toml:"rules_file,omitempty"`
+	ResubmitOnDetailChange bool              `json:"resubmit_on_detail_change,omitempty" toml:"resubmit_on_detail_change,omitempty"`
+	ResubmitOnSourceChange bool              `json:"resubmit_on_source_change,omitempty" toml:"resubmit_on_source_change,omitempty"`
+	ChangeDebounce         string            `json:"change_debounce,omitempty" toml:"change_debounce,omitempty"`
+	IncludeTransactions    bool              `json:"include_transactions,omitempty" toml:"include_transactions,omitempty"`
+	Provider               string            `json:"provider" toml:"provider"`
+	TriggerMode            string            `json:"trigger_mode" toml:"trigger_mode"`
+	ContextFields          map[string]string `json:"context_fields" toml:"context_fields"`
+	ResultFields           map[string]string `json:"result_fields" toml:"result_fields"`
 }
 
 func (p *BusinessProfile) validate() error {

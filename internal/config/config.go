@@ -1,8 +1,7 @@
-// Package config loads the bridge from one complete JSON document.
+// Package config loads the bridge from one complete TOML document.
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -10,59 +9,52 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 // Document is the only runtime configuration source, including credentials.
 // The private file is not committed; the repository contains a redacted example.
 type Document struct {
 	BusinessProfile
-	Runtime    RuntimeSettings    `json:"runtime"`
-	Feishu     FeishuSettings     `json:"feishu"`
-	Anyreceipt AnyreceiptSettings `json:"anyreceipt"`
-	Seal       SealSettings       `json:"seal"`
+	Runtime    RuntimeSettings    `json:"runtime" toml:"runtime"`
+	Feishu     FeishuSettings     `json:"feishu" toml:"feishu"`
+	Anyreceipt AnyreceiptSettings `json:"anyreceipt" toml:"anyreceipt"`
+	Seal       SealSettings       `json:"seal" toml:"seal"`
 }
 
 type RuntimeSettings struct {
-	HTTPAddr        string `json:"http_addr"`
-	LogLevel        string `json:"log_level"`
-	ShutdownTimeout string `json:"shutdown_timeout"`
-	StateDir        string `json:"state_dir"`
+	HTTPAddr        string `json:"http_addr" toml:"http_addr"`
+	LogLevel        string `json:"log_level" toml:"log_level"`
+	ShutdownTimeout string `json:"shutdown_timeout" toml:"shutdown_timeout"`
+	StateDir        string `json:"state_dir" toml:"state_dir"`
 }
 
 type AppCredentials struct {
-	AppID     string `json:"app_id"`
-	AppSecret string `json:"app_secret"`
+	AppID     string `json:"app_id" toml:"app_id"`
+	AppSecret string `json:"app_secret" toml:"app_secret"`
 }
 
 type FeishuSettings struct {
 	AppCredentials
-	ApprovalApp      AppCredentials  `json:"approval_app"`
-	EventType        string          `json:"event_type"`
-	LogRawEvents     bool            `json:"log_raw_events"`
-	ApprovalTemplate json.RawMessage `json:"approval_template,omitempty"`
+	ApprovalApp  AppCredentials `json:"approval_app" toml:"approval_app"`
+	EventType    string         `json:"event_type" toml:"event_type"`
+	LogRawEvents bool           `json:"log_raw_events" toml:"log_raw_events"`
 }
 
 type AnyreceiptSettings struct {
-	APIKey string `json:"api_key"`
+	APIKey string `json:"api_key" toml:"api_key"`
 }
 type SealSettings struct {
-	DocumentURL   string `json:"document_url"`
-	BearerToken   string `json:"bearer_token"`
-	CallbackToken string `json:"callback_token"`
+	DocumentURL   string `json:"document_url" toml:"document_url"`
+	BearerToken   string `json:"bearer_token" toml:"bearer_token"`
+	CallbackToken string `json:"callback_token" toml:"callback_token"`
 }
 
 type ModelSettings struct {
-	APIKey  string `json:"api_key"`
-	BaseURL string `json:"base_url"`
-	Name    string `json:"name"`
-}
-
-// LocalReviewRules belong only to the self-hosted provider; Seal maintains its own rules.
-type LocalReviewRules struct {
-	Version                string   `json:"version"`
-	Instructions           string   `json:"instructions"`
-	RequiredContext        []string `json:"required_context"`
-	AllowAutomaticDecision bool     `json:"allow_automatic_decision"`
+	APIKey  string `json:"api_key" toml:"api_key"`
+	BaseURL string `json:"base_url" toml:"base_url"`
+	Name    string `json:"name" toml:"name"`
 }
 
 // Config contains runtime settings for the service shell.
@@ -100,8 +92,7 @@ type Config struct {
 	ReviewModelAPIKey          string
 	ReviewModelBaseURL         string
 	ReviewModelName            string
-	ReviewRules                *LocalReviewRules
-	ApprovalTemplate           json.RawMessage
+	ReviewRulesFile            string
 	ReviewContextFieldIDs      map[string]string
 	ReviewResultFieldIDs       map[string]string
 	SealBearerToken            string
@@ -111,7 +102,7 @@ type Config struct {
 func Load() (Config, error) {
 	path := strings.TrimSpace(os.Getenv("CONFIG_FILE"))
 	if path == "" {
-		path = "config.json"
+		path = "config.toml"
 	}
 	return LoadFile(path)
 }
@@ -127,15 +118,12 @@ func LoadFile(path string) (Config, error) {
 	if err != nil || !info.Mode().IsRegular() || info.Size() > 1<<20 {
 		return Config{}, fmt.Errorf("configuration must be a regular file of at most 1 MiB")
 	}
-	decoder := json.NewDecoder(io.LimitReader(file, 1<<20))
+	decoder := toml.NewDecoder(io.LimitReader(file, 1<<20))
 	decoder.DisallowUnknownFields()
 	var document Document
 	if err := decoder.Decode(&document); err != nil {
-		// Do not echo private JSON values or unknown keys into application logs.
-		return Config{}, fmt.Errorf("invalid configuration JSON or unknown field")
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return Config{}, fmt.Errorf("configuration requires exactly one JSON object")
+		// Do not echo private TOML values or unknown keys into application logs.
+		return Config{}, fmt.Errorf("invalid configuration TOML or unknown field")
 	}
 	if err := document.BusinessProfile.validate(); err != nil {
 		return Config{}, err
@@ -168,7 +156,7 @@ func LoadFile(path string) (Config, error) {
 		SealCallbackToken:  document.Seal.CallbackToken,
 		ReviewModelAPIKey:  document.Review.Model.APIKey,
 		ReviewModelBaseURL: document.Review.Model.BaseURL, ReviewModelName: document.Review.Model.Name,
-		ReviewRules: document.Review.Rules, ApprovalTemplate: document.Feishu.ApprovalTemplate,
+		ReviewRulesFile: document.Review.RulesFile,
 	}
 	document.BusinessProfile.apply(&cfg)
 	for _, app := range []AppCredentials{document.Feishu.AppCredentials, document.Feishu.ApprovalApp} {

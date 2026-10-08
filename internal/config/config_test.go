@@ -1,7 +1,7 @@
 package config
 
 import (
-	"encoding/json"
+	"github.com/pelletier/go-toml/v2"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -12,11 +12,11 @@ import (
 
 func writeDocument(t *testing.T, document Document) string {
 	t.Helper()
-	raw, err := json.Marshal(document)
+	raw, err := toml.Marshal(document)
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "config.json")
+	path := filepath.Join(t.TempDir(), "config.toml")
 	if err := os.WriteFile(path, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -138,23 +138,23 @@ func TestRejectsOverlappingReviewContextAndResults(t *testing.T) {
 	}
 }
 
-func TestOnlySelectedFileSuppliesCredentialsRuntimeAndInlineRules(t *testing.T) {
+func TestOnlySelectedFileSuppliesCredentialsAndRuntime(t *testing.T) {
 	for _, key := range []string{"FEISHU_APP_ID", "FEISHU_APP_SECRET", "ANYRECEIPT_API_KEY", "HTTP_ADDR", "REVIEW_RULES_FILE", "BUSINESS_CONFIG_FILE"} {
 		t.Setenv(key, "stale-value")
 	}
 	d := Document{BusinessProfile: testProfile(), Runtime: RuntimeSettings{HTTPAddr: ":9090"}, Feishu: FeishuSettings{AppCredentials: AppCredentials{AppID: "file-app", AppSecret: "file-secret"}}}
-	d.Review.Rules = &LocalReviewRules{Version: "v1", Instructions: "file rules"}
+	d.Review.RulesFile = "not-present/rules.json" // Seal must not open self-hosted rules.
 	cfg, err := loadDocument(t, d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.FeishuAppID != "file-app" || cfg.FeishuAppSecret != "file-secret" || cfg.HTTPAddr != ":9090" || cfg.AnyreceiptAPIKey != "" || cfg.ReviewRules == nil || cfg.ReviewRules.Instructions != "file rules" {
+	if cfg.FeishuAppID != "file-app" || cfg.FeishuAppSecret != "file-secret" || cfg.HTTPAddr != ":9090" || cfg.AnyreceiptAPIKey != "" || cfg.ReviewRulesFile != "not-present/rules.json" {
 		t.Fatal("environment affected single-file configuration")
 	}
 }
 
 func TestMissingFileNeverFallsBackToEnvironment(t *testing.T) {
-	t.Setenv("CONFIG_FILE", filepath.Join(t.TempDir(), "missing.json"))
+	t.Setenv("CONFIG_FILE", filepath.Join(t.TempDir(), "missing.toml"))
 	t.Setenv("FEISHU_APP_ID", "stale-app")
 	if _, err := Load(); err == nil {
 		t.Fatal("missing configuration silently fell back")
@@ -162,9 +162,9 @@ func TestMissingFileNeverFallsBackToEnvironment(t *testing.T) {
 }
 
 func TestMalformedPrivateConfigurationDoesNotExposeValues(t *testing.T) {
-	raw, _ := json.Marshal(Document{BusinessProfile: testProfile()})
-	raw = []byte(strings.TrimSuffix(string(raw), "}") + `,"SECRET_MUST_NOT_APPEAR":"secret"}`)
-	path := filepath.Join(t.TempDir(), "config.json")
+	raw, _ := toml.Marshal(Document{BusinessProfile: testProfile()})
+	raw = append([]byte("SECRET_MUST_NOT_APPEAR = \"secret\"\n"), raw...)
+	path := filepath.Join(t.TempDir(), "config.toml")
 	if err := os.WriteFile(path, raw, 0600); err != nil {
 		t.Fatal(err)
 	}

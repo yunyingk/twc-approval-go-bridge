@@ -12,41 +12,41 @@ import (
 // ApprovalSettings is an explicit human-approval policy, separate from AI
 // provider selection. It contains bindings and actor IDs, never credentials.
 type ApprovalSettings struct {
-	Mode               string                      `json:"mode"`                      // disabled or manual; no automatic creation yet
-	TargetIdentity     string                      `json:"target_identity,omitempty"` // bridge or approval
-	TemplateCode       string                      `json:"template_code,omitempty"`
-	SubmitterOpenID    string                      `json:"submitter_open_id,omitempty"`
-	DepartmentID       string                      `json:"department_id,omitempty"`
-	AllowedAIDecisions []string                    `json:"allowed_ai_decisions,omitempty"`
-	GroupBy            []ApprovalGroup             `json:"group_by"`
-	InputFields        map[string]ApprovalInput    `json:"input_fields,omitempty"`
-	DetailControl      ApprovalSelector            `json:"detail_control,omitempty"`
-	FormFields         map[string]ApprovalSelector `json:"form_fields,omitempty"`
-	NodeApprovers      map[string][]string         `json:"node_approvers,omitempty"`
-	Observation        *ApprovalObservation        `json:"observation,omitempty"`
+	Mode               string                      `json:"mode" toml:"mode"`                                           // disabled or manual; no automatic creation yet
+	TargetIdentity     string                      `json:"target_identity,omitempty" toml:"target_identity,omitempty"` // bridge or approval
+	TemplateCode       string                      `json:"template_code,omitempty" toml:"template_code,omitempty"`
+	SubmitterOpenID    string                      `json:"submitter_open_id,omitempty" toml:"submitter_open_id,omitempty"`
+	DepartmentID       string                      `json:"department_id,omitempty" toml:"department_id,omitempty"`
+	AllowedAIDecisions []string                    `json:"allowed_ai_decisions,omitempty" toml:"allowed_ai_decisions,omitempty"`
+	GroupBy            []ApprovalGroup             `json:"group_by" toml:"group_by"`
+	InputFields        map[string]ApprovalInput    `json:"input_fields,omitempty" toml:"input_fields,omitempty"`
+	DetailControl      ApprovalSelector            `json:"detail_control,omitempty" toml:"detail_control,omitempty"`
+	FormFields         map[string]ApprovalSelector `json:"form_fields,omitempty" toml:"form_fields,omitempty"`
+	NodeApprovers      map[string][]string         `json:"node_approvers,omitempty" toml:"node_approvers,omitempty"`
+	Observation        *ApprovalObservation        `json:"observation,omitempty" toml:"observation,omitempty"`
 }
 type ApprovalObservation struct {
-	Enabled      bool   `json:"enabled"`
-	PollInterval string `json:"poll_interval,omitempty"`
+	Enabled      bool   `json:"enabled" toml:"enabled"`
+	PollInterval string `json:"poll_interval,omitempty" toml:"poll_interval,omitempty"`
 }
 type ApprovalSelector struct {
-	ID       string `json:"id,omitempty"`
-	CustomID string `json:"custom_id,omitempty"`
+	ID       string `json:"id,omitempty" toml:"id,omitempty"`
+	CustomID string `json:"custom_id,omitempty" toml:"custom_id,omitempty"`
 }
 type ApprovalGroup struct {
-	Axis     string `json:"axis"`
-	Role     string `json:"role"`
-	Field    string `json:"field"`            // stable semantic key in the selected table role
-	Period   string `json:"period,omitempty"` // day/month; omitted means exact value
-	Timezone string `json:"timezone,omitempty"`
+	Axis     string `json:"axis" toml:"axis"`
+	Role     string `json:"role" toml:"role"`
+	Field    string `json:"field" toml:"field"`                       // stable semantic key in the selected table role
+	Period   string `json:"period,omitempty" toml:"period,omitempty"` // day/month; omitted means exact value
+	Timezone string `json:"timezone,omitempty" toml:"timezone,omitempty"`
 }
 type ApprovalInput struct {
-	Role          string            `json:"role"` // reimbursement_details, transactions or review
-	Field         string            `json:"field"`
-	Kind          string            `json:"kind"` // text/date/number/money/people/files
-	Currency      string            `json:"currency,omitempty"`
-	CurrencyField string            `json:"currency_field,omitempty"`
-	PersonMap     map[string]string `json:"person_map,omitempty"` // source open ID -> target app open ID
+	Role          string            `json:"role" toml:"role"` // reimbursement_details, transactions or review
+	Field         string            `json:"field" toml:"field"`
+	Kind          string            `json:"kind" toml:"kind"` // text/date/number/money/people/files
+	Currency      string            `json:"currency,omitempty" toml:"currency,omitempty"`
+	CurrencyField string            `json:"currency_field,omitempty" toml:"currency_field,omitempty"`
+	PersonMap     map[string]string `json:"person_map,omitempty" toml:"person_map,omitempty"` // source open ID -> target app open ID
 }
 
 func explicit(value string) bool { return value != "" && value == strings.TrimSpace(value) }

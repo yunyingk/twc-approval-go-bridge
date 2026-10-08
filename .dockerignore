@@ -8,6 +8,7 @@ tmp
 *.log
 .env
 /config.json
+/config.toml
 .env.*
 !.env.example
 .DS_Store

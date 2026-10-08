@@ -1,5 +1,6 @@
 # Local configuration and secrets
 /config.json
+/config.toml
 .env
 .env.*
 !.env.example

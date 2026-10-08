@@ -12,6 +12,8 @@ import (
 	appreview "github.com/yunyingk/twc-approval-go-bridge/internal/app/review"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
+	"path/filepath"
+	"strings"
 )
 
 func newModel(apiKey, baseURL, name string) (invoice.Recognizer, error) {
@@ -19,15 +21,19 @@ func newModel(apiKey, baseURL, name string) (invoice.Recognizer, error) {
 }
 
 func newModelReview(cfg config.Config) (appreview.Reviewer, string, string, error) {
-	if cfg.ReviewRules == nil {
-		return nil, "", "", fmt.Errorf("review.rules is required for the model provider")
+	if strings.TrimSpace(cfg.ReviewRulesFile) == "" {
+		return nil, "", "", fmt.Errorf("review.rules_file is required for the model provider")
 	}
-	data, err := json.Marshal(cfg.ReviewRules)
+	path := cfg.ReviewRulesFile
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(filepath.Dir(cfg.ConfigFile), path)
+	}
+	rules, err := modelreview.LoadRules(path)
 	if err != nil {
 		return nil, "", "", err
 	}
-	var rules modelreview.Rules
-	if err := json.Unmarshal(data, &rules); err != nil {
+	data, err := json.Marshal(rules)
+	if err != nil {
 		return nil, "", "", err
 	}
 	client, err := modelreview.New(cfg.ReviewModelAPIKey, cfg.ReviewModelBaseURL, cfg.ReviewModelName, rules)

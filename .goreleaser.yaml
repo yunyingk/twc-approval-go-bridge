@@ -22,7 +22,9 @@ archives:
       - tar.gz
     files:
       - README.md
-      - configs/config.example.json
+      - configs/config.example.toml
+      - templates/feishu/approval-template.example.json
+      - rules/review.example.json
 
 checksum:
   name_template: checksums.txt

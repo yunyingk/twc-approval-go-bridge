@@ -10,26 +10,26 @@ Anyreceipt、SealAI 与飞书审批的接口原文保存在仓库顶层的 [`ext
 
 后续扩展参考：[架构评审：外部能力主线与自有能力替换](docs/architecture-review.md)及[迁移任务与验收](docs/architecture-tasks.md)。两份文件保留实施前评审；当前代码、配置、命令与剩余业务边界见[运行与交接说明](docs/runtime-and-handoff.md)。识别与审核独立切换，Seal 规则继续在 SealAI 系统维护。
 
-2026-10-08 配置与入口已收敛：运行只读取一份私有 `config.json`，仓库只保留 [`configs/config.example.json`](configs/config.example.json) 完整示例；旧环境变量叠加、业务文件选择、规则文件和 `submit-seal` 已移除。迁移原因、验证与本机切换见[单文件配置记录](docs/progress/2026-10-08-single-config.md)。
+2026-10-08 按用户 review 调整：主配置改为带注释的私有 `config.toml`，提供方选择放在最前面；飞书模板和自有审核规则各自独立保存。旧环境变量叠加和 `submit-seal` 已移除。配置改动与 Gemini 交接见[本次记录](docs/progress/2026-10-08-config-toml.md)；已有监督服务尚未切换这一阶段。
 
 ## 快速开始
 
 需要 Go 1.24.13。项目通过 `go.mod` 的 `toolchain` 指令、CI 和 Docker 构建镜像统一固定到该版本。
 
 ```bash
-cp configs/config.example.json config.json
-chmod 600 config.json
+cp configs/config.example.toml config.toml
+chmod 600 config.toml
 make test
 make vet
 make build
 ./bin/twc-approval-go-bridge
 ```
 
-服务默认读取工作目录中的 `config.json`。所有表字段、提供方、触发方式、凭证、服务端点和运行参数都在同一文件中；不加载 `.env`，不合并调试文件或旧环境变量。`CONFIG_FILE=/absolute/path/config.json` 只用于选择这一份文件，不支持字段覆盖；文件缺失或无效直接报错。
+服务默认读取工作目录中的 `config.toml`。所有表字段、提供方、触发方式、凭证、服务端点和运行参数都在同一文件中；不加载 `.env`，不合并调试文件或旧环境变量。`CONFIG_FILE=/absolute/path/config.toml` 只用于选择这一份文件，不支持字段覆盖；文件缺失或无效直接报错。
 
 监听地址、日志和停止等待时间分别修改 `runtime.http_addr`、`runtime.log_level`、`runtime.shutdown_timeout`。复制示例后默认关闭识别及人工审批，可先启动健康检查；启用 `recognition.provider=anyreceipt` 前填写 `feishu.app_id/app_secret` 和 `anyreceipt.api_key`。
 
-三张业务表及字段、识别和审核提供方、送审方式在同一 JSON 的 `tables`、`recognition`、`review` 中。Seal 凭证和回调配置在 `seal`；自有识别与审核的模型参数各自位于 `recognition.model`、`review.model`，自有审核规则内嵌 `review.rules`。Base/Table/View 概念、更换文档和只读核验见[配置说明](docs/business-configuration.md)。当前本机采用识别完成自动送审，明细与台账须同 Base。
+三张业务表及字段、识别和审核提供方、送审方式在同一 TOML 的 `tables`、`recognition`、`review` 中。Seal 凭证和回调配置在 `seal`；自有识别与审核的模型参数各自位于 `recognition.model`、`review.model`，自有审核通过 `review.rules_file` 引用独立规则 JSON（仅 model 路径读取，相对主配置目录解析）。Base/Table/View 概念、更换文档和只读核验见[配置说明](docs/business-configuration.md)。当前本机采用识别完成自动送审，明细与台账须同 Base。
 
 企业配置已启用 `review.include_transactions=true`：按明细原生关联只读获取交易流水，精确金额、币种、商户、时间及资料质量问题供 Seal 与自有审核共同使用并参与审核版本。`preview-review <明细记录ID>` 可预览实际快照，复用已有 OCR 台账而不送审或回写。真实读取、两份完整快照预览及启用验证见[交易流水开发记录](docs/progress/2026-10-05-transaction-review.md)；本次没有新增付费审核验收。
 
@@ -75,7 +75,7 @@ python3 deploy/run-local-debug.py check-business-config
 
 `recognition.trigger_mode` 可选 `event`、`poll` 或 `both`（默认）；两条路径共用附件读取、识别队列和持久化交付状态。`poll` 每隔 `recognition.poll_interval`（默认 `5m`）只扫描配置的 Base 中指定的「个人报销明细」Table，并按附件字段 ID 定位字段。`recognition.poll_startup=baseline`（默认）表示首次扫描仅记录已有附件，后续只处理新增 token；设为 `process` 则首次扫描也处理已有附件。轮询不依赖事件投递，但仍需应用对目标 Base 的读取权限。当前基线、任务及识别结果保存到 `runtime.state_dir`（默认 `data`）；重启保留原基线并恢复未交付任务，避免因回写失败重复 OCR。同一来源只允许一个识别 worker，当前文件状态库适用于单主机持久卷。识别失败的附件会由恢复任务或后续扫描重试。
 
-2026-10-04 已在新的企业测试应用和 Base 中验证真实 WebSocket 事件投递，以及附件事件触发 Anyreceipt、21 个识别输出、台账回写与双向关联。需同时开通后台应用身份和用户身份的 `bitable:app` 权限；服务仍只使用应用身份，不需要用户 OAuth。配置及验收见[飞书事件联调](docs/feishu-event-verification.md)和[企业 OCR 验收](docs/anyreceipt-enterprise-verification.md)。运行时也可设 `recognition.trigger_mode=poll` 只使用轮询。主线路径使用 `recognition.provider=anyreceipt`，自有多模态模型是可选切换项。所有凭证与业务设置统一放入私有 `config.json`；本机[运行包装器](deploy/run-local-debug.py)只定位这一份文件。
+2026-10-04 已在新的企业测试应用和 Base 中验证真实 WebSocket 事件投递，以及附件事件触发 Anyreceipt、21 个识别输出、台账回写与双向关联。需同时开通后台应用身份和用户身份的 `bitable:app` 权限；服务仍只使用应用身份，不需要用户 OAuth。配置及验收见[飞书事件联调](docs/feishu-event-verification.md)和[企业 OCR 验收](docs/anyreceipt-enterprise-verification.md)。运行时也可设 `recognition.trigger_mode=poll` 只使用轮询。主线路径使用 `recognition.provider=anyreceipt`，自有多模态模型是可选切换项。所有凭证与业务设置统一放入私有 `config.toml`；本机[运行包装器](deploy/run-local-debug.py)目前仍服务于上一阶段的 JSON 二进制；本次没有更新监督服务，切换时须同步更新二进制与包装器。
 
 订阅范围是整个 Base 的记录变更，并非单个字段：任意数据表的行新增、修改、删除都可能推送 `drive.file.bitable_record_changed_v1`。服务收到后才过滤 Base ID、数据表 ID 和附件字段 ID；修改「消费事由」或第三方「交易流水表」不会触发识别，只有「个人报销明细」的「发票附件」新增文件才进入识别队列。字段本身改名属于另一类字段变更事件。长连接方式无需配置事件加密策略；向开发者服务器推送的 Webhook 方式才涉及该配置。
 
@@ -92,7 +92,7 @@ python3 deploy/run-local-debug.py check-business-config
 `review-status <记录ID|all>` 查看当前来源的持久化状态；`check-review <记录ID|all>` 只读核对当前事实与历史版本。已收到结果但回写失败时，`retry-writeback <document-id>` 单独恢复交付，不再调用审核器。旧版本结果退出后台重试；明确拒绝与响应未知仍需对账，不能靠诊断自动重发。命令、状态含义及恢复步骤见[审核诊断与恢复](docs/progress/2026-10-05-review-recovery.md)。
 
 ```bash
-# 按 config.json 中的 review.provider 选择提供方，统一版本化并保存状态。
+# 按 config.toml 中的 review.provider 选择提供方，统一版本化并保存状态。
 go run ./cmd/server submit-review <个人报销明细记录ID>
 ```
 
@@ -111,12 +111,12 @@ Anyreceipt 始终编入，启用识别时使用 `recognition.provider=anyreceipt
 独立的一次性工具使用应用身份创建原生审批模板；表单和审批流程来自 JSON 配置，默认只校验，加 `-apply` 才发送创建请求：
 
 ```bash
-go run ./cmd/approval-template -app bridge
-# 确认 config.json 的 feishu 应用及模板设置后显式创建
-go run ./cmd/approval-template -app bridge -apply
+go run ./cmd/approval-template -app bridge -file templates/feishu/approval-template.example.json
+# 确认 config.toml 的 feishu 应用和独立模板文件后显式创建
+go run ./cmd/approval-template -app bridge -file templates/feishu/approval-template.example.json -apply
 ```
 
-需要独立审批应用时选 `-app approval`，使用同一文件的 `feishu.approval_app.app_id/app_secret`，不会回退到桥接应用。模板请求来自 `feishu.approval_template`；工具也只读这一份 config.json，不随服务启动运行。模板创建需要 `approval:definition` 或 `approval:approval` 写权限；2026-09-30 初次个人版测试因缺少写权限返回 `99991672`，开通权限后已成功创建「海外易商卡-接口测试」（Code：`EA296788-7BFC-47A2-91D7-6B7D8D2D0B11`），并通过正式客户端读取验证为 `ACTIVE`、一个明细、14 个子控件和 3 个流程节点。官方接口创建的模板不能停用或删除，正式创建前应审核模板配置。示例包含真实附件类型；完整约定见 [`internal/feishu/approval/README.md`](internal/feishu/approval/README.md)。创建审批实例和结果回写仍待接入。
+需要独立审批应用时选 `-app approval`，使用同一文件的 `feishu.approval_app.app_id/app_secret`，不会回退到桥接应用。模板请求来自 `-file` 指定的独立 JSON；默认校验不读取主配置，只有 `-apply` 创建时才读取 config.toml 的凭证，不随服务启动运行。模板创建需要 `approval:definition` 或 `approval:approval` 写权限；2026-09-30 初次个人版测试因缺少写权限返回 `99991672`，开通权限后已成功创建「海外易商卡-接口测试」（Code：`EA296788-7BFC-47A2-91D7-6B7D8D2D0B11`），并通过正式客户端读取验证为 `ACTIVE`、一个明细、14 个子控件和 3 个流程节点。官方接口创建的模板不能停用或删除，正式创建前应审核模板配置。示例包含真实附件类型；完整约定见 [`internal/feishu/approval/README.md`](internal/feishu/approval/README.md)。创建审批实例和结果回写仍待接入。
 
 人工审批准备现已支持 `preview-approval`、显式 `prepare-approval-files`/`retry-approval-files` 和 `prepare-approval`。最后一个命令核对整组选中行、全部原生表单和当前 AI，将实际 SDK 请求、精确业务值、来源版本及审核证据原子保存为 0600 私有审计文件，便于建单前 review；输出只有摘要，不上传或创建实例。完整配置、命令及限制见[审批配置](docs/approval-configuration.md#完整请求准备)和[阶段记录](docs/progress/2026-10-05-approval-requests.md)。当前企业配置和监督服务未启用原生审批，真实建单与人工结果闭环仍待完成。
 

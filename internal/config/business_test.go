@@ -1,7 +1,7 @@
 package config
 
 import (
-	"encoding/json"
+	"github.com/pelletier/go-toml/v2"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -68,11 +68,11 @@ func TestSourceChangeConfigurationIsIndependentAndRequiresInvoiceNumber(t *testi
 
 func writeProfile(t *testing.T, profile BusinessProfile) string {
 	t.Helper()
-	raw, err := json.Marshal(profile)
+	raw, err := toml.Marshal(profile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "business.json")
+	path := filepath.Join(t.TempDir(), "business.toml")
 	if err := os.WriteFile(path, raw, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -167,23 +167,23 @@ func TestProfileRejectsUnsafeOrUnsupportedBindings(t *testing.T) {
 	}
 }
 
-func TestProfileRejectsUnknownKeysAndExtraObjects(t *testing.T) {
-	raw, err := json.Marshal(testProfile())
+func TestProfileRejectsUnknownKeysAndInvalidTOML(t *testing.T) {
+	raw, err := toml.Marshal(testProfile())
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, input := range []string{
-		strings.TrimSuffix(string(raw), "}") + `,"app_secret":"must-not-belong-here"}`,
-		strings.Replace(string(raw), `"trigger_mode"`, `"triger_mode"`, 1),
-		string(raw) + `{}`,
-		`{"version":`,
+		"app_secret = \"must-not-belong-here\"\n" + string(raw),
+		strings.Replace(string(raw), "trigger_mode", "triger_mode", 1),
+		string(raw) + "\n[recognition]\nprovider = \"disabled\"\n",
+		`version =`,
 	} {
-		path := filepath.Join(t.TempDir(), "invalid.json")
+		path := filepath.Join(t.TempDir(), "invalid.toml")
 		if err := os.WriteFile(path, []byte(input), 0600); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := LoadFile(path); err == nil {
-			t.Fatal("unknown key, malformed JSON or extra object accepted")
+			t.Fatal("unknown key, malformed TOML or duplicate section accepted")
 		}
 	}
 }

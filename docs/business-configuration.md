@@ -1,6 +1,6 @@
 # 业务来源与配置
 
-更新：2026-10-08。项目运行只读取一份私有 `config.json`（0600、Git 忽略），不再合并 `.env`、调试参数、业务配置或规则文件。仓库仅保留[完整脱敏示例](../configs/config.example.json)。配置迁移不更换业务资源或状态目录。
+更新：2026-10-08。项目运行只读取一份私有 `config.toml`（0600、Git 忽略），不合并 `.env`、调试参数或旧业务配置。模板及自有审核规则独立保存，主配置仅按需引用规则。仓库仅保留[完整脱敏示例](../configs/config.example.toml)。配置迁移不更换业务资源或状态目录。
 
 ## Base、Table 与 View
 
@@ -38,36 +38,42 @@ Table 类似普通表格的 Sheet；View 是同一张 Table 的另一种展示�
 
 当前一个进程运行一份配置，编辑后重启生效；没有同时监听多套业务来源或热更新能力。未来接入更多来源时，继续增加角色适配和编排，不能把额外表 ID 塞入供应商模块。
 
-## 唯一配置入口
+## 主配置入口
 
-默认读取工作目录下的 `config.json`；只有 `CONFIG_FILE` 可以指定这份文件的其他路径。文件不存在、JSON 无效、未知属性或绑定不成立时直接报错；没有环境变量后备或配置叠加。
+默认读取工作目录下的 `config.toml`；只有 `CONFIG_FILE` 可以指定这份文件的其他路径。文件不存在、TOML 无效、未知属性或绑定不成立时直接报错；没有环境变量后备或配置叠加。
 
 | 同一文件内的部分 | 内容 |
 | --- | --- |
 | `runtime` | HTTP 地址、日志级别、停止等待、状态目录 |
-| `feishu` | 应用 ID/Secret、长连接事件类型与日志开关、可选独立审批应用及模板请求 |
+| `feishu` | 应用 ID/Secret、长连接事件类型与日志开关、可选独立审批应用 |
 | `tables` | 流水、员工明细、台账三个角色的 Base/Table/Field ID、来源与访问约定 |
 | `recognition` | `provider=anyreceipt|model|disabled`、`trigger_mode=event|poll|both`、轮询间隔及首次扫描方式、独立模型连接 |
 | `anyreceipt` | 识别 API key |
 | `seal` | 单据通道 URL、Bearer 密钥、回调鉴权 token |
-| `review` | `provider=seal|model`、`trigger_mode=manual|after_recognition`、流水/修改重审开关、上下文与 AI 专用字段、独立模型连接及内嵌自有规则 |
+| `review` | `provider=seal|model`、`trigger_mode=manual|after_recognition`、流水/修改重审开关、上下文与 AI 专用字段、独立模型连接及独立自有规则文件路径 |
 | `approval` | 可选人工审批配置；当前本机没有启用 |
 
-识别与审核分别选择提供方。Seal 规则在 SealAI 系统维护；`review.rules` 只用于自有模型。两个 `model` 对象分别保存 `api_key`、`base_url` 和 `name`，不跨能力复用密钥。切换模型还需包含 Anthropic 的构建；修改 JSON 不能向 `no_anthropic` 二进制加入 SDK。
+识别与审核分别选择提供方。Seal 规则在 SealAI 系统维护；`review.rules_file` 只用于自有模型。两个 `model` 对象分别保存 `api_key`、`base_url` 和 `name`，不跨能力复用密钥。切换模型还需包含 Anthropic 的构建；修改 TOML 不能向 `no_anthropic` 二进制加入 SDK。
 
 `recognition.poll_startup=baseline|process` 决定首次扫描只记录基线还是处理已有附件；默认 baseline。`review.result_fields` 支持 decision、comment、document_id、revision、provider、external_id、url，必须绑定独立 AI 文本列，不得覆盖员工输入。自动审核要求识别、台账交付及 decision/document_id/revision 字段；Seal 自动审核还要求回调 token。
 
-实际密钥只放私有 config.json，不提交到 Git，不输出完整配置。旧配置注释与模板说明保存在[迁移前记录](progress/2026-10-08-previous-config-notes.md)，不是运行入口。
+实际密钥只放私有 config.toml，不提交到 Git，不输出完整配置。旧配置注释与模板说明保存在[迁移前记录](progress/2026-10-08-previous-config-notes.md)，不是运行入口。
+
+## 独立模板与自有规则
+
+- `templates/feishu/approval-template.example.json`：一次性创建飞书原生审批模板的请求。由 `approval-template -file` 读取，运行服务不加载。
+- `rules/review.example.json`：自有审核示例规则。只有 `review.provider = "model"` 才读取 `review.rules_file`；相对路径以主 TOML 所在目录为准。SealAI 路径不要求文件存在。
+
+主配置顺序为识别/审核提供方、连接凭证、运行参数、可选模型连接、表及字段映射。TOML 支持 `#` 注释和分节；重复键/节、错误类型及未知结构字段会报错。字段映射中的语义名称仍按现有业务校验处理，不是完整白名单。旧 JSON 主配置不再受新加载器支持，没有兼容回退。当前监督服务仍运行上一阶段二进制与私有 JSON，尚未部署本次改动，见[交接记录](progress/2026-10-08-config-toml.md)。
 
 ## 可选的明细修改重审
 
-```json
-"review": {
-  "provider": "seal",
-  "trigger_mode": "after_recognition",
-  "resubmit_on_detail_change": true,
-  "change_debounce": "10s"
-}
+```toml
+[review]
+provider = "seal"
+trigger_mode = "after_recognition"
+resubmit_on_detail_change = true
+change_debounce = "10s"
 ```
 
 以上为局部示例，需保留完整文件的上下文、结果字段及其他配置。企业测试文件当前显式关闭这个开关，维持已选择的识别完成触发方式。
@@ -100,9 +106,9 @@ Table 类似普通表格的 Sheet；View 是同一张 Table 的另一种展示�
 
 人工审批另有可选 `approval` 配置，字段绑定、目标身份、日期分组与 AI 结果门禁说明见[人工审批配置与预检](approval-configuration.md)。不配置时原识别/Seal 链路继续运行；它不替 Seal 维护规则，也不自动发起人工审批。
 
-1. 在这份 `config.json` 中更新企业应用凭证及三组 Base/Table/Field ID。配置含密钥，不进入 Git；先保留私有备份。
+1. 在这份 `config.toml` 中更新企业应用凭证及三组 Base/Table/Field ID。配置含密钥，不进入 Git；先保留私有备份。
 2. 授予应用访问新 Base 的资源权限，核对应用权限及目标 Base 的事件订阅；服务继续使用应用身份。
-3. 执行 `python3 deploy/run-local-debug.py check-business-config`，或在所选 CONFIG_FILE 下执行 `go run ./cmd/server check-business-config`。命令只获取字段结构，核对字段类型和关联目标，不读取业务记录、不调用 OCR/Seal、不修改表。读取通过不代表写入或事件验收通过。
-4. 核验通过后重启服务，实际验证事件与回写。容器只读挂载同一份 JSON 至 `/config.json`，`runtime.state_dir` 使用 `/data`；配置文件须可被容器运行 UID 读取，私有配置不进入镜像。
+3. 执行 `go run ./cmd/server check-business-config`，或在所选 CONFIG_FILE 下执行 `go run ./cmd/server check-business-config`。命令只获取字段结构，核对字段类型和关联目标，不读取业务记录、不调用 OCR/Seal、不修改表。读取通过不代表写入或事件验收通过。
+4. 核验通过后重启服务，实际验证事件与回写。容器只读挂载同一份 TOML 至 `/config.toml`，`runtime.state_dir` 使用 `/data`；配置文件须可被容器运行 UID 读取，私有配置不进入镜像。
 
 配置名称和路径不参与识别去重或审核版本；迁移配置格式不会重建基线或任务。更换实际 Base/Table/Field 会进入新的业务范围，首次扫描按 recognition.poll_startup 执行；保留 runtime.state_dir 及已有状态，不为切换配置删除历史证据。

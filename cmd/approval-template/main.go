@@ -24,17 +24,18 @@ func main() {
 
 func run() error {
 	app := flag.String("app", "", "credential set: bridge or approval (required)")
+	file := flag.String("file", "", "JSON request body for a new approval template (required)")
 	apply := flag.Bool("apply", false, "create the template; without this flag only validate the request")
 	flag.Parse()
-	if (*app != "bridge" && *app != "approval") || flag.NArg() != 0 {
-		return fmt.Errorf("usage: approval-template -app bridge|approval [-apply] (reads CONFIG_FILE or config.json)")
+	if (*app != "bridge" && *app != "approval") || *file == "" || flag.NArg() != 0 {
+		return fmt.Errorf("usage: approval-template -app bridge|approval -file template.json [-apply]")
 	}
-	cfg, err := config.Load()
+	body, err := os.ReadFile(*file)
 	if err != nil {
 		return err
 	}
 	var definition larkapproval.ApprovalCreate
-	if err := json.Unmarshal(cfg.ApprovalTemplate, &definition); err != nil {
+	if err := json.Unmarshal(body, &definition); err != nil {
 		return fmt.Errorf("decode approval definition: %w", err)
 	}
 	if err := approval.ValidateNewDefinition(&definition); err != nil {
@@ -43,6 +44,11 @@ func run() error {
 	if !*apply {
 		fmt.Printf("Validated new approval template for %s; no request sent.\n", *app)
 		return nil
+	}
+	// Validation needs only the template. Credentials are loaded solely for creation.
+	cfg, err := config.Load()
+	if err != nil {
+		return err
 	}
 	appID, appSecret := cfg.FeishuAppID, cfg.FeishuAppSecret
 	if *app == "approval" {

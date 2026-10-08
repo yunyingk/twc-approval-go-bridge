@@ -1,0 +1,151 @@
+# 主运行配置；含凭证，请保持 0600 权限，不提交 Git。
+version = 1
+name = "enterprise-test-example"
+
+# 识别提供方：anyreceipt = 外部服务；model = 自有 Anthropic 模块；disabled = 关闭。
+# trigger_mode：event / poll / both；poll_startup：baseline / process。
+[recognition]
+provider = "disabled"
+trigger_mode = "both"
+poll_interval = "5m"
+poll_startup = "baseline"
+
+# 审核提供方：seal = 外部 SealAI；model = 自有 Anthropic 模块。
+# trigger_mode：after_recognition = 识别完成自动送审；manual = 手动提交。
+# 仅 model 需要 rules_file = "rules/review.example.json"，相对主配置目录解析。
+[review]
+provider = "seal"
+trigger_mode = "manual"
+include_transactions = true
+resubmit_on_detail_change = false
+resubmit_on_source_change = false
+change_debounce = "10s"
+
+# 飞书应用身份；更换企业时更新凭证，并核对末尾 Base / Table / Field ID。
+[feishu]
+app_id = ""
+app_secret = ""
+event_type = "drive.file.bitable_record_changed_v1"
+log_raw_events = false
+
+# 可选独立审批应用；空值表示未配置。
+[feishu.approval_app]
+app_id = ""
+app_secret = ""
+
+[anyreceipt]
+api_key = ""
+
+# SealAI 单据通道、访问凭证和回调鉴权；规则在 SealAI 系统维护。
+[seal]
+document_url = "https://mediastorm-test.sealai.cc/api/v1/integrations/webhook/wh_1790692906316_6z2eao6/document"
+bearer_token = ""
+callback_token = ""
+
+[runtime]
+http_addr = ":8080"
+log_level = "info"
+shutdown_timeout = "10s"
+state_dir = "data"
+
+# 仅对应 provider = "model" 时使用这组模型连接。
+[recognition.model]
+api_key = ""
+base_url = "https://api.deepseek.com/anthropic"
+name = "deepseek-flash"
+
+# 仅对应 provider = "model" 时使用这组模型连接。
+[review.model]
+api_key = ""
+base_url = ""
+name = ""
+
+# 业务角色 transactions：文档 Base → 数据表 Table → 列 Field。
+[tables.transactions]
+name = "交易流水表"
+source = "third_party_webhook"
+access = "read_only"
+base_token = "K5EhbDdEKa8wbJsTCpmcmeVwnHc"
+table_id = "tblr0rFnvNntoSYR"
+
+[tables.transactions.fields]
+transaction_id = "fldkXYQLbT"
+cardholder = "fldr2aa49Y"
+card_last_four = "fldkecMPPC"
+transaction_time = "fldzZLC1In"
+merchant = "fldtJ0B036"
+original_amount = "fldN3pFwjr"
+original_currency = "fldz56t3MC"
+booked_amount_cny = "fldUizVQpS"
+country = "fldS8JbrAq"
+transaction_type = "fldDGtlShR"
+transaction_status = "fld0WNX92d"
+detail_relation = "fld5d6FHsW"
+claim_status = "fldrufSP2f"
+locked = "fld54AtAZQ"
+
+# 业务角色 reimbursement_details：文档 Base → 数据表 Table → 列 Field。
+[tables.reimbursement_details]
+name = "个人报销明细"
+source = "employee"
+access = "read_write"
+base_token = "K5EhbDdEKa8wbJsTCpmcmeVwnHc"
+table_id = "tbleThinekEbpK9L"
+
+[tables.reimbursement_details.fields]
+detail_id = "fldFR7zXuN"
+attachment = "fld9awqaDl"
+transaction_relation = "fld7GtJqLK"
+employee = "fld1YtHAus"
+expense_reason = "fld7umxKAi"
+expense_category = "fld4jWLNH0"
+project_relation = "fld4q0RB2Z"
+invoice_relation = "fld3jKZW8H"
+human_review_status = "fld6F0tVzd"
+human_review_comment = "fldEsXvqZs"
+locked = "fld2xsRt4C"
+
+# 业务角色 invoice_ledger：文档 Base → 数据表 Table → 列 Field。
+[tables.invoice_ledger]
+name = "发票台账"
+source = "bridge"
+access = "read_write"
+base_token = "K5EhbDdEKa8wbJsTCpmcmeVwnHc"
+table_id = "tblsCc7P4NRwJytk"
+
+[tables.invoice_ledger.fields]
+source_key = "fldDYxci6g"
+raw_json = "fldFnFXBX2"
+unique_key = "fldwN62xku"
+title = "fld7zDhGgQ"
+invoice_number = "fld2n9chom"
+receipt_type = "fldvbLnBuR"
+business_category = "fldthjY1Xq"
+seller = "fld2W2npaf"
+buyer = "fld7lWZGzK"
+currency = "fld3j34HrN"
+pretax_amount = "fldjKawaXS"
+tax_amount = "fld6rDFkSs"
+tax_rate = "fld4908DL5"
+total_amount = "fld1ZDUvQM"
+issue_date = "fld23kZeY4"
+country = "fldazXlajz"
+ai_summary = "fld6rwXbaf"
+relation = "fldq9ViHzN"
+
+# 审核输入字段，属于报销明细表。
+[review.context_fields]
+expense_reason = "fld7umxKAi"
+expense_category = "fld4jWLNH0"
+
+# AI 专用结果字段，属于报销明细表，不覆盖员工输入。
+[review.result_fields]
+
+# 可选人工审批；当前未启用。
+[approval]
+mode = "disabled"
+target_identity = "bridge"
+
+[approval.observation]
+enabled = false
+poll_interval = "5m"
