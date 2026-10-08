@@ -1,6 +1,6 @@
 # 业务来源与配置
 
-更新：2026-10-08。项目运行只读取一份私有 `config.toml`（0600、Git 忽略），不合并 `.env`、调试参数或旧业务配置。模板及自有审核规则独立保存，主配置仅按需引用规则。仓库仅保留[完整脱敏示例](../configs/config.example.toml)。配置迁移不更换业务资源或状态目录。
+更新：2026-10-08。项目运行只读取一份私有 `configs/config.toml`（0600、Git 忽略），不合并 `.env`、调试参数或旧业务配置。模板及自有审核规则独立保存，主配置仅按需引用规则。仓库仅保留[完整脱敏示例](../configs/config.example.toml)。配置迁移不更换业务资源或状态目录。
 
 ## Base、Table 与 View
 
@@ -44,7 +44,7 @@ Table 类似普通表格的 Sheet；View 是同一张 Table 的另一种展示�
 1. **主运行配置**：私有 `config.toml`（0600、Git 忽略），仅包含服务运行参数、系统凭据（Feishu、Seal、Anyreceipt、自建模型）及通过 `tables_file` 对业务数据表拓扑的显式路径引用。
 2. **数据表拓扑配置**：独立 JSON 文件（如 `configs/tables/enterprise-test.json`，脱敏模板为 `configs/tables/enterprise.example.json`），纯净描述交易流水、报销明细、发票台账三张表的 Base/Table ID、常规字段映射，以及报销明细表的机审上下文列（`context_fields`）与 AI 回写结果列（`result_fields`）。
 
-默认读取工作目录下的 `config.toml`；只有 `CONFIG_FILE` 可以指定该文件的其他路径。文件不存在、TOML/JSON 无效、未知属性或绑定不成立时直接报错；没有环境变量后备或隐式合并。
+默认读取 `configs/config.toml`（亦兼容根目录 `config.toml`）；只有 `CONFIG_FILE` 可以指定该文件的其他路径。文件不存在、TOML/JSON 无效、未知属性或绑定不成立时直接报错；没有环境变量后备或隐式合并。
 
 | 配置入口 | 文件格式 | 内容职责 |
 | --- | --- | --- |
