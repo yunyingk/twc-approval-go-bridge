@@ -55,7 +55,72 @@ func TestChecker_FullPass(t *testing.T) {
 			return
 		}
 
-		// 5. Table fields
+		// 5. Contact scopes
+		if strings.HasSuffix(r.URL.Path, "/contact/v3/scopes") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"msg":  "ok",
+				"data": map[string]any{
+					"user_ids": []string{"ou_test_1"},
+				},
+			})
+			return
+		}
+
+		// 6. Drive permission members (collaborator)
+		if strings.Contains(r.URL.Path, "/drive/v1/permissions/") && strings.HasSuffix(r.URL.Path, "/members") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"msg":  "ok",
+				"data": map[string]any{
+					"items": []map[string]any{
+						{
+							"member_id":   "cli_test_123",
+							"member_type": "appid",
+							"perm":        "full_access",
+						},
+					},
+				},
+			})
+			return
+		}
+
+		// 7. Bitable roles
+		if strings.Contains(r.URL.Path, "/bitable/v1/apps/") && strings.HasSuffix(r.URL.Path, "/roles") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"msg":  "ok",
+				"data": map[string]any{
+					"items": []map[string]any{
+						{
+							"role_id":   "rol_employee",
+							"role_name": "员工角色",
+							"table_roles": []map[string]any{
+								{"table_id": "tbl_tx_1", "table_perm": 0},
+								{"table_id": "tbl_detail_1", "table_perm": 2},
+							},
+						},
+					},
+				},
+			})
+			return
+		}
+
+		// 8. Bitable app meta
+		if strings.HasPrefix(r.URL.Path, "/bitable/v1/apps/") && !strings.Contains(r.URL.Path, "/tables/") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"msg":  "ok",
+				"data": map[string]any{
+					"app": map[string]any{
+						"is_advanced": true,
+					},
+				},
+			})
+			return
+		}
+
+		// 9. Table fields
 		if strings.HasSuffix(r.URL.Path, "/fields") {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"code": 0,

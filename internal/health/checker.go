@@ -54,15 +54,20 @@ func (c *Checker) CheckAll(ctx context.Context) Report {
 		items = append(items, c.checkFeishuPermissions(ctx, token)...)
 	}
 
-	// 3. Bitable Tables Topology (only if auth succeeds)
+	// 3. Bitable Security & Collaborators (only if auth succeeds)
+	if token != "" && c.cfg.Business != nil {
+		items = append(items, c.checkBitableSecurity(ctx, token)...)
+	}
+
+	// 4. Bitable Tables Topology (only if auth succeeds)
 	if token != "" && c.cfg.Business != nil {
 		items = append(items, c.checkBitableTopology(ctx, token)...)
 	}
 
-	// 4. External AI / OCR Providers
+	// 5. External AI / OCR Providers
 	items = append(items, c.checkExternalProviders(ctx)...)
 
-	// 5. Runtime Environment
+	// 6. Runtime Environment
 	items = append(items, c.checkRuntimeEnvironment(ctx)...)
 
 	// Aggregate summary
@@ -234,6 +239,153 @@ func (c *Checker) checkFeishuPermissions(ctx context.Context, token string) []Ch
 		})
 	}
 
+	// 3. Probe contact scopes (应用可用范围探测)
+	contactStart := time.Now()
+	contactErr := c.probeContactScopes(ctx, token)
+	contactLatency := time.Since(contactStart)
+	if contactErr != nil {
+		items = append(items, CheckItem{
+			Category: cat,
+			Name:     "应用可用范围 (contact:contact:readonly)",
+			Status:   StatusWarn,
+			Latency:  contactLatency,
+			Message:  fmt.Sprintf("未开通通讯录权限或受限: %v", contactErr),
+			Remedy:   "建议在开放平台权限管理中开通「通讯录只读权限」，并确保应用可用范围设置为「全员」",
+		})
+	} else {
+		items = append(items, CheckItem{
+			Category: cat,
+			Name:     "应用可用范围 (contact:contact:readonly)",
+			Status:   StatusPass,
+			Latency:  contactLatency,
+			Message:  "已授权 (可校验催交员工可见性)",
+		})
+	}
+
+	return items
+}
+
+func (c *Checker) checkBitableSecurity(ctx context.Context, token string) []CheckItem {
+	cat := "多维表格安全与协作者"
+	var items []CheckItem
+	if c.cfg.Business == nil {
+		return items
+	}
+	baseToken := c.cfg.Business.Tables.Transactions.BaseToken
+	if baseToken == "" {
+		baseToken = c.cfg.Business.Tables.ReimbursementDetails.BaseToken
+	}
+	if baseToken == "" {
+		return items
+	}
+
+	// 1. 文档应用协作者探测 (Bitable Collaborator)
+	collabStart := time.Now()
+	perm, collabErr := c.probeBitableCollaborator(ctx, token, baseToken, c.cfg.Feishu.AppID)
+	collabLatency := time.Since(collabStart)
+
+	if collabErr != nil {
+		items = append(items, CheckItem{
+			Category: cat,
+			Name:     "多维表格文档应用协作者",
+			Status:   StatusFail,
+			Latency:  collabLatency,
+			Message:  fmt.Sprintf("未添加协作者或检测失败: %v", collabErr),
+			Remedy:   fmt.Sprintf("请在飞书多维表格右上角点击「分享」->「协作者」，将应用「%s」添加为协作者，权限设为「可管理」或「可编辑」", c.cfg.Feishu.AppID),
+		})
+	} else {
+		switch perm {
+		case "full_access":
+			items = append(items, CheckItem{
+				Category: cat,
+				Name:     "多维表格文档应用协作者",
+				Status:   StatusPass,
+				Latency:  collabLatency,
+				Message:  "已添加为协作者 (权限级别: 可管理 / full_access，最高权限)",
+			})
+		case "edit":
+			items = append(items, CheckItem{
+				Category: cat,
+				Name:     "多维表格文档应用协作者",
+				Status:   StatusPass,
+				Latency:  collabLatency,
+				Message:  "已添加为协作者 (权限级别: 可编辑 / edit)",
+			})
+		case "view":
+			items = append(items, CheckItem{
+				Category: cat,
+				Name:     "多维表格文档应用协作者",
+				Status:   StatusFail,
+				Latency:  collabLatency,
+				Message:  "应用权限不足: 当前仅为「只读」(view) 权限，无法写入明细与回写台账",
+				Remedy:   "请在多维表格协作者设置中，将本应用的权限修改为「可管理」或「可编辑」",
+			})
+		default:
+			items = append(items, CheckItem{
+				Category: cat,
+				Name:     "多维表格文档应用协作者",
+				Status:   StatusPass,
+				Latency:  collabLatency,
+				Message:  fmt.Sprintf("已添加为协作者 (权限级别: %s)", perm),
+			})
+		}
+	}
+
+	// 2. 高级权限与角色隔离策略探测
+	advStart := time.Now()
+	isAdv, roles, advErr := c.probeBitableAdvancedPermissions(ctx, token, baseToken)
+	advLatency := time.Since(advStart)
+
+	if advErr != nil {
+		items = append(items, CheckItem{
+			Category: cat,
+			Name:     "多维表格高级权限与角色隔离",
+			Status:   StatusWarn,
+			Latency:  advLatency,
+			Message:  fmt.Sprintf("高级权限探测异常: %v", advErr),
+			Remedy:   "请确认应用具备 bitable:app:readonly 或 bitable:app 权限",
+		})
+	} else if !isAdv {
+		items = append(items, CheckItem{
+			Category: cat,
+			Name:     "多维表格高级权限",
+			Status:   StatusWarn,
+			Latency:  advLatency,
+			Message:  "未开启高级权限 (当前所有协作者均可查阅并导出全量员工流水)",
+			Remedy:   "生产环境强烈建议开启「高级权限」，并为普通员工配置流水表不可见角色以隔离隐私",
+		})
+	} else {
+		// 校验是否有角色泄露了交易流水表
+		txTableID := c.cfg.Business.Tables.Transactions.TableID
+		var leakRoles []string
+		for _, r := range roles {
+			for _, tr := range r.TableRoles {
+				if tr.TableID == txTableID && tr.TablePerm > 0 {
+					leakRoles = append(leakRoles, r.RoleName)
+				}
+			}
+		}
+
+		if len(leakRoles) > 0 {
+			items = append(items, CheckItem{
+				Category: cat,
+				Name:     "高级权限与数据安全隔离",
+				Status:   StatusWarn,
+				Latency:  advLatency,
+				Message:  fmt.Sprintf("高级权限已启用，但角色 [%s] 开放了交易流水表的查看/编辑权限 (存在隐私泄露风险)", strings.Join(leakRoles, ", ")),
+				Remedy:   "建议在「高级权限」配置中，将普通员工角色的交易流水表设为「无权限/不可见」",
+			})
+		} else {
+			items = append(items, CheckItem{
+				Category: cat,
+				Name:     "高级权限与数据安全隔离",
+				Status:   StatusPass,
+				Latency:  advLatency,
+				Message:  fmt.Sprintf("策略规范 (高级权限已开启，%d 个角色均已严格隔离交易流水表)", len(roles)),
+			})
+		}
+	}
+
 	return items
 }
 
@@ -254,7 +406,7 @@ func (c *Checker) checkBitableTopology(ctx context.Context, token string) []Chec
 
 	for _, t := range tables {
 		start := time.Now()
-		fieldMap, typeMap, err := c.fetchTableSchema(ctx, token, t.table.BaseToken, t.table.TableID)
+		fieldMap, typeMap, relTableMap, err := c.fetchTableSchema(ctx, token, t.table.BaseToken, t.table.TableID)
 		latency := time.Since(start)
 
 		if err != nil {
@@ -297,6 +449,31 @@ func (c *Checker) checkBitableTopology(ctx context.Context, token string) []Chec
 			Latency:  latency,
 			Message:  fmt.Sprintf("正常 (已核验 %d 个字段映射)", len(t.table.Fields)),
 		})
+
+		// 额外核验个人报销明细表与流水表的关联拓扑
+		if t.role == "reimbursement_details" {
+			if linkFieldID, ok := t.table.Fields["linked_tx_id"]; ok {
+				targetTable := relTableMap[linkFieldID]
+				if targetTable != "" && targetTable != p.Tables.Transactions.TableID {
+					items = append(items, CheckItem{
+						Category: cat,
+						Name:     "明细表关联流水拓扑",
+						Status:   StatusFail,
+						Latency:  latency,
+						Message:  fmt.Sprintf("关联断裂: 「关联流水号」指向的表 (%s) 与当前配置的交易流水表 (%s) 不一致！", targetTable, p.Tables.Transactions.TableID),
+						Remedy:   "可能是从其他 Base 复制表格后未重置关联关系，请在明细表中重新设置该关联列",
+					})
+				} else if targetTable != "" {
+					items = append(items, CheckItem{
+						Category: cat,
+						Name:     "明细表关联流水拓扑",
+						Status:   StatusPass,
+						Latency:  latency,
+						Message:  fmt.Sprintf("双向关联正常 (精准指向流水表: %s)", targetTable),
+					})
+				}
+			}
+		}
 	}
 
 	return items
@@ -583,17 +760,158 @@ func (c *Checker) probeTaskCommentPermission(ctx context.Context, token string) 
 	return nil
 }
 
-func (c *Checker) fetchTableSchema(ctx context.Context, token, baseToken, tableID string) (map[string]string, map[string]int, error) {
-	apiURL := fmt.Sprintf("%s/bitable/v1/apps/%s/tables/%s/fields?page_size=100", c.baseURL, url.PathEscape(baseToken), url.PathEscape(tableID))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+func (c *Checker) probeContactScopes(ctx context.Context, token string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/contact/v3/scopes", nil)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, nil, err
+		return err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&result)
+	if result.Code != 0 {
+		return fmt.Errorf("code %d: %s", result.Code, result.Msg)
+	}
+	return nil
+}
+
+func (c *Checker) probeBitableCollaborator(ctx context.Context, token, baseToken, appID string) (string, error) {
+	reqURL := fmt.Sprintf("%s/drive/v1/permissions/%s/members?type=bitable", c.baseURL, url.PathEscape(baseToken))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Code int `json:"code"`
+		Data struct {
+			Items []struct {
+				MemberID   string `json:"member_id"`
+				MemberType string `json:"member_type"`
+				Perm       string `json:"perm"`
+			} `json:"items"`
+		} `json:"data"`
+		Msg string `json:"msg"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	if result.Code != 0 {
+		return "", fmt.Errorf("code %d: %s", result.Code, result.Msg)
+	}
+
+	for _, m := range result.Data.Items {
+		if m.MemberID == appID || (m.MemberType == "appid" && m.MemberID == appID) {
+			return m.Perm, nil
+		}
+	}
+
+	return "", fmt.Errorf("当前应用 (ID: %s) 未在多维表格协作者名单中", appID)
+}
+
+type bitableRoleInfo struct {
+	RoleID     string `json:"role_id"`
+	RoleName   string `json:"role_name"`
+	TableRoles []struct {
+		TableID   string `json:"table_id"`
+		TableName string `json:"table_name"`
+		TablePerm int    `json:"table_perm"`
+	} `json:"table_roles"`
+}
+
+func (c *Checker) probeBitableAdvancedPermissions(ctx context.Context, token, baseToken string) (bool, []bitableRoleInfo, error) {
+	// 1. Check bitable metadata
+	metaURL := fmt.Sprintf("%s/bitable/v1/apps/%s", c.baseURL, url.PathEscape(baseToken))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metaURL, nil)
+	if err != nil {
+		return false, nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, nil, err
+	}
+	defer resp.Body.Close()
+
+	var metaResult struct {
+		Code int `json:"code"`
+		Data struct {
+			App struct {
+				IsAdvanced bool `json:"is_advanced"`
+			} `json:"app"`
+		} `json:"data"`
+		Msg string `json:"msg"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&metaResult); err != nil {
+		return false, nil, err
+	}
+	if metaResult.Code != 0 {
+		return false, nil, fmt.Errorf("code %d: %s", metaResult.Code, metaResult.Msg)
+	}
+
+	if !metaResult.Data.App.IsAdvanced {
+		return false, nil, nil
+	}
+
+	// 2. Fetch roles (Feishu restricts page_size <= 30)
+	rolesURL := fmt.Sprintf("%s/bitable/v1/apps/%s/roles?page_size=30", c.baseURL, url.PathEscape(baseToken))
+	rolesReq, err := http.NewRequestWithContext(ctx, http.MethodGet, rolesURL, nil)
+	if err != nil {
+		return true, nil, err
+	}
+	rolesReq.Header.Set("Authorization", "Bearer "+token)
+
+	rolesResp, err := c.httpClient.Do(rolesReq)
+	if err != nil {
+		return true, nil, err
+	}
+	defer rolesResp.Body.Close()
+
+	var rolesResult struct {
+		Code int `json:"code"`
+		Data struct {
+			Items []bitableRoleInfo `json:"items"`
+		} `json:"data"`
+		Msg string `json:"msg"`
+	}
+	if err := json.NewDecoder(rolesResp.Body).Decode(&rolesResult); err != nil {
+		return true, nil, err
+	}
+	if rolesResult.Code != 0 {
+		return true, nil, fmt.Errorf("code %d: %s", rolesResult.Code, rolesResult.Msg)
+	}
+
+	return true, rolesResult.Data.Items, nil
+}
+
+func (c *Checker) fetchTableSchema(ctx context.Context, token, baseToken, tableID string) (map[string]string, map[string]int, map[string]string, error) {
+	apiURL := fmt.Sprintf("%s/bitable/v1/apps/%s/tables/%s/fields?page_size=100", c.baseURL, url.PathEscape(baseToken), url.PathEscape(tableID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	defer resp.Body.Close()
 
@@ -604,22 +922,29 @@ func (c *Checker) fetchTableSchema(ctx context.Context, token, baseToken, tableI
 				FieldID   string `json:"field_id"`
 				FieldName string `json:"field_name"`
 				Type      int    `json:"type"`
+				Property  struct {
+					TableID string `json:"table_id"`
+				} `json:"property"`
 			} `json:"items"`
 		} `json:"data"`
 		Msg string `json:"msg"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if result.Code != 0 {
-		return nil, nil, fmt.Errorf("code %d: %s", result.Code, result.Msg)
+		return nil, nil, nil, fmt.Errorf("code %d: %s", result.Code, result.Msg)
 	}
 
 	fieldMap := make(map[string]string, len(result.Data.Items))
 	typeMap := make(map[string]int, len(result.Data.Items))
+	relTableMap := make(map[string]string, len(result.Data.Items))
 	for _, item := range result.Data.Items {
 		fieldMap[item.FieldID] = item.FieldName
 		typeMap[item.FieldID] = item.Type
+		if item.Property.TableID != "" {
+			relTableMap[item.FieldID] = item.Property.TableID
+		}
 	}
-	return fieldMap, typeMap, nil
+	return fieldMap, typeMap, relTableMap, nil
 }
