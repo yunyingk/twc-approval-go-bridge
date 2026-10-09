@@ -18,10 +18,12 @@ import (
 
 // Field IDs are stable even when a user renames a Bitable column.
 const (
+	AttachmentKey     = "attachment_key"
 	SourceKey         = "source_key"
 	RawJSON           = "raw_json"
 	DetailID          = "detail_id"
 	Relation          = "relation"
+	TraceID           = "trace_id"
 	UniqueKey         = "unique_key"
 	RecognitionStatus = "recognition_status"
 	OriginAttachment  = "origin_attachment"
@@ -78,9 +80,15 @@ func New(config Config, store Store, logger *slog.Logger) (*Handler, error) {
 		normalizedFields[normalizeLedgerSemantic(k)] = v
 		normalizedFields[k] = v
 	}
-	if normalizedFields[SourceKey] == "" || normalizedFields[RawJSON] == "" {
-		return nil, fmt.Errorf("ledger requires source-key and raw-JSON field IDs")
+	keyField := normalizedFields[AttachmentKey]
+	if keyField == "" {
+		keyField = normalizedFields[SourceKey]
 	}
+	if keyField == "" || normalizedFields[RawJSON] == "" {
+		return nil, fmt.Errorf("ledger requires attachment-key and raw-JSON field IDs")
+	}
+	normalizedFields[AttachmentKey] = keyField
+	normalizedFields[SourceKey] = keyField
 	config.Fields = normalizedFields
 
 	if config.TableID == config.SourceTableID {
@@ -93,7 +101,7 @@ func New(config Config, store Store, logger *slog.Logger) (*Handler, error) {
 	for semantic, fieldID := range config.Fields {
 		norm := normalizeLedgerSemantic(semantic)
 		switch norm {
-		case SourceKey, RawJSON, DetailID, Relation, "detail_relation", UniqueKey, RecognitionStatus, OriginAttachment, Title, Number, ReceiptType, BusinessCategory, Seller, Buyer, Currency, Pretax, Tax, TaxRate, Total, IssueDate, Country, AISummary, "summary":
+		case AttachmentKey, SourceKey, RawJSON, DetailID, Relation, "detail_relation", TraceID, UniqueKey, RecognitionStatus, OriginAttachment, Title, Number, ReceiptType, BusinessCategory, Seller, Buyer, Currency, Pretax, Tax, TaxRate, Total, IssueDate, Country, AISummary, "summary":
 		default:
 			return nil, fmt.Errorf("unsupported ledger field mapping %q", semantic)
 		}
@@ -141,15 +149,23 @@ func (h *Handler) Handle(ctx context.Context, result recognition.Result) error {
 	put(Relation, []string{result.RecordID})
 	put("detail_relation", []string{result.RecordID})
 	put("feishu_detail_relation", []string{result.RecordID})
-	uniqueKey := result.Recognition.Origin.TraceID
-	if uniqueKey == "" {
-		uniqueKey = traceIDFromRaw(raw)
+	traceID := result.Recognition.Origin.TraceID
+	if traceID == "" {
+		traceID = traceIDFromRaw(raw)
 	}
-	if uniqueKey == "" {
+	if traceID == "" {
 		hash := sha256.Sum256([]byte(sourceKey))
-		uniqueKey = "OCR-" + hex.EncodeToString(hash[:8])
+		traceID = "OCR-" + hex.EncodeToString(hash[:8])
 	}
-	put(UniqueKey, uniqueKey)
+	put(TraceID, traceID)
+	put("ocr_trace_id", traceID)
+	put(UniqueKey, traceID)
+	put("bridge_unique_key", traceID)
+
+	put(AttachmentKey, sourceKey)
+	put(SourceKey, sourceKey)
+	put("bridge_source_key", sourceKey)
+
 	put(Title, facts.Title)
 	put(Number, facts.Number)
 	put(ReceiptType, facts.ReceiptType)
@@ -179,15 +195,19 @@ func (h *Handler) Handle(ctx context.Context, result recognition.Result) error {
 		}
 		put(DetailID, detailID)
 	}
+	keyFieldID := h.config.Fields[AttachmentKey]
+	if keyFieldID == "" {
+		keyFieldID = h.config.Fields[SourceKey]
+	}
 	var id string
 	var created bool
 	var err error
 	if store, ok := h.store.(interface {
 		UpsertRecognizedInvoice(context.Context, string, string, string, string, map[string]any) (string, bool, error)
 	}); ok {
-		id, created, err = store.UpsertRecognizedInvoice(ctx, result.BaseToken, h.config.TableID, h.config.Fields[SourceKey], sourceKey, fields)
+		id, created, err = store.UpsertRecognizedInvoice(ctx, result.BaseToken, h.config.TableID, keyFieldID, sourceKey, fields)
 	} else {
-		id, created, err = h.store.UpsertLedgerRecord(ctx, result.BaseToken, h.config.TableID, h.config.Fields[SourceKey], sourceKey, fields)
+		id, created, err = h.store.UpsertLedgerRecord(ctx, result.BaseToken, h.config.TableID, keyFieldID, sourceKey, fields)
 	}
 	if err != nil {
 		return fmt.Errorf("write invoice ledger: %w", err)

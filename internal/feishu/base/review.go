@@ -29,10 +29,17 @@ type ReviewSource struct {
 }
 
 func (s *ReviewSource) ledgerField(semantic string) string {
+	if semantic == "source_key" || semantic == "attachment_key" {
+		for _, key := range []string{"attachment_key", "bridge_attachment_key", "source_key", "bridge_source_key"} {
+			if id := s.ledgerFields[key]; id != "" {
+				return id
+			}
+		}
+	}
 	if id := s.ledgerFields[semantic]; id != "" {
 		return id
 	}
-	for _, p := range []string{"ocr_", "bridge_", "feishu_", "audit_"} {
+	for _, p := range []string{"ocr_", "bridge_", "feishu_"} {
 		if id := s.ledgerFields[p+semantic]; id != "" {
 			return id
 		}
@@ -42,10 +49,17 @@ func (s *ReviewSource) ledgerField(semantic string) string {
 
 func NewReviewSource(appID, appSecret, base, detailTable, attachmentFieldID, detailIDFieldID, ledgerTable string, ledgerFields map[string]string) (*ReviewSource, error) {
 	getField := func(semantic string) string {
+		if semantic == "source_key" || semantic == "attachment_key" {
+			for _, key := range []string{"attachment_key", "bridge_attachment_key", "source_key", "bridge_source_key"} {
+				if id := ledgerFields[key]; id != "" {
+					return id
+				}
+			}
+		}
 		if id := ledgerFields[semantic]; id != "" {
 			return id
 		}
-		for _, p := range []string{"ocr_", "bridge_", "feishu_", "audit_"} {
+		for _, p := range []string{"ocr_", "bridge_", "feishu_"} {
 			if id := ledgerFields[p+semantic]; id != "" {
 				return id
 			}
@@ -53,7 +67,7 @@ func NewReviewSource(appID, appSecret, base, detailTable, attachmentFieldID, det
 		return ""
 	}
 	if appID == "" || appSecret == "" || base == "" || detailTable == "" || attachmentFieldID == "" || ledgerTable == "" ||
-		getField("source_key") == "" || getField("raw_json") == "" || getField("invoice_number") == "" {
+		getField("attachment_key") == "" || getField("raw_json") == "" || getField("invoice_number") == "" {
 		return nil, fmt.Errorf("review requires Feishu credentials and detail, attachment and ledger field IDs")
 	}
 	return &ReviewSource{client: NewLedgerClient(appID, appSecret), base: base, detailTable: detailTable,

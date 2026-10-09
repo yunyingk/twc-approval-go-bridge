@@ -65,7 +65,7 @@
       "base_token": "K5EhbDdEKa8wbJsTCpmcmeVwnHc",
       "table_id": "tblsCc7P4NRwJytk",
       "ordered_fields": [
-        { "order": 10,  "key": "bridge_unique_key",        "name": "发票唯一键",   "source": "bridge_computed", "id": "fldwN62xku" },
+        { "order": 10,  "key": "trace_id",                 "name": "识别流水号",   "source": "anyreceipt_ocr",  "id": "fldwN62xku" },
         { "order": 20,  "key": "feishu_origin_attachment",  "name": "发票原件",     "source": "feishu_lookup",   "id": "fld2x4g6tg" },
         { "order": 30,  "key": "feishu_detail_relation",    "name": "关联明细ID",   "source": "feishu_relation", "id": "fldq9ViHzN" },
         { "order": 40,  "key": "ocr_seller",                "name": "开票方名称",   "source": "anyreceipt_ocr",  "id": "fld2W2npaf" },
@@ -83,7 +83,7 @@
         { "order": 160, "key": "ocr_tax_rate",             "name": "税率",         "source": "anyreceipt_ocr",  "id": "fld4908DL5" },
         { "order": 170, "key": "ocr_title",                "name": "发票摘要",     "source": "anyreceipt_ocr",  "id": "fld7zDhGgQ" },
         { "order": 180, "key": "ocr_buyer",                "name": "购买方名称",   "source": "anyreceipt_ocr",  "id": "fld7lWZGzK" },
-        { "order": 190, "key": "bridge_source_key",        "name": "识别来源键",   "source": "bridge_computed", "id": "fldDYxci6g" },
+        { "order": 190, "key": "attachment_key",           "name": "附件标识",     "source": "bridge_computed", "id": "fldDYxci6g" },
         { "order": 200, "key": "bridge_raw_json",          "name": "识别原始JSON", "source": "anyreceipt_ocr",  "id": "fldFnFXBX2" }
       ]
     }

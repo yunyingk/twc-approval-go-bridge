@@ -25,7 +25,7 @@ func (s *fakeStore) ReadTextField(_ context.Context, base, table, record, field 
 }
 
 func (s *fakeStore) UpsertLedgerRecord(_ context.Context, base, table, keyField, key string, fields map[string]any) (string, bool, error) {
-	if base != "base" || table != "ledger" || keyField != "source_field" {
+	if base != "base" || table != "ledger" || (keyField != "source_field" && keyField != "att_field") {
 		return "", false, context.Canceled
 	}
 	s.key, s.fields = key, fields
@@ -101,5 +101,26 @@ func TestHandleRejectsWrongSource(t *testing.T) {
 	}
 	if store.calls != 0 {
 		t.Fatal("wrong Base was written")
+	}
+}
+
+func TestHandleMapsAttachmentKeyAndTraceID(t *testing.T) {
+	store := &fakeStore{}
+	h, err := New(Config{BaseToken: "base", SourceTableID: "detail", TableID: "ledger", Fields: map[string]string{
+		AttachmentKey: "att_field", RawJSON: "raw_field", TraceID: "trace_field", AISummary: "summary_field",
+	}}, store, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := recognition.Result{BaseToken: "base", TableID: "detail", RecordID: "rec1", FileToken: "file1", Recognition: invoice.Recognition{
+		Origin: invoice.Origin{TraceID: "TRACE-999"},
+		Raw:    json.RawMessage(`{"summary":"ok"}`),
+		Summary: "ok",
+	}}
+	if err := h.Handle(context.Background(), result); err != nil {
+		t.Fatal(err)
+	}
+	if store.fields["trace_field"] != "TRACE-999" || store.fields["att_field"] != "rec1:file1" {
+		t.Fatalf("AttachmentKey/TraceID mapping failed: %v", store.fields)
 	}
 }

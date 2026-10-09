@@ -220,7 +220,10 @@ func LoadFile(path string) (Config, error) {
 	detail := cfg.Business.Tables.ReimbursementDetails
 	ledger := cfg.Business.Tables.InvoiceLedger
 	if cfg.ReceiptProvider() != "" {
-		sourceKey := ledger.Fields["bridge_source_key"]
+		sourceKey := ledger.Fields["attachment_key"]
+		if sourceKey == "" {
+			sourceKey = ledger.Fields["bridge_source_key"]
+		}
 		if sourceKey == "" {
 			sourceKey = ledger.Fields["source_key"]
 		}
@@ -229,7 +232,7 @@ func LoadFile(path string) (Config, error) {
 			rawJSON = ledger.Fields["raw_json"]
 		}
 		if ledger.TableID != "" && (sourceKey == "" || rawJSON == "") {
-			return Config{}, fmt.Errorf("ledger writing requires source_key and raw_json field IDs")
+			return Config{}, fmt.Errorf("ledger writing requires attachment_key and raw_json field IDs")
 		}
 		switch cfg.ReceiptTriggerMode() {
 		case "event", "poll", "both":

@@ -223,7 +223,10 @@ func (tp *TablesProfile) validate() error {
 		return fmt.Errorf("reimbursement_details and invoice_ledger must currently use the same Base; cross-Base ledger delivery is not implemented")
 	}
 	ledger := tp.Tables.InvoiceLedger.Fields
-	sourceKey := ledger["bridge_source_key"]
+	sourceKey := ledger["attachment_key"]
+	if sourceKey == "" {
+		sourceKey = ledger["bridge_source_key"]
+	}
 	if sourceKey == "" {
 		sourceKey = ledger["source_key"]
 	}
@@ -234,7 +237,7 @@ func (tp *TablesProfile) validate() error {
 	if tp.Tables.Transactions.Fields["transaction_id"] == "" ||
 		tp.Tables.ReimbursementDetails.AttachmentField() == "" ||
 		sourceKey == "" || rawJSON == "" {
-		return fmt.Errorf("transaction_id, attachment and ledger source_key/raw_json bindings are required")
+		return fmt.Errorf("transaction_id, attachment and ledger attachment_key/raw_json bindings are required")
 	}
 	if err := validateFieldMapping("review.context_fields", tp.Tables.ReimbursementDetails.ContextFields); err != nil {
 		return err
