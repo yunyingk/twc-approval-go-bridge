@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"regexp"
 	"strings"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
@@ -96,9 +98,35 @@ func runInitBitable(ctx context.Context, cfg config.Config, args []string, outpu
 		return fmt.Errorf("self-check failed: %w", err)
 	}
 	fmt.Fprintf(output, "🎉 拓扑自验 100%% 通过！字段类型与双向关联完全符合系统运行预期。\n")
-	fmt.Fprintf(output, "\n👉 下一步: 请在 configs/config.toml 中设置:\n   tables_file = %q\n", res.ConfigFile)
+
+	// Automatically update config.toml if it exists
+	if cfg.ConfigFile != "" {
+		if err := updateConfigFileTablesPath(cfg.ConfigFile, res.ConfigFile); err == nil {
+			fmt.Fprintf(output, "⚡ 已自动更新 %s 中的 tables_file = %q，无需手动修改！\n", cfg.ConfigFile, res.ConfigFile)
+		} else {
+			fmt.Fprintf(output, "\n👉 下一步: 请在 %s 中设置:\n   tables_file = %q\n", cfg.ConfigFile, res.ConfigFile)
+		}
+	} else {
+		fmt.Fprintf(output, "\n👉 下一步: 请在 configs/config.toml 中设置:\n   tables_file = %q\n", res.ConfigFile)
+	}
 
 	return nil
+}
+
+func updateConfigFileTablesPath(configPath, tablesPath string) error {
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	re := regexp.MustCompile(`(?m)^tables_file\s*=.*$`)
+	newEntry := fmt.Sprintf("tables_file = %q", tablesPath)
+	var newContent []byte
+	if re.Match(content) {
+		newContent = re.ReplaceAll(content, []byte(newEntry))
+	} else {
+		newContent = append([]byte(newEntry+"\n\n"), content...)
+	}
+	return os.WriteFile(configPath, newContent, 0600)
 }
 
 func runAddAdmin(ctx context.Context, cfg config.Config, baseToken, userIdentifier string, output io.Writer) error {

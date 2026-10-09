@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -75,3 +76,34 @@ func TestRunTransferOwner_RequiresArgs(t *testing.T) {
 		t.Fatalf("expected error when args are empty")
 	}
 }
+
+func TestUpdateConfigFileTablesPath(t *testing.T) {
+	tmpFile := t.TempDir() + "/config.toml"
+	initialContent := `# Config file
+tables_file = "configs/tables/old.json"
+
+[feishu]
+app_id = "test"
+`
+	if err := os.WriteFile(tmpFile, []byte(initialContent), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	newTablesPath := "configs/tables/enterprise-prod.json"
+	if err := updateConfigFileTablesPath(tmpFile, newTablesPath); err != nil {
+		t.Fatalf("updateConfigFileTablesPath failed: %v", err)
+	}
+
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.Contains(content, `tables_file = "configs/tables/enterprise-prod.json"`) {
+		t.Errorf("expected updated tables_file, got:\n%s", content)
+	}
+	if strings.Contains(content, "old.json") {
+		t.Errorf("expected old.json to be replaced")
+	}
+}
+
