@@ -26,16 +26,25 @@
    - 自动生成带预填参数的跳转链接：`https://<host>/share/base/form/<token>?prefill_关联交易流水号=<record_id>`，实现持卡人点击直接关联对应的流水记录。
 4. **`Client.SendCardToUser`**：调用飞书 `POST /im/v1/messages?receive_id_type=open_id` 发送 `msg_type: "interactive"` 消息。
 
-## 联调发现与权限开通
+5. **原生 CLI 命令 `notify-transaction`**：
+   - 彻底废除临时外部脚本，在 `cmd/server/notify_transaction.go` 内置一等公民命令：
+     `./bin/twc-approval-go-bridge notify-transaction <transaction-record-id>`
+   - 自动读取 `config.toml` 与业务表配置，定位流水记录，解析持卡人与交易事实，拼接带预填的表单 URL 并直接调用卡片客户端下发。
 
-后台实测调用飞书消息接口发现：
-- 目标持卡人真实 Open ID（`ou_20b69e2f8a70fb4d52598ceb230d9181`，朱益涛）已从多维表格成功读取；
-- 飞书开放平台拦截提示：当前应用 `cli_aa4b551c9db85be4` 尚未开通应用发消息权限 `im:message:send_as_bot`（或未开启“机器人”功能）；
-- 开通地址：`https://open.feishu.cn/app/cli_aa4b551c9db85be4/auth?q=im:message:send,im:message,im:message:send_as_bot&op_from=openapi&token_type=tenant`。
+## 联调与实测投递
+
+1. **机器人能力与版本发布**：
+   - 飞书开放平台开通 `im:message:send_as_bot` 权限，并添加「机器人」应用能力发布版本；
+   - 查询飞书机器人状态返回 `activate_status: 2`，应用名称为「影视飓风」。
+2. **向持卡人谢子豪成功投递**：
+   - 真实流水记录：`reczz28LDCeVjW2H`（商户：`OPENAI *CHATGPT SUBSCR SAN FRANCISCO USA`，金额：`CNY 304.30`，持卡人：谢子豪，OpenID：`ou_d9906271c1cc05281ad48757fb2bb71a`）；
+   - 执行原生命令：`./bin/twc-approval-go-bridge notify-transaction reczz28LDCeVjW2H`；
+   - 飞书接口成功返回 `message_id: "om_x100b63be16490ca0c45507b5d450530"`，卡片成功送达谢子豪飞书会话，按钮链接完美附带 `?prefill_关联交易流水号=reczz28LDCeVjW2H`。
 
 ## 验收
 
+- 原生命令 `./bin/twc-approval-go-bridge notify-transaction <record-id>` 联调实测 100% 成功；
 - `internal/feishu/card` 单元测试通过；
-- `check-business-config` 线上只读核验 100% 成功（流水表 13 字段、明细表 20 字段、台账表 20 字段）；
+- `check-business-config` 线上只读核验 100% 成功；
 - `go test ./...` 与 `go test -tags no_anthropic ./...` 全量 100% 通过；
 - `go vet ./...` 检查通过。
