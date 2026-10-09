@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -38,64 +39,126 @@ func main() {
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.Runtime.LogLevel}))
-	if len(os.Args) > 1 {
-		isDoctor := os.Args[1] == "doctor"
-		isBusinessCheck := os.Args[1] == "check-business-config"
 
-		if isDoctor || isBusinessCheck {
-			if len(os.Args) > 3 {
-				logger.Error("usage: server doctor [-json] | server check-business-config")
-				os.Exit(2)
-			}
-		} else if len(os.Args) != 3 {
-			logger.Error("usage: server doctor [-json] | server check-business-config | {notify-transaction|review-status|check-review|preview-review|submit-review|retry-writeback|apply-seal-result} <record-id-document-id-or-file>")
-			os.Exit(2)
-		}
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		switch os.Args[1] {
-		case "doctor":
-			jsonOutput := len(os.Args) > 2 && os.Args[2] == "-json"
-			err = runDoctor(ctx, cfg, jsonOutput, os.Stdout)
-		case "check-business-config":
-			err = runBusinessCheck(ctx, cfg, os.Stdout)
-		case "init-bitable":
-			err = runInitBitable(ctx, cfg, os.Args[2:], os.Stdout)
-		case "add-admin":
-			if len(os.Args) < 4 {
-				err = errors.New("usage: add-admin <base-token> <user-email-or-open-id>")
-			} else {
-				err = runAddAdmin(ctx, cfg, os.Args[2], os.Args[3], os.Stdout)
-			}
-		case "transfer-owner":
-			if len(os.Args) < 4 {
-				err = errors.New("usage: transfer-owner <base-token> <user-open-id>")
-			} else {
-				err = runTransferOwner(ctx, cfg, os.Args[2], os.Args[3], os.Stdout)
-			}
-		case "notify-transaction":
-			err = runNotifyTransaction(ctx, cfg, os.Args[2], os.Stdout)
-		case "preview-review":
-			err = runReviewPreview(ctx, cfg, os.Args[2], os.Stdout)
-		case "review-status":
-			err = runReviewInspection(ctx, cfg, os.Args[2], false, os.Stdout)
-		case "check-review":
-			err = runReviewInspection(ctx, cfg, os.Args[2], true, os.Stdout)
-		case "retry-writeback":
-			err = runReviewWriteback(ctx, cfg, os.Args[2], os.Stdout)
-		case "submit-review":
-			err = runReviewSubmit(ctx, cfg, os.Args[2], logger)
-		case "apply-seal-result":
-			err = runSealResult(ctx, cfg, os.Args[2])
-		default:
-			err = errors.New("unknown command")
-		}
-		if err != nil {
-			logger.Error("command failed", "error", err)
-			os.Exit(1)
-		}
+	if len(os.Args) < 2 {
+		printUsage(os.Stderr)
+		os.Exit(2)
+	}
+
+	cmd := os.Args[1]
+	if cmd == "-h" || cmd == "--help" || cmd == "help" {
+		printUsage(os.Stdout)
 		return
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	var cmdErr error
+	switch cmd {
+	case "server", "start", "run":
+		cmdErr = runServer(ctx, cfg, logger, stop)
+	case "doctor":
+		jsonOutput := len(os.Args) > 2 && os.Args[2] == "-json"
+		cmdErr = runDoctor(ctx, cfg, jsonOutput, os.Stdout)
+	case "check-business-config":
+		cmdErr = runBusinessCheck(ctx, cfg, os.Stdout)
+	case "init-bitable":
+		cmdErr = runInitBitable(ctx, cfg, os.Args[2:], os.Stdout)
+	case "add-admin":
+		if len(os.Args) < 4 {
+			cmdErr = errors.New("usage: add-admin <base-token> <user-email-or-open-id>")
+		} else {
+			cmdErr = runAddAdmin(ctx, cfg, os.Args[2], os.Args[3], os.Stdout)
+		}
+	case "transfer-owner":
+		if len(os.Args) < 4 {
+			cmdErr = errors.New("usage: transfer-owner <base-token> <user-open-id>")
+		} else {
+			cmdErr = runTransferOwner(ctx, cfg, os.Args[2], os.Args[3], os.Stdout)
+		}
+	case "notify-transaction":
+		if len(os.Args) < 3 {
+			cmdErr = errors.New("usage: notify-transaction <record-id>")
+		} else {
+			cmdErr = runNotifyTransaction(ctx, cfg, os.Args[2], os.Stdout)
+		}
+	case "preview-review":
+		if len(os.Args) < 3 {
+			cmdErr = errors.New("usage: preview-review <record-id>")
+		} else {
+			cmdErr = runReviewPreview(ctx, cfg, os.Args[2], os.Stdout)
+		}
+	case "review-status":
+		if len(os.Args) < 3 {
+			cmdErr = errors.New("usage: review-status <record-id>")
+		} else {
+			cmdErr = runReviewInspection(ctx, cfg, os.Args[2], false, os.Stdout)
+		}
+	case "check-review":
+		if len(os.Args) < 3 {
+			cmdErr = errors.New("usage: check-review <record-id>")
+		} else {
+			cmdErr = runReviewInspection(ctx, cfg, os.Args[2], true, os.Stdout)
+		}
+	case "retry-writeback":
+		if len(os.Args) < 3 {
+			cmdErr = errors.New("usage: retry-writeback <record-id>")
+		} else {
+			cmdErr = runReviewWriteback(ctx, cfg, os.Args[2], os.Stdout)
+		}
+	case "submit-review":
+		if len(os.Args) < 3 {
+			cmdErr = errors.New("usage: submit-review <record-id>")
+		} else {
+			cmdErr = runReviewSubmit(ctx, cfg, os.Args[2], logger)
+		}
+	case "apply-seal-result":
+		if len(os.Args) < 3 {
+			cmdErr = errors.New("usage: apply-seal-result <file>")
+		} else {
+			cmdErr = runSealResult(ctx, cfg, os.Args[2])
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "未知子命令: %s\n\n", cmd)
+		printUsage(os.Stderr)
+		os.Exit(2)
+	}
+	if cmdErr != nil {
+		logger.Error("command failed", "error", cmdErr)
+		os.Exit(1)
+	}
+}
+
+func printUsage(w io.Writer) {
+	fmt.Fprintf(w, `影视飓风 - 海外小票识别与 AI 审核桥接服务 (twc-approval-go-bridge)
+
+用法:
+  twc-approval-go-bridge <command> [arguments]
+
+核心服务:
+  server                   启动常驻后台服务（长连接监听、小票识别、AI 审核与回调服务）
+
+运维与诊断:
+  doctor [-json]           全面健康检查与权限探测
+  init-bitable [options]   一键在飞书创建多维表格储备库并自动配置
+  check-business-config    校验当前多维表格拓扑与字段契约
+  add-admin <base> <user>  为多维表格添加管理员协作者 (full_access)
+  transfer-owner <base> <user> 转移多维表格所有权
+
+单据与审核工具:
+  notify-transaction <id>  向持卡人投递补票通知卡片
+  preview-review <id>      预览单据 AI 审核请求载荷
+  submit-review <id>       手动送审单据并触发机审
+  review-status <id>       查看单据机审状态与留痕
+  check-review <id>        校验单据机审结果与一致性
+  retry-writeback <id>     手动重试机审结果回写
+  apply-seal-result <file> 本地测试应用 SealAI 回调结果
+`)
+}
+
+func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop context.CancelFunc) error {
+	var err error
 	if cfg.Business != nil {
 		details := cfg.Business.Tables.ReimbursementDetails
 		ledger := cfg.Business.Tables.InvoiceLedger
@@ -311,8 +374,6 @@ func main() {
 		listeners = append(listeners, listener)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	if automaticReview != nil {
 		go automaticReview.Run(ctx)
 	}
@@ -379,17 +440,18 @@ func main() {
 		if err != nil {
 			logger.Error("http server stopped unexpectedly", "error", err)
 			shutdown()
-			os.Exit(1)
+			return err
 		}
 	case err := <-feishuErr:
 		if err != nil && !errors.Is(err, context.Canceled) {
 			logger.Error("Feishu long connection stopped unexpectedly", "error", err)
 			shutdown()
-			os.Exit(1)
+			return err
 		}
 		shutdown()
 	case <-ctx.Done():
 		shutdown()
 	}
 	logger.Info("service stopped")
+	return nil
 }
