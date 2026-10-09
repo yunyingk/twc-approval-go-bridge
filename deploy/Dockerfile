@@ -18,6 +18,7 @@ FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c
 
 COPY --from=build /out/server /server
 COPY --from=build --chown=65532:65532 /out/data /data
-ENV CONFIG_FILE=/config.toml
+ENV CONFIG_FILE=/configs/config.toml
 EXPOSE 8080
 ENTRYPOINT ["/server"]
+CMD ["server"]
