@@ -133,21 +133,24 @@ func (s *Service) NotifyTransaction(ctx context.Context, transactionRecordID str
 	merchant := formatString(getFieldValue("merchant"), record["商户名称"])
 	txTime := formatTime(getFieldValue("transaction_time"), record["交易时间"])
 
-	// Deduplication: check if already linked to reimbursement details
-	detailRelRaw := getFieldValue("detail_relation")
-	if detailRelRaw == nil {
-		detailRelRaw = record["个人报销单号"]
-	}
+	// Apply business filter rules (0-amount, failed, cancelled, already linked)
 	force := len(opts) > 0 && opts[0].Force
-	if !force && isAlreadyLinked(detailRelRaw) {
-		return &NotifyResult{
-			Status:        "skipped_already_linked",
-			Recipient:     recipientName,
-			OpenID:        openID,
-			TransactionID: txID,
-			Merchant:      merchant,
-			Reason:        "该交易流水已关联个人报销明细，无需重复催报",
-		}, nil
+	if !force {
+		decision := EvaluateTransactionFilter(record, fieldMap, transBinding)
+		if !decision.ShouldNotify {
+			status := "skipped_by_filter"
+			if strings.Contains(decision.Reason, "已关联") {
+				status = "skipped_already_linked"
+			}
+			return &NotifyResult{
+				Status:        status,
+				Recipient:     recipientName,
+				OpenID:        openID,
+				TransactionID: txID,
+				Merchant:      merchant,
+				Reason:        decision.Reason,
+			}, nil
+		}
 	}
 
 	bookedAmt := formatString(getFieldValue("booked_amount_cny"), record["结算金额"])
@@ -509,4 +512,83 @@ func (s *Service) getBotName(ctx context.Context) string {
 		return strings.TrimSpace(name)
 	}
 	return ""
+}
+
+// TransactionRow represents a row with its fields from the Bitable transactions table.
+type TransactionRow struct {
+	RecordID string         `json:"record_id"`
+	Fields   map[string]any `json:"fields"`
+}
+
+// ListTransactionRows lists all records with their fields directly in paginated batches of 100.
+func (s *Service) ListTransactionRows(ctx context.Context) ([]TransactionRow, error) {
+	transBinding := s.cfg.Business.Tables.Transactions
+	if transBinding.BaseToken == "" || transBinding.TableID == "" {
+		return nil, fmt.Errorf("transactions table binding is missing base_token or table_id")
+	}
+
+	token, err := s.client.accessToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetch access token: %w", err)
+	}
+
+	var allRows []TransactionRow
+	pageToken := ""
+	for {
+		apiURL := fmt.Sprintf("%s/bitable/v1/apps/%s/tables/%s/records?page_size=100",
+			s.client.baseURL, url.PathEscape(transBinding.BaseToken), url.PathEscape(transBinding.TableID))
+		if pageToken != "" {
+			apiURL += "&page_token=" + url.QueryEscape(pageToken)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := s.client.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		var result struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+			Data struct {
+				HasMore   bool             `json:"has_more"`
+				PageToken string           `json:"page_token"`
+				Items     []TransactionRow `json:"items"`
+			} `json:"data"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&result)
+		resp.Body.Close()
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if result.Code != 0 {
+			return nil, fmt.Errorf("list transaction records failed (code %d): %s", result.Code, result.Msg)
+		}
+		for _, item := range result.Data.Items {
+			if item.RecordID != "" {
+				allRows = append(allRows, item)
+			}
+		}
+		if !result.Data.HasMore || result.Data.PageToken == "" {
+			break
+		}
+		pageToken = result.Data.PageToken
+	}
+	return allRows, nil
+}
+
+// ListTransactionRecordIDs lists all record IDs from the configured transactions table.
+func (s *Service) ListTransactionRecordIDs(ctx context.Context) ([]string, error) {
+	rows, err := s.ListTransactionRows(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(rows))
+	for i, r := range rows {
+		ids[i] = r.RecordID
+	}
+	return ids, nil
 }

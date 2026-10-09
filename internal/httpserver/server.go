@@ -20,6 +20,7 @@ type Server struct {
 	version        string
 	startTime      time.Time
 	statusProvider StatusProvider
+	password       string
 }
 
 // New builds an HTTP server with health and version endpoints.
@@ -43,6 +44,24 @@ func New(addr string, logger *slog.Logger, version string) *Server {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s
+}
+
+// SetPassword configures HTTP basic auth protection for the dashboard and status API.
+func (s *Server) SetPassword(pwd string) {
+	s.password = pwd
+}
+
+func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request) bool {
+	if s.password == "" {
+		return true
+	}
+	_, pass, ok := r.BasicAuth()
+	if !ok || pass != s.password {
+		w.Header().Set("WWW-Authenticate", `Basic realm="Restricted Dashboard"`)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	return true
 }
 
 // SetStatusProvider attaches a live status reporter to the server dashboard.
@@ -81,7 +100,10 @@ func (s *Server) versionHandler(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"version": s.version})
 }
 
-func (s *Server) statusAPI(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) statusAPI(w http.ResponseWriter, r *http.Request) {
+	if !s.checkAuth(w, r) {
+		return
+	}
 	if s.statusProvider != nil {
 		writeJSON(w, http.StatusOK, s.statusProvider())
 		return

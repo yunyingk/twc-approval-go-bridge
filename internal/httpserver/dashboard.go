@@ -34,6 +34,9 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+	if !s.checkAuth(w, r) {
+		return
+	}
 
 	var status Status
 	if s.statusProvider != nil {

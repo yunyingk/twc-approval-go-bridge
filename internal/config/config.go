@@ -29,15 +29,22 @@ type Document struct {
 	Anyreceipt    AnyreceiptSettings  `json:"anyreceipt" toml:"anyreceipt"`
 	Seal          SealSettings        `json:"seal" toml:"seal"`
 	Model         ModelSettings       `json:"model" toml:"model"`
+	Transactions  TransactionSettings `json:"transactions,omitempty" toml:"transactions,omitempty"`
 
 	BusinessProfile BusinessProfile `json:"-" toml:"-"`
+}
+
+type TransactionSettings struct {
+	AutoNotify   bool   `json:"auto_notify,omitempty" toml:"auto_notify,omitempty"`
+	PollInterval string `json:"poll_interval,omitempty" toml:"poll_interval,omitempty"`
 }
 
 type RuntimeSettings struct {
 	HTTPAddr        string `json:"http_addr" toml:"http_addr"`
 	LogLevel        string `json:"log_level" toml:"log_level"`
 	ShutdownTimeout string `json:"shutdown_timeout" toml:"shutdown_timeout"`
-	StateDir        string `json:"state_dir" toml:"state_dir"`
+	StateDir          string `json:"state_dir" toml:"state_dir"`
+	DashboardPassword string `json:"dashboard_password,omitempty" toml:"dashboard_password,omitempty"`
 }
 
 type AppCredentials struct {
@@ -90,8 +97,14 @@ type ModelSettings struct {
 type RuntimeConfig struct {
 	HTTPAddr        string
 	LogLevel        slog.Level
-	ShutdownTimeout time.Duration
-	StateDir        string
+	ShutdownTimeout   time.Duration
+	StateDir          string
+	DashboardPassword string
+}
+
+type TransactionConfig struct {
+	AutoNotify   bool
+	PollInterval time.Duration
 }
 
 // Config contains runtime settings for the service shell.
@@ -103,6 +116,7 @@ type Config struct {
 	Anyreceipt          AnyreceiptSettings
 	Seal                SealSettings
 	Model               ModelSettings
+	Transactions        TransactionConfig
 	Business            *BusinessProfile
 	ReceiptPollInterval time.Duration
 	ReceiptPollStartup  string
@@ -202,6 +216,10 @@ func LoadFile(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	txPoll, err := parseDuration("transactions.poll_interval", document.Transactions.PollInterval, 5*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
 	level, err := parseLogLevel(document.Runtime.LogLevel)
 	if err != nil {
 		return Config{}, err
@@ -215,13 +233,18 @@ func LoadFile(path string) (Config, error) {
 		Runtime: RuntimeConfig{
 			HTTPAddr:        fallback(document.Runtime.HTTPAddr, ":8080"),
 			LogLevel:        level,
-			ShutdownTimeout: shutdown,
-			StateDir:        fallback(document.Runtime.StateDir, "data"),
+			ShutdownTimeout:   shutdown,
+			StateDir:          fallback(document.Runtime.StateDir, "data"),
+			DashboardPassword: strings.TrimSpace(document.Runtime.DashboardPassword),
 		},
 		Feishu:              feishu,
 		Anyreceipt:          document.Anyreceipt,
 		Seal:                document.Seal,
 		Model:               document.Model,
+		Transactions: TransactionConfig{
+			AutoNotify:   document.Transactions.AutoNotify,
+			PollInterval: txPoll,
+		},
 		Business:            &document.BusinessProfile,
 		ReceiptPollInterval: poll,
 		ReceiptPollStartup:  fallback(document.Recognition.PollStartup, "baseline"),

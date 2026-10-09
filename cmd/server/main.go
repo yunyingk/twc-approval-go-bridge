@@ -22,6 +22,7 @@ import (
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base"
 	baseevents "github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/events"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/invoiceledger"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/card"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/events"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/task"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/httpserver"
@@ -83,6 +84,8 @@ func main() {
 		} else {
 			cmdErr = runNotifyTransaction(ctx, cfg, os.Args[2], os.Stdout)
 		}
+	case "scan-transactions":
+		cmdErr = runScanTransactions(ctx, cfg, logger, os.Args[2:], os.Stdout)
 	case "preview-review":
 		if len(os.Args) < 3 {
 			cmdErr = errors.New("usage: preview-review <record-id>")
@@ -148,6 +151,7 @@ func printUsage(w io.Writer) {
 
 单据与审核工具:
   notify-transaction <id>  向持卡人投递补票通知卡片
+  scan-transactions        全量扫描流水表并按独立规则批量自动催报
   preview-review <id>      预览单据 AI 审核请求载荷
   submit-review <id>       手动送审单据并触发机审
   review-status <id>       查看单据机审状态与留痕
@@ -171,6 +175,9 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 			"change_debounce", cfg.Business.Review.ChangeDebounce)
 	}
 	server := httpserver.New(cfg.Runtime.HTTPAddr, logger, version.Version)
+	if cfg.Runtime.DashboardPassword != "" {
+		server.SetPassword(cfg.Runtime.DashboardPassword)
+	}
 	server.Register("POST /seal/callback/mock", seal.MockCallback(logger))
 
 	var reviewService *appreview.Service
@@ -449,6 +456,15 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 		go receiptFlow.Run(ctx)
 		if cfg.ReceiptTriggerMode() != "event" {
 			go receiptFlow.Poll(ctx, attachmentClient, cfg.ReceiptPollInterval, cfg.ReceiptPollStartup == "process")
+		}
+	}
+	if cfg.Transactions.AutoNotify && cfg.FeishuEnabled() && cfg.Business != nil && cfg.Business.Tables.Transactions.TableID != "" {
+		cardSvc, cardErr := card.NewService(cfg)
+		if cardErr == nil {
+			scanner := card.NewScanner(cardSvc, logger)
+			go scanner.Start(ctx, cfg.Transactions.PollInterval)
+		} else {
+			logger.Warn("transaction scanner initialization failed", "error", cardErr)
 		}
 	}
 
