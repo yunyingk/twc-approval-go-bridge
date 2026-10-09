@@ -173,3 +173,179 @@ func TestFormatHelpers(t *testing.T) {
 		t.Errorf("extractCardholderOpenID = %s, %s", id, name)
 	}
 }
+
+func TestServiceNotifyTransaction_Option1_PrefillAndTask(t *testing.T) {
+	var createdDetailRecord bool
+	var createdTask bool
+	var sentCardMessage bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if strings.HasSuffix(r.URL.Path, "/auth/v3/tenant_access_token/internal") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":                0,
+				"msg":                 "ok",
+				"tenant_access_token": "mock-tenant-token",
+			})
+			return
+		}
+
+		if strings.HasSuffix(r.URL.Path, "/fields") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{
+					"items": []map[string]any{
+						{"field_id": "fld_tx_id", "field_name": "交易流水号"},
+						{"field_id": "fld_cardholder", "field_name": "持卡人"},
+						{"field_id": "fld_merchant", "field_name": "商户名称"},
+						{"field_id": "fld_time", "field_name": "交易时间"},
+						{"field_id": "fld_booked_amt", "field_name": "结算金额"},
+						{"field_id": "fld_orig_amt", "field_name": "交易金额"},
+						{"field_id": "fld_orig_cur", "field_name": "交易金额币种"},
+						{"field_id": "fld_detail_rel", "field_name": "关联流水号"},
+						{"field_id": "fld_emp", "field_name": "报销人"},
+						{"field_id": "fld_reason", "field_name": "消费事由"},
+					},
+				},
+			})
+			return
+		}
+
+		if strings.Contains(r.URL.Path, "/records/rec_tx_test") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"msg":  "ok",
+				"data": map[string]any{
+					"record": map[string]any{
+						"fields": map[string]any{
+							"交易流水号": "TX20261009002",
+							"商户名称":   "OPENAI *CHATGPT",
+							"交易时间":   float64(1790524800000),
+							"结算金额":   "146.52",
+							"结算金额币种": "CNY",
+							"交易金额":   "20.00",
+							"交易金额币种": "USD",
+							"持卡人": []any{
+								map[string]any{"id": "ou_xzh", "name": "谢子豪"},
+							},
+						},
+					},
+				},
+			})
+			return
+		}
+
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/tables/tbl_detail_id/records") {
+			createdDetailRecord = true
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"msg":  "ok",
+				"data": map[string]any{
+					"record": map[string]any{
+						"record_id": "rec_detail_test_999",
+					},
+				},
+			})
+			return
+		}
+
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/task/v2/tasks") {
+			createdTask = true
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"msg":  "ok",
+				"data": map[string]any{
+					"task": map[string]any{
+						"guid": "mock_task_guid_888",
+					},
+				},
+			})
+			return
+		}
+
+		if strings.HasSuffix(r.URL.Path, "/im/v1/messages") {
+			sentCardMessage = true
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"msg":  "success",
+				"data": map[string]any{
+					"message_id": "om_test_card_999",
+				},
+			})
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	cfg := config.Config{
+		Feishu: config.FeishuSettings{
+			AppCredentials: config.AppCredentials{
+				AppID:     "app_test",
+				AppSecret: "secret_test",
+			},
+			Host: "https://test.feishu.cn",
+		},
+		Business: &config.BusinessProfile{
+			Tables: config.BusinessTables{
+				Transactions: config.TableBinding{
+					BaseToken: "app_base_token",
+					TableID:   "tbl_trans_id",
+					Fields: map[string]string{
+						"transaction_id":    "fld_tx_id",
+						"cardholder":        "fld_cardholder",
+						"merchant":          "fld_merchant",
+						"transaction_time":  "fld_time",
+						"booked_amount_cny": "fld_booked_amt",
+						"original_amount":   "fld_orig_amt",
+						"original_currency": "fld_orig_cur",
+					},
+				},
+				ReimbursementDetails: config.TableBinding{
+					BaseToken: "app_base_token",
+					TableID:   "tbl_detail_id",
+					Fields: map[string]string{
+						"transaction_relation": "fld_detail_rel",
+						"employee":             "fld_emp",
+						"expense_reason":       "fld_reason",
+					},
+				},
+			},
+		},
+	}
+
+	svc, err := NewService(cfg)
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
+	svc.client.baseURL = server.URL
+	if svc.taskClient != nil {
+		svc.taskClient.SetBaseURLForTest(server.URL)
+	}
+
+	res, err := svc.NotifyTransaction(context.Background(), "rec_tx_test")
+	if err != nil {
+		t.Fatalf("NotifyTransaction failed: %v", err)
+	}
+
+	if !createdDetailRecord {
+		t.Errorf("expected detail record to be created in Bitable")
+	}
+	if !createdTask {
+		t.Errorf("expected Feishu task to be created")
+	}
+	if !sentCardMessage {
+		t.Errorf("expected message card to be sent")
+	}
+	if res.DetailRecordID != "rec_detail_test_999" {
+		t.Errorf("unexpected DetailRecordID: %s", res.DetailRecordID)
+	}
+	if res.TaskGUID != "mock_task_guid_888" {
+		t.Errorf("unexpected TaskGUID: %s", res.TaskGUID)
+	}
+	if !strings.Contains(res.RecordURL, "record=rec_detail_test_999") {
+		t.Errorf("expected direct record url, got: %s", res.RecordURL)
+	}
+}

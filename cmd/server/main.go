@@ -22,6 +22,7 @@ import (
 	baseevents "github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/events"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/invoiceledger"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/events"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/task"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/httpserver"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/state"
@@ -159,6 +160,19 @@ func main() {
 			})
 			details := cfg.Business.Tables.ReimbursementDetails
 			ledger := cfg.Business.Tables.InvoiceLedger
+
+			var taskService *task.Service
+			if cfg.FeishuEnabled() {
+				var taskStore task.Store
+				if cfg.Runtime.StateDir != "" {
+					if st, err := state.NewFiles(cfg.Runtime.StateDir); err == nil {
+						taskStore = st
+					}
+				}
+				taskClient := task.NewClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret)
+				taskService = task.NewService(taskClient, taskStore)
+			}
+
 			if ledger.TableID != "" {
 				ledgerHandler, ledgerErr := invoiceledger.New(invoiceledger.Config{BaseToken: details.BaseToken, SourceTableID: details.TableID, SourceDetailFieldID: details.DetailIDField(), TableID: ledger.TableID, Fields: ledger.Fields}, base.NewLedgerClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret), logger)
 				if ledgerErr != nil {
@@ -168,6 +182,13 @@ func main() {
 				resultHandler = func(ctx context.Context, result recognition.Result) error {
 					if err := ledgerHandler.Handle(ctx, result); err != nil {
 						return err
+					}
+					if taskService != nil {
+						if err := taskService.CompleteOnInvoiceUpload(ctx, result.RecordID, result.FileName, ""); err != nil {
+							logger.WarnContext(ctx, "complete task on invoice upload failed", "record_id", result.RecordID, "error", err)
+						} else {
+							logger.InfoContext(ctx, "task completed on invoice upload", "record_id", result.RecordID, "file_name", result.FileName)
+						}
 					}
 					if automaticReview != nil {
 						return automaticReview.NotifyRecognition(ctx, result.RecordID)
