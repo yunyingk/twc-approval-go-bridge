@@ -131,7 +131,7 @@ func main() {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintf(w, `影视飓风 - 海外小票识别与 AI 审核桥接服务 (twc-approval-go-bridge)
+	fmt.Fprintf(w, `海外小票识别与 AI 审核桥接服务 (twc-approval-go-bridge)
 
 用法:
   twc-approval-go-bridge <command> [arguments]

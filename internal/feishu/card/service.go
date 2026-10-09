@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
@@ -42,6 +43,8 @@ type Service struct {
 	client     *Client
 	taskClient *task.Client
 	taskSvc    *task.Service
+	mu         sync.Mutex
+	botName    string
 }
 
 // NewService instantiates a card service using validated runtime and business configuration.
@@ -156,7 +159,11 @@ func (s *Service) NotifyTransaction(ctx context.Context, transactionRecordID str
 	origAmountStr := strings.TrimSpace(fmt.Sprintf("%s %s", origCur, origAmt))
 
 	targetURL := detailsBinding.FormPrefillURL(s.cfg.Feishu.Host, "关联交易流水号", transactionRecordID)
-	noteText := "来自 海外易商卡 × 影视飓风 报销助手"
+	botName := s.getBotName(ctx)
+	noteText := "来自 海外易商卡报销助手"
+	if botName != "" {
+		noteText = fmt.Sprintf("来自 海外易商卡 × %s", botName)
+	}
 
 	var detailRecordID string
 	var taskGUID string
@@ -175,7 +182,11 @@ func (s *Service) NotifyTransaction(ctx context.Context, transactionRecordID str
 				taskGUID, _ = s.createNoticeTask(ctx, targetURL, openID, txID, merchant, bookedAmountStr, origAmountStr, txTime)
 				if taskGUID != "" && s.taskSvc != nil {
 					_ = s.taskSvc.LinkRecordTask(ctx, detailRecordID, taskGUID)
-					noteText = "来自 海外易商卡 × 影视飓风 报销助手 · 已同步生成飞书待办"
+					if botName != "" {
+						noteText = fmt.Sprintf("来自 海外易商卡 × %s · 已同步生成飞书待办", botName)
+					} else {
+						noteText = "来自 海外易商卡报销助手 · 已同步生成飞书待办"
+					}
 				}
 			}
 		}
@@ -479,4 +490,23 @@ func isAlreadyLinked(raw any) bool {
 		}
 	}
 	return false
+}
+
+func (s *Service) getBotName(ctx context.Context) string {
+	s.mu.Lock()
+	if s.botName != "" {
+		name := s.botName
+		s.mu.Unlock()
+		return name
+	}
+	s.mu.Unlock()
+
+	name, err := s.client.FetchBotName(ctx)
+	if err == nil && strings.TrimSpace(name) != "" {
+		s.mu.Lock()
+		s.botName = strings.TrimSpace(name)
+		s.mu.Unlock()
+		return strings.TrimSpace(name)
+	}
+	return ""
 }

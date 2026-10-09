@@ -127,3 +127,37 @@ func TestBuildFormURL(t *testing.T) {
 	}
 }
 
+func TestFetchBotName_MockServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/auth/v3/tenant_access_token/internal") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"code":0,"msg":"ok","tenant_access_token":"mock-token"}`))
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/bot/v3/info") {
+			if r.Header.Get("Authorization") != "Bearer mock-token" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"code":0,"msg":"ok","bot":{"activate_status":2,"app_name":"模式通","open_id":"ou_bot123"}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewClient("app", "secret")
+	client.baseURL = server.URL
+	client.httpClient = server.Client()
+
+	name, err := client.FetchBotName(context.Background())
+	if err != nil {
+		t.Fatalf("FetchBotName failed: %v", err)
+	}
+	if name != "模式通" {
+		t.Fatalf("expected bot name '模式通', got: %s", name)
+	}
+}
+

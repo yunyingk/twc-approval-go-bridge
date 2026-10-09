@@ -79,7 +79,7 @@ func NewClient(appID, appSecret string) *Client {
 func BuildTransactionCardMap(notice TransactionNotice) map[string]any {
 	noteText := strings.TrimSpace(notice.NoteText)
 	if noteText == "" {
-		noteText = "来自 海外易商卡 × 影视飓风 报销助手"
+		noteText = "来自 海外易商卡报销助手"
 	}
 
 	contentLines := []string{
@@ -216,6 +216,42 @@ func (c *Client) SendCardToUser(ctx context.Context, openID string, notice Trans
 	}
 
 	return res.Data.MessageID, nil
+}
+
+// FetchBotName queries the Feishu bot OpenAPI to retrieve the configured application name.
+func (c *Client) FetchBotName(ctx context.Context) (string, error) {
+	token, err := c.accessToken(ctx)
+	if err != nil {
+		return "", fmt.Errorf("fetch access token: %w", err)
+	}
+
+	endpoint := c.baseURL + "/bot/v3/info"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", fmt.Errorf("create bot info request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("dispatch bot info request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var res struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Bot  struct {
+			AppName string `json:"app_name"`
+		} `json:"bot"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return "", fmt.Errorf("decode bot info response: %w", err)
+	}
+	if res.Code != 0 {
+		return "", fmt.Errorf("feishu bot info failed (code %d): %s", res.Code, res.Msg)
+	}
+	return strings.TrimSpace(res.Bot.AppName), nil
 }
 
 func (c *Client) accessToken(ctx context.Context) (string, error) {

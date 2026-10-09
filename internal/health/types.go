@@ -49,7 +49,7 @@ func (r Report) RenderJSON(w io.Writer) error {
 // RenderText prints a formatted, human-readable terminal report.
 func (r Report) RenderText(w io.Writer) {
 	fmt.Fprintln(w, "======================================================================")
-	fmt.Fprintln(w, "🏥 影视飓风 海外易商卡报销网桥 · 环境健康探测 (Health Doctor)")
+	fmt.Fprintln(w, "🏥 海外易商卡报销网桥 · 环境健康探测 (Health Doctor)")
 	fmt.Fprintln(w, "======================================================================")
 
 	currentCategory := ""
