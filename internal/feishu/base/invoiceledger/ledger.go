@@ -163,6 +163,7 @@ func (h *Handler) Handle(ctx context.Context, result recognition.Result) error {
 	put("bridge_unique_key", traceID)
 
 	put(AttachmentKey, sourceKey)
+	put("bridge_attachment_key", sourceKey)
 	put(SourceKey, sourceKey)
 	put("bridge_source_key", sourceKey)
 

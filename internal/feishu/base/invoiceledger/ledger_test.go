@@ -107,7 +107,7 @@ func TestHandleRejectsWrongSource(t *testing.T) {
 func TestHandleMapsAttachmentKeyAndTraceID(t *testing.T) {
 	store := &fakeStore{}
 	h, err := New(Config{BaseToken: "base", SourceTableID: "detail", TableID: "ledger", Fields: map[string]string{
-		AttachmentKey: "att_field", RawJSON: "raw_field", TraceID: "trace_field", AISummary: "summary_field",
+		"bridge_attachment_key": "att_field", RawJSON: "raw_field", "ocr_trace_id": "trace_field", AISummary: "summary_field",
 	}}, store, nil)
 	if err != nil {
 		t.Fatal(err)

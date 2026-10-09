@@ -223,7 +223,10 @@ func (tp *TablesProfile) validate() error {
 		return fmt.Errorf("reimbursement_details and invoice_ledger must currently use the same Base; cross-Base ledger delivery is not implemented")
 	}
 	ledger := tp.Tables.InvoiceLedger.Fields
-	sourceKey := ledger["attachment_key"]
+	sourceKey := ledger["bridge_attachment_key"]
+	if sourceKey == "" {
+		sourceKey = ledger["attachment_key"]
+	}
 	if sourceKey == "" {
 		sourceKey = ledger["bridge_source_key"]
 	}

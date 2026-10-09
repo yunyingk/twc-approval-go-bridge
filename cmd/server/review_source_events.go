@@ -27,7 +27,7 @@ func reviewSourceBindings(profile *config.BusinessProfile) []events.ReviewSource
 	}
 	ledger := profile.Tables.InvoiceLedger
 	bindings := []events.ReviewSourceBinding{{Kind: app.InvoiceSource, BaseToken: ledger.BaseToken, TableID: ledger.TableID, InvoiceNumberFieldID: ledger.Fields["invoice_number"],
-		FieldIDs: fields(ledger.Fields, "attachment_key", "source_key", "raw_json", "title", "invoice_number", "receipt_type", "business_category", "seller", "buyer", "currency", "pretax_amount", "tax_amount", "tax_rate", "total_amount", "country", "issue_date")}}
+		FieldIDs: fields(ledger.Fields, "bridge_attachment_key", "attachment_key", "source_key", "raw_json", "title", "invoice_number", "receipt_type", "business_category", "seller", "buyer", "currency", "pretax_amount", "tax_amount", "tax_rate", "total_amount", "country", "issue_date")}}
 	if profile.Review.IncludeTransactions {
 		table := profile.Tables.Transactions
 		bindings = append(bindings, events.ReviewSourceBinding{Kind: app.TransactionSource, BaseToken: table.BaseToken, TableID: table.TableID,

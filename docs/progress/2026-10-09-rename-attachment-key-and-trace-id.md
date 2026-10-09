@@ -17,17 +17,17 @@
 
 | 原配置 Key | 原列名 | 新配置 Key | 新列名 | 真实角色 |
 | :--- | :--- | :--- | :--- | :--- |
-| `bridge_unique_key` | 发票唯一键 | **`trace_id`** | **识别流水号** | 外部 OCR 供应商返回的调用追踪流水号 (`traceId`) |
-| `bridge_source_key` | 识别来源键 | **`attachment_key`** | **附件标识** | 明细附件在系统底层的唯一指针 (`RecordID:FileToken`) |
+| `bridge_unique_key` | 发票唯一键 | **`ocr_trace_id`** | **识别流水号** | 外部 OCR 供应商返回的调用追踪流水号 (`traceId`) |
+| `bridge_source_key` | 识别来源键 | **`bridge_attachment_key`** | **附件标识** | 明细附件在系统底层的唯一指针 (`RecordID:FileToken`) |
 
 ## 实施范围
 
 1. **配置层**：
-   - 更新 `configs/tables/enterprise.example.json` 及测试配置：将 `bridge_unique_key` 升级为 `trace_id`（识别流水号），将 `bridge_source_key` 升级为 `attachment_key`（附件标识）。
+   - 更新 `configs/tables/enterprise.example.json` 及测试配置：严格遵循命名空间前缀规范，将 `bridge_unique_key` 升级为 `ocr_trace_id`（识别流水号），将 `bridge_source_key` 升级为 `bridge_attachment_key`（附件标识）。
 2. **校验与适配层**：
-   - `internal/config/business.go` 与 `internal/config/config.go`：优先以 `attachment_key` 进行必填校验；
-   - `internal/feishu/base/invoiceledger/ledger.go`：正式引入 `AttachmentKey` 与 `TraceID` 常量，`New` 与 `Handle` 优先写入和按新键索引；
-   - `internal/feishu/base/review.go` 与 `cmd/server/review_source_events.go`：送审读取与事件监听同步支持新语义。
+   - `internal/config/business.go` 与 `internal/config/config.go`：支持 `bridge_attachment_key` / `attachment_key` 进行必填校验；
+   - `internal/feishu/base/invoiceledger/ledger.go`：引入 `AttachmentKey` 与 `TraceID` 常量，`New` 与 `Handle` 自动映射归一化并写入；
+   - `internal/feishu/base/review.go` 与 `cmd/server/review_source_events.go`：送审读取与事件监听同步对齐。
 3. **测试用例**：
    - `ledger_test.go` 新增 `TestHandleMapsAttachmentKeyAndTraceID` 专项单测。
 

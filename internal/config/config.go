@@ -220,7 +220,10 @@ func LoadFile(path string) (Config, error) {
 	detail := cfg.Business.Tables.ReimbursementDetails
 	ledger := cfg.Business.Tables.InvoiceLedger
 	if cfg.ReceiptProvider() != "" {
-		sourceKey := ledger.Fields["attachment_key"]
+		sourceKey := ledger.Fields["bridge_attachment_key"]
+		if sourceKey == "" {
+			sourceKey = ledger.Fields["attachment_key"]
+		}
 		if sourceKey == "" {
 			sourceKey = ledger.Fields["bridge_source_key"]
 		}
