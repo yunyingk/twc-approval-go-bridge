@@ -50,15 +50,17 @@ type OrderedField struct {
 // ReimbursementDetailsBinding binds the reimbursement details table, including
 // regular fields, review context fields and AI review result write-back fields.
 type ReimbursementDetailsBinding struct {
-	Name          string            `json:"name"`
-	Source        string            `json:"source"`
-	Access        string            `json:"access"`
-	BaseToken     string            `json:"base_token"`
-	TableID       string            `json:"table_id"`
-	OrderedFields []OrderedField    `json:"ordered_fields,omitempty"`
-	Fields        map[string]string `json:"fields,omitempty"`
-	ContextFields map[string]string `json:"context_fields,omitempty"`
-	ResultFields  map[string]string `json:"result_fields,omitempty"`
+	Name           string            `json:"name"`
+	Source         string            `json:"source"`
+	Access         string            `json:"access"`
+	BaseToken      string            `json:"base_token"`
+	TableID        string            `json:"table_id"`
+	FormShareToken string            `json:"form_share_token,omitempty"`
+	FormURL        string            `json:"form_url,omitempty"`
+	OrderedFields  []OrderedField    `json:"ordered_fields,omitempty"`
+	Fields         map[string]string `json:"fields,omitempty"`
+	ContextFields  map[string]string `json:"context_fields,omitempty"`
+	ResultFields   map[string]string `json:"result_fields,omitempty"`
 }
 
 func (r ReimbursementDetailsBinding) AttachmentField() string {
@@ -81,26 +83,60 @@ func (r ReimbursementDetailsBinding) DetailIDField() string {
 
 func (r ReimbursementDetailsBinding) TableBinding() TableBinding {
 	return TableBinding{
-		Name:          r.Name,
-		Source:        r.Source,
-		Access:        r.Access,
-		BaseToken:     r.BaseToken,
-		TableID:       r.TableID,
-		OrderedFields: r.OrderedFields,
-		Fields:        r.Fields,
+		Name:           r.Name,
+		Source:         r.Source,
+		Access:         r.Access,
+		BaseToken:      r.BaseToken,
+		TableID:        r.TableID,
+		FormShareToken: r.FormShareToken,
+		FormURL:        r.FormURL,
+		OrderedFields:  r.OrderedFields,
+		Fields:         r.Fields,
 	}
+}
+
+// FormPrefillURL builds the full URL for the form view with prefill parameters,
+// taking the enterprise host, prefill relation field name, and transaction record ID.
+func (r ReimbursementDetailsBinding) FormPrefillURL(enterpriseHost, prefillFieldName, recordID string) string {
+	return r.TableBinding().FormPrefillURL(enterpriseHost, prefillFieldName, recordID)
 }
 
 // Source describes who supplies records, not an HTTP endpoint or an authentication grant.
 // Access is the bridge's declared use; actual Feishu permissions still apply.
 type TableBinding struct {
-	Name          string            `json:"name" toml:"name"`
-	Source        string            `json:"source" toml:"source"`
-	Access        string            `json:"access" toml:"access"`
-	BaseToken     string            `json:"base_token" toml:"base_token"`
-	TableID       string            `json:"table_id" toml:"table_id"`
-	OrderedFields []OrderedField    `json:"ordered_fields,omitempty"`
-	Fields        map[string]string `json:"fields,omitempty" toml:"fields"`
+	Name           string            `json:"name" toml:"name"`
+	Source         string            `json:"source" toml:"source"`
+	Access         string            `json:"access" toml:"access"`
+	BaseToken      string            `json:"base_token" toml:"base_token"`
+	TableID        string            `json:"table_id" toml:"table_id"`
+	FormShareToken string            `json:"form_share_token,omitempty" toml:"form_share_token,omitempty"`
+	FormURL        string            `json:"form_url,omitempty" toml:"form_url,omitempty"`
+	OrderedFields  []OrderedField    `json:"ordered_fields,omitempty"`
+	Fields         map[string]string `json:"fields,omitempty" toml:"fields"`
+}
+
+// FormPrefillURL builds the full URL for the form view with prefill parameters,
+// taking the enterprise host, prefill relation field name, and transaction record ID.
+func (t TableBinding) FormPrefillURL(enterpriseHost, prefillFieldName, recordID string) string {
+	raw := strings.TrimSpace(t.FormURL)
+	if raw == "" && t.FormShareToken != "" {
+		host := strings.TrimRight(strings.TrimSpace(enterpriseHost), "/")
+		if host == "" {
+			host = "https://open.feishu.cn"
+		}
+		raw = fmt.Sprintf("%s/share/base/form/%s", host, strings.TrimSpace(t.FormShareToken))
+	}
+	if raw == "" {
+		return ""
+	}
+	if prefillFieldName != "" && recordID != "" {
+		separator := "?"
+		if strings.Contains(raw, "?") {
+			separator = "&"
+		}
+		raw = fmt.Sprintf("%s%sprefill_%s=%s", raw, separator, prefillFieldName, recordID)
+	}
+	return raw
 }
 
 func (t TableBinding) AttachmentField() string {

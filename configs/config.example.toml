@@ -29,6 +29,8 @@ change_debounce = "10s"             # 修改事件防抖等待时间
 [feishu]
 app_id = ""
 app_secret = ""
+# 飞书企业专属 Host / 域名（如 https://your-company.feishu.cn，用于生成多维表格表单或记录跳转链接）
+host = ""
 event_type = "drive.file.bitable_record_changed_v1"
 log_raw_events = false
 

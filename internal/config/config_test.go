@@ -595,5 +595,83 @@ webhook_id = "wh_123"
 	}
 }
 
+func TestFeishuHostNormalizationAndConfig(t *testing.T) {
+	cases := []struct {
+		input    string
+		expected string
+	}{
+		{"https://zyt-test.feishu.cn", "https://zyt-test.feishu.cn"},
+		{"https://zyt-test.feishu.cn/", "https://zyt-test.feishu.cn"},
+		{"zyt-test.feishu.cn", "https://zyt-test.feishu.cn"},
+		{"http://local.test:8080/", "http://local.test:8080"},
+		{"", ""},
+		{"   ", ""},
+	}
+	for _, tc := range cases {
+		s := FeishuSettings{Host: tc.input}
+		if got := s.NormalizedHost(); got != tc.expected {
+			t.Errorf("NormalizedHost(%q) = %q, expected %q", tc.input, got, tc.expected)
+		}
+	}
+
+	dir := t.TempDir()
+	tablesPath := filepath.Join(dir, "tables.json")
+	validJSON := `{
+		"version": 1,
+		"name": "host-test",
+		"tables": {
+			"transactions": {"name": "流水", "source": "webhook", "access": "read_only", "base_token": "b1", "table_id": "t1", "fields": {"transaction_id": "f1"}},
+			"reimbursement_details": {
+				"name": "明细", "source": "employee", "access": "read_write", "base_token": "b1", "table_id": "t2", 
+				"form_share_token": "shrcnhMrnWHtHGvgc2G1nHIMDwf",
+				"fields": {"attachment": "f2"}, "context_fields": {"r": "f3"}, "result_fields": {"decision": "f4"}
+			},
+			"invoice_ledger": {"name": "台账", "source": "bridge", "access": "read_write", "base_token": "b1", "table_id": "t3", "fields": {"source_key": "f5", "raw_json": "f6"}}
+		}
+	}`
+	if err := os.WriteFile(tablesPath, []byte(validJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	tomlContent := `
+tables_file = "tables.json"
+[runtime]
+http_addr = ":8080"
+[feishu]
+app_id = "cli_test"
+app_secret = "secret_test"
+host = "zyt-test.feishu.cn"
+[recognition]
+provider = "disabled"
+trigger_mode = "both"
+[review]
+provider = "seal"
+trigger_mode = "manual"
+`
+	tomlPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(tomlPath, []byte(tomlContent), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadFile(tomlPath)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+	if cfg.Feishu.Host != "https://zyt-test.feishu.cn" {
+		t.Fatalf("expected normalized host 'https://zyt-test.feishu.cn', got %q", cfg.Feishu.Host)
+	}
+
+	details := cfg.Business.Tables.ReimbursementDetails
+	if details.FormShareToken != "shrcnhMrnWHtHGvgc2G1nHIMDwf" {
+		t.Fatalf("expected FormShareToken, got %q", details.FormShareToken)
+	}
+	formURL := details.FormPrefillURL(cfg.Feishu.Host, "关联交易流水号", "rec123")
+	expectedFormURL := "https://zyt-test.feishu.cn/share/base/form/shrcnhMrnWHtHGvgc2G1nHIMDwf?prefill_关联交易流水号=rec123"
+	if formURL != expectedFormURL {
+		t.Fatalf("expected form URL %q, got %q", expectedFormURL, formURL)
+	}
+}
+
+
 
 

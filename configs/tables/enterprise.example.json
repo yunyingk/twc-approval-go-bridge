@@ -19,10 +19,9 @@
         "booked_amount_cny": "fldUizVQpS",
         "country": "fldS8JbrAq",
         "transaction_type": "fldDGtlShR",
-        "transaction_status": "fld0WNX92d",
+        "transaction_status": "fldt155wXk",
         "detail_relation": "fld5d6FHsW",
-        "claim_status": "fldrufSP2f",
-        "locked": "fld54AtAZQ"
+        "claim_status": "fldiI2WSnl"
       }
     },
     "reimbursement_details": {
@@ -31,6 +30,7 @@
       "access": "read_write",
       "base_token": "K5EhbDdEKa8wbJsTCpmcmeVwnHc",
       "table_id": "tbleThinekEbpK9L",
+      "form_share_token": "shrcnhMrnWHtHGvgc2G1nHIMDwf",
       "fields": {
         "detail_id": "fldFR7zXuN",
         "attachment": "fld9awqaDl",

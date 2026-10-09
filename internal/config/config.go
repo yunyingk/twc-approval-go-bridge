@@ -47,9 +47,28 @@ type AppCredentials struct {
 
 type FeishuSettings struct {
 	AppCredentials
-	EventType    string `json:"event_type" toml:"event_type"`
-	LogRawEvents bool   `json:"log_raw_events" toml:"log_raw_events"`
+	Host           string `json:"host,omitempty" toml:"host,omitempty"`
+	EnterpriseHost string `json:"enterprise_host,omitempty" toml:"enterprise_host,omitempty"`
+	EventType      string `json:"event_type" toml:"event_type"`
+	LogRawEvents   bool   `json:"log_raw_events" toml:"log_raw_events"`
 }
+
+// NormalizedHost returns the normalized base URL of the Feishu tenant host,
+// ensuring https:// scheme and stripping trailing slashes (e.g. "https://zyt-test.feishu.cn").
+func (s FeishuSettings) NormalizedHost() string {
+	raw := strings.TrimSpace(s.Host)
+	if raw == "" {
+		raw = strings.TrimSpace(s.EnterpriseHost)
+	}
+	if raw == "" {
+		return ""
+	}
+	if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
+		raw = "https://" + raw
+	}
+	return strings.TrimRight(raw, "/")
+}
+
 
 type AnyreceiptSettings struct {
 	APIKey string `json:"api_key" toml:"api_key"`
@@ -188,6 +207,7 @@ func LoadFile(path string) (Config, error) {
 		return Config{}, err
 	}
 	feishu := document.Feishu
+	feishu.Host = feishu.NormalizedHost()
 	feishu.EventType = fallback(feishu.EventType, "drive.file.bitable_record_changed_v1")
 	cfg := Config{
 		ConfigFile: path,
