@@ -26,10 +26,11 @@
   - `internal/app/review`：单据机审编排层，支持识别完成自动送审（`after_recognition`）或手动送审。提供方可选 SealAI（`internal/seal`，支持 `base_url` + `webhook_id` 组装）或自有规则大模型（`internal/anthropic/review`）；审核结果回写明细表专用列；
   - `internal/feishu/base`：多维表格数据源适配（流水表只读、明细表读写、台账表读写）；
   - `internal/core/`：核心数据契约、中立票据结构（`invoice`）、审核结果模型（`review`）与台账查重（`dupcheck`）。
-- **编译与验证约束**：
-  - 默认构建包含 Anthropic SDK。轻量化构建支持使用编译标签：`go build -tags no_anthropic ./cmd/server`；
-  - 代码改动后必须运行双构建测试：`go test ./...` 与 `go test -tags no_anthropic ./...`，以及 `go vet ./...`；
-  - 涉及多维表格配置变更时，先运行 `./bin/twc-approval-go-bridge check-business-config` 进行线上只读核验。
+- **编译与验证约束（敏捷增量 + 阶段全量）**：
+  - **日常敏捷迭代**：日常微调允许执行**受影响模块精准测试**（例如 `go test ./internal/feishu/card/...`），避免每步都全量等待；
+  - **阶段提交守卫**：在创建本地 Git Commit 或关键阶段交付前，**必须执行全量双构建测试**：`go test ./...` 与 `go test -tags no_anthropic ./...`，以及 `go vet ./...`；
+  - **副作用安全红线**：涉及消息推送、待办派发或批量写表功能，必须默认只读分析（Dry-Run）并支持数量与用户过滤，严禁在无约束下盲测群发；
+  - **多维表格核验**：涉及多维表格配置变更时，先运行 `./bin/twc-approval-go-bridge check-business-config` 进行线上只读核验。
 - **原生审批代码归档状态**：
   - 飞书原生审批扩展功能（13,300+ 行）已整体封存至分支 `archive/feishu-native-approval`（标签 `archive/native-approval-20261008`），并从主线干净剥离。主线不包含原生审批客户端、表单与建单命令。
 - **历史记录索引**：
