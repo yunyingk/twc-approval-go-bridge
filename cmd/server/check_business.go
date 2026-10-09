@@ -124,7 +124,7 @@ func checkFieldType(role, semantic string, field base.TableField) error {
 		}
 	case "invoice_ledger":
 		norm := semantic
-		for _, p := range []string{"ocr_", "bridge_", "feishu_", "audit_"} {
+		for _, p := range []string{"ocr_", "bridge_", "feishu_"} {
 			norm = strings.TrimPrefix(norm, p)
 		}
 		switch norm {
@@ -132,11 +132,11 @@ func checkFieldType(role, semantic string, field base.TableField) error {
 			types = []int{18, 21}
 		case "origin_attachment":
 			types = []int{17, 19}
-		case "pretax_amount", "tax_amount", "tax_rate", "total_amount", "confidence":
+		case "pretax_amount", "tax_amount", "tax_rate", "total_amount":
 			types = []int{1, 2}
 		case "issue_date":
 			types = []int{5}
-		case "recognition_status", "duplicate_flag", "whitelist_hit", "claim_status":
+		case "recognition_status":
 			types = []int{1, 3}
 		default:
 			types = []int{1}

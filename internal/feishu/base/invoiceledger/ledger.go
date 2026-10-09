@@ -39,16 +39,10 @@ const (
 	IssueDate         = "issue_date"
 	Country           = "country"
 	AISummary         = "ai_summary"
-	Confidence        = "confidence"
-	DuplicateFlag     = "duplicate_flag"
-	Tips              = "tips"
-	ReviewTips        = "review_tips"
-	WhitelistHit      = "whitelist_hit"
-	ClaimStatus       = "claim_status"
 )
 
 func normalizeLedgerSemantic(semantic string) string {
-	for _, prefix := range []string{"ocr_", "bridge_", "feishu_", "audit_"} {
+	for _, prefix := range []string{"ocr_", "bridge_", "feishu_"} {
 		if strings.HasPrefix(semantic, prefix) {
 			return strings.TrimPrefix(semantic, prefix)
 		}
@@ -99,7 +93,7 @@ func New(config Config, store Store, logger *slog.Logger) (*Handler, error) {
 	for semantic, fieldID := range config.Fields {
 		norm := normalizeLedgerSemantic(semantic)
 		switch norm {
-		case SourceKey, RawJSON, DetailID, Relation, "detail_relation", UniqueKey, RecognitionStatus, OriginAttachment, Title, Number, ReceiptType, BusinessCategory, Seller, Buyer, Currency, Pretax, Tax, TaxRate, Total, IssueDate, Country, AISummary, "summary", Confidence, DuplicateFlag, Tips, ReviewTips, WhitelistHit, ClaimStatus:
+		case SourceKey, RawJSON, DetailID, Relation, "detail_relation", UniqueKey, RecognitionStatus, OriginAttachment, Title, Number, ReceiptType, BusinessCategory, Seller, Buyer, Currency, Pretax, Tax, TaxRate, Total, IssueDate, Country, AISummary, "summary":
 		default:
 			return nil, fmt.Errorf("unsupported ledger field mapping %q", semantic)
 		}
