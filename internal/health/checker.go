@@ -54,14 +54,20 @@ func (c *Checker) CheckAll(ctx context.Context) Report {
 		items = append(items, c.checkFeishuPermissions(ctx, token)...)
 	}
 
-	// 3. Bitable Security & Collaborators (only if auth succeeds)
-	if token != "" && c.cfg.Business != nil {
-		items = append(items, c.checkBitableSecurity(ctx, token)...)
-	}
-
-	// 4. Bitable Tables Topology (only if auth succeeds)
-	if token != "" && c.cfg.Business != nil {
-		items = append(items, c.checkBitableTopology(ctx, token)...)
+	// 3 & 4. Bitable Security & Tables Topology (only if auth succeeds)
+	if token != "" {
+		if c.cfg.Business == nil {
+			items = append(items, CheckItem{
+				Category: "多维表格业务拓扑",
+				Name:     "多维表格初始化状态",
+				Status:   StatusWarn,
+				Message:  "尚未关联多维表格配置 (tables_file 未配置或未初始化)",
+				Remedy:   "请执行 `./bin/twc-approval-go-bridge init-bitable` 一键新建并自动生成表配置",
+			})
+		} else {
+			items = append(items, c.checkBitableSecurity(ctx, token)...)
+			items = append(items, c.checkBitableTopology(ctx, token)...)
+		}
 	}
 
 	// 5. External AI / OCR Providers

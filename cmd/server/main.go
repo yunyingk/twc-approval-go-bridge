@@ -59,6 +59,20 @@ func main() {
 			err = runDoctor(ctx, cfg, jsonOutput, os.Stdout)
 		case "check-business-config":
 			err = runBusinessCheck(ctx, cfg, os.Stdout)
+		case "init-bitable":
+			err = runInitBitable(ctx, cfg, os.Args[2:], os.Stdout)
+		case "add-admin":
+			if len(os.Args) < 4 {
+				err = errors.New("usage: add-admin <base-token> <user-email-or-open-id>")
+			} else {
+				err = runAddAdmin(ctx, cfg, os.Args[2], os.Args[3], os.Stdout)
+			}
+		case "transfer-owner":
+			if len(os.Args) < 4 {
+				err = errors.New("usage: transfer-owner <base-token> <user-open-id>")
+			} else {
+				err = runTransferOwner(ctx, cfg, os.Args[2], os.Args[3], os.Stdout)
+			}
 		case "notify-transaction":
 			err = runNotifyTransaction(ctx, cfg, os.Args[2], os.Stdout)
 		case "preview-review":
