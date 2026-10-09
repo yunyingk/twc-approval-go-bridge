@@ -39,13 +39,24 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.Runtime.LogLevel}))
 	if len(os.Args) > 1 {
-		if (os.Args[1] == "check-business-config" && len(os.Args) != 2) || (os.Args[1] != "check-business-config" && len(os.Args) != 3) {
-			logger.Error("usage: server check-business-config | {notify-transaction|review-status|check-review|preview-review|submit-review|retry-writeback|apply-seal-result} <record-id-document-id-or-file>")
+		isDoctor := os.Args[1] == "doctor"
+		isBusinessCheck := os.Args[1] == "check-business-config"
+
+		if isDoctor || isBusinessCheck {
+			if len(os.Args) > 3 {
+				logger.Error("usage: server doctor [-json] | server check-business-config")
+				os.Exit(2)
+			}
+		} else if len(os.Args) != 3 {
+			logger.Error("usage: server doctor [-json] | server check-business-config | {notify-transaction|review-status|check-review|preview-review|submit-review|retry-writeback|apply-seal-result} <record-id-document-id-or-file>")
 			os.Exit(2)
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		switch os.Args[1] {
+		case "doctor":
+			jsonOutput := len(os.Args) > 2 && os.Args[2] == "-json"
+			err = runDoctor(ctx, cfg, jsonOutput, os.Stdout)
 		case "check-business-config":
 			err = runBusinessCheck(ctx, cfg, os.Stdout)
 		case "notify-transaction":
