@@ -15,13 +15,19 @@ import (
 // NotifyResult contains metadata about a successfully sent transaction reminder card.
 type NotifyResult struct {
 	Status        string `json:"status"`
-	MessageID     string `json:"message_id"`
-	Recipient     string `json:"recipient"`
-	OpenID        string `json:"open_id"`
-	TransactionID string `json:"transaction_id"`
-	Merchant      string `json:"merchant"`
-	BookedAmount  string `json:"booked_amount"`
-	FormURL       string `json:"form_url"`
+	MessageID     string `json:"message_id,omitempty"`
+	Recipient     string `json:"recipient,omitempty"`
+	OpenID        string `json:"open_id,omitempty"`
+	TransactionID string `json:"transaction_id,omitempty"`
+	Merchant      string `json:"merchant,omitempty"`
+	BookedAmount  string `json:"booked_amount,omitempty"`
+	FormURL       string `json:"form_url,omitempty"`
+	Reason        string `json:"reason,omitempty"`
+}
+
+// NotifyOptions customizes notification behavior.
+type NotifyOptions struct {
+	Force bool // If true, ignores existing reimbursement detail linkage and sends anyway.
 }
 
 // Service orchestrates reading transactions and sending interactive message cards.
@@ -46,7 +52,8 @@ func NewService(cfg config.Config) (*Service, error) {
 
 // NotifyTransaction reads a specific transaction record from Bitable, formats the notice,
 // and sends an interactive card to the cardholder with a prefilled reimbursement form link.
-func (s *Service) NotifyTransaction(ctx context.Context, transactionRecordID string) (*NotifyResult, error) {
+// If the transaction is already linked to a reimbursement detail, it skips sending unless opts.Force is true.
+func (s *Service) NotifyTransaction(ctx context.Context, transactionRecordID string, opts ...NotifyOptions) (*NotifyResult, error) {
 	if strings.TrimSpace(transactionRecordID) == "" {
 		return nil, fmt.Errorf("transactionRecordID is required")
 	}
@@ -97,6 +104,23 @@ func (s *Service) NotifyTransaction(ctx context.Context, transactionRecordID str
 	txID := formatString(getFieldValue("transaction_id"), record["交易流水号"])
 	merchant := formatString(getFieldValue("merchant"), record["商户名称"])
 	txTime := formatTime(getFieldValue("transaction_time"), record["交易时间"])
+
+	// Deduplication: check if already linked to reimbursement details
+	detailRelRaw := getFieldValue("detail_relation")
+	if detailRelRaw == nil {
+		detailRelRaw = record["个人报销单号"]
+	}
+	force := len(opts) > 0 && opts[0].Force
+	if !force && isAlreadyLinked(detailRelRaw) {
+		return &NotifyResult{
+			Status:        "skipped_already_linked",
+			Recipient:     recipientName,
+			OpenID:        openID,
+			TransactionID: txID,
+			Merchant:      merchant,
+			Reason:        "该交易流水已关联个人报销明细，无需重复催报",
+		}, nil
+	}
 
 	bookedAmt := formatString(getFieldValue("booked_amount_cny"), record["结算金额"])
 	bookedCur := formatString(record["结算金额币种"], "CNY")
@@ -269,4 +293,27 @@ func formatTime(vals ...any) string {
 		}
 	}
 	return ""
+}
+
+func isAlreadyLinked(raw any) bool {
+	if raw == nil {
+		return false
+	}
+	items, ok := raw.([]any)
+	if !ok || len(items) == 0 {
+		return false
+	}
+	for _, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if rids, ok := m["record_ids"].([]any); ok && len(rids) > 0 {
+			return true
+		}
+		if text, ok := m["text"].(string); ok && strings.TrimSpace(text) != "" {
+			return true
+		}
+	}
+	return false
 }

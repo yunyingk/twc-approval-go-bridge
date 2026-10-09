@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 
@@ -11,12 +12,19 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "用法: go run ./cmd/tools/notify/main.go <transaction-record-id>\n")
+	force := flag.Bool("force", false, "强制发送通知（即使该流水已关联报销明细）")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "用法: go run ./cmd/tools/notify/main.go [-force] <transaction-record-id>\n")
+		flag.PrintDefaults()
+	}
+	flag.Parse()
+
+	if flag.NArg() < 1 {
+		flag.Usage()
 		os.Exit(1)
 	}
 
-	recordID := os.Args[1]
+	recordID := flag.Arg(0)
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "加载配置失败: %v\n", err)
@@ -29,7 +37,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	result, err := svc.NotifyTransaction(context.Background(), recordID)
+	result, err := svc.NotifyTransaction(context.Background(), recordID, card.NotifyOptions{Force: *force})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "发送交易补票卡片失败: %v\n", err)
 		os.Exit(1)
