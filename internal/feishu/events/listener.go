@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	larkevent "github.com/larksuite/oapi-sdk-go/v3/event"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
@@ -30,9 +32,37 @@ type Event struct {
 // Sink receives events delivered by the SDK.
 type Sink func(context.Context, Event) error
 
+// ConnectionStatus records the live state of the persistent WebSocket connection.
+type ConnectionStatus struct {
+	mu          sync.RWMutex
+	State       string    `json:"state"` // "ready", "reconnecting", "disconnected", "disabled"
+	ConnectedAt time.Time `json:"connected_at,omitempty"`
+	LastEventAt time.Time `json:"last_event_at,omitempty"`
+	EventCount  int64     `json:"event_count"`
+	LastError   string    `json:"last_error,omitempty"`
+}
+
+func (s *ConnectionStatus) Snapshot() (state string, connectedAt, lastEventAt time.Time, count int64) {
+	if s == nil {
+		return "disabled", time.Time{}, time.Time{}, 0
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.State, s.ConnectedAt, s.LastEventAt, s.EventCount
+}
+
 // Listener wraps the SDK WebSocket client and keeps SDK details out of main.
 type Listener struct {
 	client *larkws.Client
+	status *ConnectionStatus
+}
+
+// Status returns current connection metrics for diagnostics and health dashboards.
+func (l *Listener) Status() (state string, connectedAt, lastEventAt time.Time, count int64) {
+	if l == nil || l.status == nil {
+		return "disabled", time.Time{}, time.Time{}, 0
+	}
+	return l.status.Snapshot()
 }
 
 // New creates a persistent-connection listener without opening a network connection.
@@ -56,7 +86,22 @@ func NewForEvents(appID, appSecret string, sinks map[string]Sink, logger *slog.L
 		logger = slog.Default()
 	}
 
-	handler, types, err := newEventDispatcher(sinks)
+	status := &ConnectionStatus{State: "connecting"}
+	wrappedSinks := make(map[string]Sink, len(sinks))
+	for eventType, sink := range sinks {
+		wrappedSinks[eventType] = func(ctx context.Context, ev Event) error {
+			status.mu.Lock()
+			status.LastEventAt = time.Now()
+			status.EventCount++
+			status.mu.Unlock()
+			if sink != nil {
+				return sink(ctx, ev)
+			}
+			return nil
+		}
+	}
+
+	handler, types, err := newEventDispatcher(wrappedSinks)
 	if err != nil {
 		return nil, err
 	}
@@ -66,23 +111,41 @@ func NewForEvents(appID, appSecret string, sinks map[string]Sink, logger *slog.L
 		appSecret,
 		larkws.WithEventHandler(handler),
 		larkws.WithOnReady(func() {
+			status.mu.Lock()
+			status.State = "ready"
+			if status.ConnectedAt.IsZero() {
+				status.ConnectedAt = time.Now()
+			}
+			status.mu.Unlock()
 			logger.Info("Feishu long connection ready", "event_type", strings.Join(types, ","))
 		}),
 		larkws.WithOnReconnecting(func() {
+			status.mu.Lock()
+			status.State = "reconnecting"
+			status.mu.Unlock()
 			logger.Warn("Feishu long connection reconnecting")
 		}),
 		larkws.WithOnReconnected(func() {
+			status.mu.Lock()
+			status.State = "ready"
+			status.mu.Unlock()
 			logger.Info("Feishu long connection reconnected")
 		}),
 		larkws.WithOnDisconnected(func() {
+			status.mu.Lock()
+			status.State = "disconnected"
+			status.mu.Unlock()
 			logger.Warn("Feishu long connection disconnected")
 		}),
 		larkws.WithOnError(func(err error) {
+			status.mu.Lock()
+			status.LastError = err.Error()
+			status.mu.Unlock()
 			logger.Error("Feishu long connection error", "error", err)
 		}),
 	)
 
-	return &Listener{client: client}, nil
+	return &Listener{client: client, status: status}, nil
 }
 
 func newEventDispatcher(sinks map[string]Sink) (*dispatcher.EventDispatcher, []string, error) {

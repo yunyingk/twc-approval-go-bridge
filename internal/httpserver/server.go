@@ -14,10 +14,12 @@ import (
 // Server starts with infrastructure endpoints. Domain routes can be registered
 // by the application layer without coupling this package to a business system.
 type Server struct {
-	httpServer *http.Server
-	mux        *http.ServeMux
-	logger     *slog.Logger
-	version    string
+	httpServer     *http.Server
+	mux            *http.ServeMux
+	logger         *slog.Logger
+	version        string
+	startTime      time.Time
+	statusProvider StatusProvider
 }
 
 // New builds an HTTP server with health and version endpoints.
@@ -26,13 +28,14 @@ func New(addr string, logger *slog.Logger, version string) *Server {
 		logger = slog.Default()
 	}
 
-	s := &Server{logger: logger, version: version}
+	s := &Server{logger: logger, version: version, startTime: time.Now()}
 	mux := http.NewServeMux()
 	s.mux = mux
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /readyz", s.ready)
 	mux.HandleFunc("GET /version", s.versionHandler)
-	mux.HandleFunc("/", s.notFound)
+	mux.HandleFunc("GET /api/status", s.statusAPI)
+	mux.HandleFunc("/", s.renderDashboard)
 
 	s.httpServer = &http.Server{
 		Addr:              addr,
@@ -40,6 +43,11 @@ func New(addr string, logger *slog.Logger, version string) *Server {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s
+}
+
+// SetStatusProvider attaches a live status reporter to the server dashboard.
+func (s *Server) SetStatusProvider(p StatusProvider) {
+	s.statusProvider = p
 }
 
 // Register mounts an optional domain adapter before ListenAndServe.
@@ -71,6 +79,22 @@ func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) versionHandler(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"version": s.version})
+}
+
+func (s *Server) statusAPI(w http.ResponseWriter, _ *http.Request) {
+	if s.statusProvider != nil {
+		writeJSON(w, http.StatusOK, s.statusProvider())
+		return
+	}
+	uptime := time.Since(s.startTime).Truncate(time.Second)
+	writeJSON(w, http.StatusOK, Status{
+		Version:       s.version,
+		HTTPAddr:      s.httpServer.Addr,
+		StartTime:     s.startTime,
+		Uptime:        uptime.String(),
+		UptimeSeconds: int64(uptime.Seconds()),
+		FeishuState:   "disabled",
+	})
 }
 
 func (s *Server) notFound(w http.ResponseWriter, _ *http.Request) {

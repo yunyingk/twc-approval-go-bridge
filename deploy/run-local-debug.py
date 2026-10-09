@@ -11,5 +11,7 @@ if __name__ == "__main__":
     environment = dict(os.environ)
     environment.setdefault("CONFIG_FILE", str(root / "configs/config.toml"))
     binary = root / "bin/twc-approval-go-bridge"
-    os.chdir(root)
-    os.execve(binary, [str(binary), *sys.argv[1:]], environment)
+    args = sys.argv[1:]
+    if not args:
+        args = ["server"]
+    os.execve(binary, [str(binary), *args], environment)

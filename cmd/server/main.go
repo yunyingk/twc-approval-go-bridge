@@ -374,6 +374,55 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 		listeners = append(listeners, listener)
 	}
 
+	startTime := time.Now()
+	server.SetStatusProvider(func() httpserver.Status {
+		feishuState := "disabled"
+		var feishuConnected, feishuLastEvent string
+		var feishuEvents int64
+		if len(listeners) > 0 {
+			state, connAt, lastEv, count := listeners[0].Status()
+			feishuState = state
+			feishuEvents = count
+			if !connAt.IsZero() {
+				feishuConnected = connAt.Format("2006-01-02 15:04:05")
+			}
+			if !lastEv.IsZero() {
+				feishuLastEvent = lastEv.Format("2006-01-02 15:04:05")
+			}
+		}
+
+		uptime := time.Since(startTime).Truncate(time.Second)
+		var baseToken, baseURL string
+		tables := make(map[string]string)
+		if cfg.Business != nil {
+			baseToken = cfg.Business.Tables.ReimbursementDetails.BaseToken
+			if cfg.Feishu.NormalizedHost() != "" && baseToken != "" {
+				baseURL = fmt.Sprintf("%s/base/%s", cfg.Feishu.NormalizedHost(), baseToken)
+			}
+			tables["交易流水表"] = cfg.Business.Tables.Transactions.TableID
+			tables["个人报销明细"] = cfg.Business.Tables.ReimbursementDetails.TableID
+			tables["发票台账"] = cfg.Business.Tables.InvoiceLedger.TableID
+		}
+
+		return httpserver.Status{
+			Version:         version.Version,
+			HTTPAddr:        cfg.Runtime.HTTPAddr,
+			StartTime:       startTime,
+			Uptime:          uptime.String(),
+			UptimeSeconds:   int64(uptime.Seconds()),
+			FeishuState:     feishuState,
+			FeishuEvents:    feishuEvents,
+			FeishuConnected: feishuConnected,
+			FeishuLastEvent: feishuLastEvent,
+			ReceiptProvider: cfg.ReceiptProvider(),
+			ReviewProvider:  cfg.ReviewProvider(),
+			ReviewTrigger:   cfg.ReviewTriggerMode(),
+			BaseToken:       baseToken,
+			BaseURL:         baseURL,
+			Tables:          tables,
+		}
+	})
+
 	if automaticReview != nil {
 		go automaticReview.Run(ctx)
 	}
