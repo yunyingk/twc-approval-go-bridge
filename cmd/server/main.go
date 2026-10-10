@@ -372,7 +372,7 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 			cardSvc, cardErr := card.NewService(cfg, taskService)
 			if cardErr == nil {
 				txSink := card.NewEventSink(cardSvc, card.EventSinkOptions{
-					Debounce: 3 * time.Second,
+					Debounce: cfg.Transactions.Debounce,
 					Logger:   logger,
 				})
 				defer txSink.Close()
@@ -383,7 +383,7 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 					}
 					return txSink.Sink(ctx, event)
 				}
-				logger.Info("real-time transaction event sink enabled", "table_id", cfg.Business.Tables.Transactions.TableID, "debounce", "3s")
+				logger.Info("real-time transaction event sink enabled", "table_id", cfg.Business.Tables.Transactions.TableID, "debounce", cfg.Transactions.Debounce.String())
 			} else {
 				logger.Warn("initialize real-time transaction sink failed", "error", cardErr)
 			}

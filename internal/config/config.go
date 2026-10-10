@@ -37,6 +37,7 @@ type Document struct {
 type TransactionSettings struct {
 	AutoNotify   bool   `json:"auto_notify,omitempty" toml:"auto_notify,omitempty"`
 	PollInterval string `json:"poll_interval,omitempty" toml:"poll_interval,omitempty"`
+	Debounce     string `json:"debounce,omitempty" toml:"debounce,omitempty"`
 }
 
 type RuntimeSettings struct {
@@ -105,6 +106,7 @@ type RuntimeConfig struct {
 type TransactionConfig struct {
 	AutoNotify   bool
 	PollInterval time.Duration
+	Debounce     time.Duration
 }
 
 // Config contains runtime settings for the service shell.
@@ -220,6 +222,10 @@ func LoadFile(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	txDebounce, err := parseDuration("transactions.debounce", document.Transactions.Debounce, 3*time.Second)
+	if err != nil {
+		return Config{}, err
+	}
 	level, err := parseLogLevel(document.Runtime.LogLevel)
 	if err != nil {
 		return Config{}, err
@@ -244,6 +250,7 @@ func LoadFile(path string) (Config, error) {
 		Transactions: TransactionConfig{
 			AutoNotify:   document.Transactions.AutoNotify,
 			PollInterval: txPoll,
+			Debounce:     txDebounce,
 		},
 		Business:            &document.BusinessProfile,
 		ReceiptPollInterval: poll,
