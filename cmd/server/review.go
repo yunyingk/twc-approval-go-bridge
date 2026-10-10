@@ -26,6 +26,7 @@ func newReviewSource(cfg config.Config) (*base.ReviewSource, error) {
 	if err != nil {
 		return nil, err
 	}
+	source.WithHost(cfg.Feishu.NormalizedHost())
 	source.WithContextFields(cfg.Business.Review.ContextFields)
 	if cfg.Business.Review.IncludeTransactions {
 		table := cfg.Business.Tables.Transactions

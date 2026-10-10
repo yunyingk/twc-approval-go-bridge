@@ -99,3 +99,31 @@ func TestCandidateEvidencePreservesMappedFacts(t *testing.T) {
 		t.Fatalf("candidate evidence lost date, precision or currency: %#v", got)
 	}
 }
+
+func TestReviewSourceRecordURLAndHost(t *testing.T) {
+	s, err := NewReviewSource("app", "secret", "bascnXYZ", "tblDetails123", "attachment", "detail", "ledger", map[string]string{
+		"source_key": "source", "raw_json": "raw", "invoice_number": "number",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Default fallback to https://feishu.cn
+	expectedDefault := "https://feishu.cn/base/bascnXYZ?table=tblDetails123&record=recABC"
+	if got := s.RecordURL("recABC"); got != expectedDefault {
+		t.Fatalf("expected default record URL %q, got %q", expectedDefault, got)
+	}
+
+	// Configured host
+	s.WithHost("https://zyt-test.feishu.cn/")
+	expectedCustom := "https://zyt-test.feishu.cn/base/bascnXYZ?table=tblDetails123&record=recABC"
+	if got := s.RecordURL("recABC"); got != expectedCustom {
+		t.Fatalf("expected custom record URL %q, got %q", expectedCustom, got)
+	}
+
+	// Empty record ID
+	if got := s.RecordURL(""); got != "" {
+		t.Fatalf("expected empty URL for empty record, got %q", got)
+	}
+}
+

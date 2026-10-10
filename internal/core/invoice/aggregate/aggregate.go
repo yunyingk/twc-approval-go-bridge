@@ -25,6 +25,7 @@ type Document struct {
 	DocumentID string
 	DocumentSN string
 	RecordID   string
+	RecordURL  string
 	StartTime  time.Time
 	Invoices   []Invoice
 	Findings   []dupcheck.Finding

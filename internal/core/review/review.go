@@ -30,6 +30,7 @@ type File struct {
 }
 type Detail struct {
 	DocumentID, DocumentSN, RecordID string
+	RecordURL                        string
 	StartTime                        time.Time
 	Files                            []File
 	Context                          map[string]string

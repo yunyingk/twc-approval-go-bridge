@@ -31,7 +31,8 @@
 ## [Unreleased]
 
 ### 新增 (Added)
-- 暂无 (聚焦 SealAI 审批主线能力与真实联调优化)
+- **SealAI 单据原始链接直达**：向 SealAI Webhook 发起机审时注入单据原始直达链接（`DocumentRequest.DocumentURL` 与单据/明细字段 `source_record_url`，Label 为 `"单据原始链接"`），针对单行个人报销明细自动精准拼接飞书多维表格行记录展开链接（`${host}/base/${baseToken}?table=${tableID}&record=${recordID}`），支持企业专属域名配置与通用域名安全兜底。
+
 
 ### 变更 (Changed)
 - 暂无

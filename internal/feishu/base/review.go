@@ -23,6 +23,7 @@ import (
 type ReviewSource struct {
 	client                                                             *LedgerClient
 	base, detailTable, attachmentFieldID, detailIDFieldID, ledgerTable string
+	host                                                               string
 	ledgerFields                                                       map[string]string
 	contextFields                                                      map[string]string
 	transactions                                                       *TransactionConfig
@@ -79,7 +80,20 @@ func (s *ReviewSource) ReviewLogicalID(recordID string) string {
 	return "feishu:" + s.base + ":" + s.detailTable + ":" + recordID
 }
 
+// RecordURL returns the browser URL to open a specific record in the details table.
+func (s *ReviewSource) RecordURL(recordID string) string {
+	host := s.host
+	if host == "" {
+		host = "https://feishu.cn"
+	}
+	if s.base == "" || s.detailTable == "" || recordID == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s/base/%s?table=%s&record=%s", host, s.base, s.detailTable, recordID)
+}
+
 func (s *ReviewSource) ReadDetail(ctx context.Context, recordID string) (review.Detail, error) {
+	recordURL := s.RecordURL(recordID)
 	attachments, tokens, err := s.client.ReadAttachments(ctx, s.base, s.detailTable, recordID, s.attachmentFieldID, nil)
 	if err != nil {
 		var apiError *APIError
@@ -89,7 +103,7 @@ func (s *ReviewSource) ReadDetail(ctx context.Context, recordID string) (review.
 		return review.Detail{}, err
 	}
 	if len(tokens) == 0 {
-		return review.Detail{RecordID: recordID}, nil
+		return review.Detail{RecordID: recordID, RecordURL: recordURL}, nil
 	}
 	documentSN := recordID
 	if s.detailIDFieldID != "" {
@@ -118,7 +132,7 @@ func (s *ReviewSource) ReadDetail(ctx context.Context, recordID string) (review.
 		return review.Detail{}, err
 	}
 	return review.Detail{Context: contextValues, Transactions: transactions, DocumentID: s.ReviewLogicalID(recordID),
-		DocumentSN: documentSN, RecordID: recordID, StartTime: createdAt, Files: files}, nil
+		DocumentSN: documentSN, RecordID: recordID, RecordURL: recordURL, StartTime: createdAt, Files: files}, nil
 }
 
 func (s *ReviewSource) createdAt(ctx context.Context, recordID string) (time.Time, error) {
@@ -323,3 +337,10 @@ func (s *ReviewSource) WithContextFields(fields map[string]string) *ReviewSource
 	}
 	return s
 }
+
+// WithHost configures the Feishu tenant host for generating record URLs.
+func (s *ReviewSource) WithHost(host string) *ReviewSource {
+	s.host = strings.TrimRight(strings.TrimSpace(host), "/")
+	return s
+}
+

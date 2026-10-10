@@ -21,7 +21,8 @@ type fakeSource struct {
 }
 
 func (s fakeSource) ReadDetail(context.Context, string) (core.Detail, error) {
-	return core.Detail{DocumentID: "detail-1", DocumentSN: "SN-1", RecordID: "rec1", StartTime: time.Unix(100, 0),
+	return core.Detail{DocumentID: "detail-1", DocumentSN: "SN-1", RecordID: "rec1",
+		RecordURL: "https://feishu.cn/base/base1?table=tbl1&record=rec1", StartTime: time.Unix(100, 0),
 		Files: []core.File{{Token: "b", Attachment: invoice.Attachment{Name: "b.jpg", ContentType: "image/jpeg", Data: []byte("b")}},
 			{Token: "a", Attachment: invoice.Attachment{Name: "a.jpg", ContentType: "image/jpeg", Data: []byte("a")}}}, Transactions: s.transactions}, nil
 }
@@ -71,6 +72,20 @@ func TestSubmitAggregatesTwoLedgerInvoicesAndUploadsBothOriginals(t *testing.T) 
 		len(gateway.uploads) != 2 || len(gateway.submits) != 1 || len(gateway.submits[0].Invoices) != 2 ||
 		gateway.uploads[0] != "a.jpg" || gateway.uploads[1] != "b.jpg" {
 		t.Fatalf("unexpected result: %#v uploads=%v submits=%v", result, gateway.uploads, gateway.submits)
+	}
+	expectedURL := "https://feishu.cn/base/base1?table=tbl1&record=rec1"
+	if gateway.submits[0].DocumentURL != expectedURL {
+		t.Fatalf("expected DocumentURL %q, got %q", expectedURL, gateway.submits[0].DocumentURL)
+	}
+	foundURLField := false
+	for _, f := range gateway.submits[0].Fields {
+		if f.Key == "source_record_url" && f.Value == expectedURL {
+			foundURLField = true
+			break
+		}
+	}
+	if !foundURLField {
+		t.Fatalf("expected source_record_url field with value %q", expectedURL)
 	}
 }
 

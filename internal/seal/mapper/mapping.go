@@ -21,6 +21,7 @@ type Input struct {
 	DocumentID  string
 	DocumentSN  string
 	RecordID    string
+	RecordURL   string
 	FileToken   string
 	FileName    string
 	Recognition invoice.Recognition
@@ -49,13 +50,22 @@ func Map(input Input) (seal.DocumentRequest, error) {
 	facts := input.Recognition.Facts
 	sourceID := input.RecordID + ":" + input.FileToken
 	document := seal.DocumentRequest{
-		DocumentID: input.DocumentID,
-		DocumentSN: input.DocumentSN,
-		StartTime:  input.StartTime.Unix(),
+		DocumentID:  input.DocumentID,
+		DocumentSN:  input.DocumentSN,
+		DocumentURL: input.RecordURL,
+		StartTime:   input.StartTime.Unix(),
 		Fields: []seal.DocumentField{
 			{Key: "source_record_id", Label: "报销明细记录 ID", Type: "TEXT", Value: input.RecordID},
 			{Key: "source_attachment_token", Label: "飞书附件 Token", Type: "TEXT", Value: input.FileToken},
 		},
+	}
+	if input.RecordURL != "" {
+		document.Fields = append(document.Fields, seal.DocumentField{
+			Key:   "source_record_url",
+			Label: "单据原始链接",
+			Type:  "TEXT",
+			Value: input.RecordURL,
+		})
 	}
 	addText := func(key, label, value string) {
 		if value = strings.TrimSpace(value); value != "" {
@@ -91,15 +101,28 @@ func Map(input Input) (seal.DocumentRequest, error) {
 // MapBatch adapts a provider-independent, multi-invoice reimbursement to one
 // Seal document. Every original must already have been uploaded to Seal.
 func MapBatch(batch aggregate.Document, uploads map[string]seal.UploadResponse) (seal.DocumentRequest, error) {
-	result := seal.DocumentRequest{DocumentID: batch.DocumentID, DocumentSN: batch.DocumentSN,
-		StartTime: batch.StartTime.Unix(), Fields: []seal.DocumentField{}}
+	result := seal.DocumentRequest{
+		DocumentID:  batch.DocumentID,
+		DocumentSN:  batch.DocumentSN,
+		DocumentURL: batch.RecordURL,
+		StartTime:   batch.StartTime.Unix(),
+		Fields:      []seal.DocumentField{},
+	}
+	if batch.RecordURL != "" {
+		result.Fields = append(result.Fields, seal.DocumentField{
+			Key:   "source_record_url",
+			Label: "单据原始链接",
+			Type:  "TEXT",
+			Value: batch.RecordURL,
+		})
+	}
 	for index, item := range batch.Invoices {
 		upload, ok := uploads[item.FileToken]
 		if !ok || upload.AttachmentID == "" {
 			return seal.DocumentRequest{}, fmt.Errorf("Seal upload missing for attachment %d", index+1)
 		}
 		part, err := Map(Input{DocumentID: batch.DocumentID, DocumentSN: batch.DocumentSN,
-			RecordID: batch.RecordID, FileToken: item.FileToken, FileName: item.Attachment.Name,
+			RecordID: batch.RecordID, RecordURL: batch.RecordURL, FileToken: item.FileToken, FileName: item.Attachment.Name,
 			Recognition: item.Recognition, Upload: upload, StartTime: batch.StartTime})
 		if err != nil {
 			return seal.DocumentRequest{}, err

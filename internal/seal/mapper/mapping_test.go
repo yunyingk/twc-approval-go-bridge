@@ -167,3 +167,95 @@ func TestBatchProvidesDuplicateFactsAndSearchLimits(t *testing.T) {
 		t.Fatal("no candidates must still disclose search limits")
 	}
 }
+
+func TestMapAndBatchIncludesRecordURL(t *testing.T) {
+	recordURL := "https://zyt-test.feishu.cn/base/bascn123?table=tbl456&record=rec789"
+	input := Input{
+		DocumentID: "doc-1",
+		DocumentSN: "SN-1",
+		RecordID:   "rec789",
+		RecordURL:  recordURL,
+		FileToken:  "token1",
+		FileName:   "test.png",
+		StartTime:  time.Unix(100, 0),
+		Upload: seal.UploadResponse{
+			AttachmentID: "att-1",
+			Attachment: seal.AttachmentInfo{
+				Name: "test.png", MimeType: "image/png", URL: "https://example.com/test.png",
+				OSSPath: "oss", OSSSignedURL: "https://example.com/signed", OSSFileSize: 10,
+			},
+		},
+	}
+	doc, err := Map(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.DocumentURL != recordURL {
+		t.Fatalf("expected DocumentURL %q, got %q", recordURL, doc.DocumentURL)
+	}
+	found := false
+	for _, f := range doc.Fields {
+		if f.Key == "source_record_url" && f.Value == recordURL {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected source_record_url field with value %q", recordURL)
+	}
+
+	// Without record URL
+	inputWithoutURL := input
+	inputWithoutURL.RecordURL = ""
+	docWithout, err := Map(inputWithoutURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if docWithout.DocumentURL != "" {
+		t.Fatalf("expected empty DocumentURL, got %q", docWithout.DocumentURL)
+	}
+	for _, f := range docWithout.Fields {
+		if f.Key == "source_record_url" {
+			t.Fatalf("did not expect source_record_url field when RecordURL is empty")
+		}
+	}
+
+	// Batch mapping
+	batch := aggregate.Document{
+		DocumentID: "doc-1",
+		DocumentSN: "SN-1",
+		RecordID:   "rec789",
+		RecordURL:  recordURL,
+		StartTime:  time.Unix(100, 0),
+		Invoices: []aggregate.Invoice{
+			{FileToken: "token1", Facts: dupcheck.Invoice{SourceKey: "rec789:token1"}},
+		},
+	}
+	uploads := map[string]seal.UploadResponse{
+		"token1": input.Upload,
+	}
+	batchRes, err := MapBatch(batch, uploads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if batchRes.DocumentURL != recordURL {
+		t.Fatalf("expected batch DocumentURL %q, got %q", recordURL, batchRes.DocumentURL)
+	}
+	topFound := false
+	subFound := false
+	for _, f := range batchRes.Fields {
+		if f.Key == "source_record_url" && f.Value == recordURL {
+			topFound = true
+		}
+		if f.Key == "invoice_01_source_record_url" && f.Value == recordURL {
+			subFound = true
+		}
+	}
+	if !topFound {
+		t.Fatalf("expected top-level source_record_url field in batch")
+	}
+	if !subFound {
+		t.Fatalf("expected invoice_01_source_record_url field in batch")
+	}
+}
+
