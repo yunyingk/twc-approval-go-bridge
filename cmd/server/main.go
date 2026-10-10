@@ -122,6 +122,8 @@ func main() {
 		} else {
 			cmdErr = runSealResult(ctx, cfg, os.Args[2])
 		}
+	case "export-skill":
+		cmdErr = runExportSkill(os.Args[2:], os.Stdout)
 	default:
 		fmt.Fprintf(os.Stderr, "未知子命令: %s\n\n", cmd)
 		printUsage(os.Stderr)
@@ -158,6 +160,7 @@ func printUsage(w io.Writer) {
   check-review <id>        校验单据机审结果与一致性
   retry-writeback <id>     手动重试机审结果回写
   apply-seal-result <file> 本地测试应用 SealAI 回调结果
+  export-skill [-o path]   导出内嵌的豆包企业内置技能配置文档 (.md)
 `)
 }
 
