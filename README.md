@@ -23,12 +23,18 @@ make test
 make vet
 make build
 
+# 0. 查看版本与构建元数据（当前基线 v0.3.0）
+./bin/twc-approval-go-bridge version
+./bin/twc-approval-go-bridge version -json
+
 # 1. 运行系统体检（核验凭证、权限与多维表格拓扑）
 ./bin/twc-approval-go-bridge doctor
 
 # 2. 启动常驻服务
 ./bin/twc-approval-go-bridge server
 ```
+
+详细版本演进与每一个提交的修改记录统一维护在 [CHANGELOG.md](CHANGELOG.md)。
 
 服务默认读取工作目录中的 `configs/config.toml`。所有提供方、触发方式、凭证、服务端点和运行参数都在主配置文件中，业务多维表格拓扑与字段映射通过 `tables_file` 独立挂载（支持相对路径双通道查找：优先当前工作目录，未命中时相对主配置所在目录解析）；不加载 `.env`，不合并调试文件或旧环境变量。`CONFIG_FILE=/absolute/path/config.toml` 只用于显式指定主配置文件，不支持字段覆盖；文件缺失或无效直接报错。
 

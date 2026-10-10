@@ -35,6 +35,22 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "-h", "--help", "help":
+			printUsage(os.Stdout)
+			return
+		case "-v", "--version", "version":
+			printVersion(os.Args[2:], os.Stdout)
+			return
+		}
+	}
+
+	if len(os.Args) < 2 {
+		printUsage(os.Stderr)
+		os.Exit(2)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
@@ -44,16 +60,7 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.Runtime.LogLevel}))
 
-	if len(os.Args) < 2 {
-		printUsage(os.Stderr)
-		os.Exit(2)
-	}
-
 	cmd := os.Args[1]
-	if cmd == "-h" || cmd == "--help" || cmd == "help" {
-		printUsage(os.Stdout)
-		return
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -127,6 +134,8 @@ func main() {
 		}
 	case "export-skill":
 		cmdErr = runExportSkill(os.Args[2:], os.Stdout)
+	case "version":
+		printVersion(os.Args[2:], os.Stdout)
 	default:
 		fmt.Fprintf(os.Stderr, "未知子命令: %s\n\n", cmd)
 		printUsage(os.Stderr)
@@ -138,11 +147,28 @@ func main() {
 	}
 }
 
+func printVersion(args []string, w io.Writer) {
+	if len(args) > 0 && args[0] == "-json" {
+		data, err := version.JSON()
+		if err != nil {
+			fmt.Fprintf(w, "{\"error\": %q}\n", err.Error())
+			return
+		}
+		fmt.Fprintln(w, string(data))
+		return
+	}
+	fmt.Fprintf(w, "twc-approval-go-bridge %s\n", version.Full())
+}
+
 func printUsage(w io.Writer) {
 	fmt.Fprintf(w, `海外小票识别与 AI 审核桥接服务 (twc-approval-go-bridge)
 
 用法:
   twc-approval-go-bridge <command> [arguments]
+
+版本与帮助:
+  version [-json]          查看当前程序版本与构建元数据（支持 -v, --version）
+  help                     显示帮助信息（支持 -h, --help）
 
 核心服务:
   server                   启动常驻后台服务（长连接监听、小票识别、AI 审核与回调服务）
@@ -506,6 +532,8 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 
 		return httpserver.Status{
 			Version:         version.Version,
+			GitCommit:       version.GitCommit,
+			BuildDate:       version.BuildDate,
 			HTTPAddr:        cfg.Runtime.HTTPAddr,
 			StartTime:       startTime,
 			Uptime:          uptime.String(),
@@ -564,7 +592,12 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 
 	serverErr := make(chan error, 1)
 	go func() {
-		logger.Info("http server started", "addr", cfg.Runtime.HTTPAddr, "version", version.Version)
+		logger.Info("http server started",
+			"addr", cfg.Runtime.HTTPAddr,
+			"version", version.Version,
+			"commit", version.GitCommit,
+			"build_date", version.BuildDate,
+		)
 		serverErr <- server.ListenAndServe()
 	}()
 

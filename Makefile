@@ -1,8 +1,14 @@
 APP_NAME := twc-approval-go-bridge
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version=$(VERSION)
+VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null || echo 0.3.0)
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+BUILD_DATE ?= $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
+VERSION_PKG := github.com/yunyingk/twc-approval-go-bridge/internal/version
+LDFLAGS := -s -w \
+	-X $(VERSION_PKG).Version=$(VERSION) \
+	-X $(VERSION_PKG).GitCommit=$(GIT_COMMIT) \
+	-X $(VERSION_PKG).BuildDate=$(BUILD_DATE)
 
-.PHONY: fmt test vet build run clean docker-build compose-up
+.PHONY: fmt test vet build run clean docker-build compose-up version
 
 fmt:
 	gofmt -w cmd internal
@@ -29,3 +35,6 @@ docker-build:
 
 compose-up:
 	docker compose --file deploy/docker-compose.yml up --build
+
+version:
+	@echo $(VERSION)

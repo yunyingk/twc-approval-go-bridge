@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/yunyingk/twc-approval-go-bridge/internal/version"
 )
 
 // Server starts with infrastructure endpoints. Domain routes can be registered
@@ -158,7 +160,11 @@ func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) versionHandler(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"version": s.version})
+	info := version.Get()
+	if s.version != "" && s.version != "dev" && s.version != version.Version {
+		info.Version = s.version
+	}
+	writeJSON(w, http.StatusOK, info)
 }
 
 func (s *Server) statusAPI(w http.ResponseWriter, r *http.Request) {
@@ -171,8 +177,15 @@ func (s *Server) statusAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uptime := time.Since(s.startTime).Truncate(time.Second)
+	info := version.Get()
+	ver := s.version
+	if ver == "" {
+		ver = info.Version
+	}
 	writeJSON(w, http.StatusOK, Status{
-		Version:       s.version,
+		Version:       ver,
+		GitCommit:     info.GitCommit,
+		BuildDate:     info.BuildDate,
 		HTTPAddr:      s.httpServer.Addr,
 		StartTime:     s.startTime,
 		Uptime:        uptime.String(),

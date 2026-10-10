@@ -142,3 +142,19 @@ func TestPasswordLockScreenAndCookieAuth(t *testing.T) {
 	}
 }
 
+func TestVersionEndpoint(t *testing.T) {
+	s := New(":0", slog.Default(), "0.3.0")
+	req := httptest.NewRequest(http.MethodGet, "/version", nil)
+	res := httptest.NewRecorder()
+
+	s.httpServer.Handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("version status = %d, want 200", res.Code)
+	}
+	body := res.Body.String()
+	if !strings.Contains(body, `"version":"0.3.0"`) {
+		t.Fatalf("expected version 0.3.0 in response, got: %s", body)
+	}
+}
+

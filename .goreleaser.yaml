@@ -15,7 +15,10 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version={{ .Version }}
+      - -s -w
+      - -X github.com/yunyingk/twc-approval-go-bridge/internal/version.Version={{ .Version }}
+      - -X github.com/yunyingk/twc-approval-go-bridge/internal/version.GitCommit={{ .Commit }}
+      - -X github.com/yunyingk/twc-approval-go-bridge/internal/version.BuildDate={{ .Date }}
 
 archives:
   - formats:

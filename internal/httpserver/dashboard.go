@@ -19,6 +19,8 @@ type AnyreceiptStatus struct {
 // Status contains live runtime and diagnostics information for health dashboards.
 type Status struct {
 	Version         string            `json:"version"`
+	GitCommit       string            `json:"git_commit,omitempty"`
+	BuildDate       string            `json:"build_date,omitempty"`
 	HTTPAddr        string            `json:"http_addr"`
 	StartTime       time.Time         `json:"start_time"`
 	Uptime          string            `json:"uptime"`
@@ -276,6 +278,11 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 				anyreceiptChannelText = "<span style='color: #f59e0b;'>请及时充值</span>"
 			}
 		}
+	}
+
+	versionDisplay := status.Version
+	if status.GitCommit != "" {
+		versionDisplay = fmt.Sprintf("%s (%s)", status.Version, status.GitCommit)
 	}
 
 	html := fmt.Sprintf(`<!DOCTYPE html>
@@ -629,7 +636,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		anyreceiptCostText,
 		anyreceiptChannelText,
 		status.HTTPAddr,
-		status.Version,
+		versionDisplay,
 		status.Uptime,
 		status.StartTime.Format("2006-01-02 15:04:05"),
 		baseDisplay,
