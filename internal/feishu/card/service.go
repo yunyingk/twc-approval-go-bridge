@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -404,6 +405,10 @@ func (s *Service) fetchRecord(ctx context.Context, token, baseToken, tableID, re
 	return result.Data.Record.Fields, nil
 }
 
+func ExtractCardholderOpenID(raw any) (string, string) {
+	return extractCardholderOpenID(raw)
+}
+
 func extractCardholderOpenID(raw any) (string, string) {
 	if raw == nil {
 		return "", ""
@@ -431,6 +436,14 @@ func formatString(vals ...any) string {
 			if strings.TrimSpace(val) != "" {
 				return strings.TrimSpace(val)
 			}
+		case float64:
+			return strconv.FormatFloat(val, 'f', -1, 64)
+		case float32:
+			return strconv.FormatFloat(float64(val), 'f', -1, 32)
+		case int:
+			return strconv.Itoa(val)
+		case int64:
+			return strconv.FormatInt(val, 10)
 		case []any:
 			if len(val) > 0 {
 				if s, ok := val[0].(string); ok && strings.TrimSpace(s) != "" {
@@ -470,6 +483,10 @@ func formatTime(vals ...any) string {
 		}
 	}
 	return ""
+}
+
+func IsAlreadyLinked(raw any) bool {
+	return isAlreadyLinked(raw)
 }
 
 func isAlreadyLinked(raw any) bool {
@@ -592,3 +609,19 @@ func (s *Service) ListTransactionRecordIDs(ctx context.Context) ([]string, error
 	}
 	return ids, nil
 }
+
+// InspectRowsWithSchema retrieves transaction rows along with resolved field mappings and table binding.
+func (s *Service) InspectRowsWithSchema(ctx context.Context) ([]TransactionRow, map[string]string, config.TableBinding, error) {
+	transBinding := s.cfg.Business.Tables.Transactions
+	token, err := s.client.accessToken(ctx)
+	if err != nil {
+		return nil, nil, transBinding, err
+	}
+	fieldMap, err := s.fetchFieldMap(ctx, token, transBinding.BaseToken, transBinding.TableID)
+	if err != nil {
+		return nil, nil, transBinding, err
+	}
+	rows, err := s.ListTransactionRows(ctx)
+	return rows, fieldMap, transBinding, err
+}
+

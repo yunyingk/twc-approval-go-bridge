@@ -26,6 +26,7 @@ type ScanReport struct {
 	SkippedStatus     int            `json:"skipped_status"`
 	SkippedClaim      int            `json:"skipped_claim"`
 	SkippedNoUser     int            `json:"skipped_no_user"`
+	SkippedIncomplete int            `json:"skipped_incomplete"` // 缺少结算金额/币种/流水号/交易时间等
 	Candidates        []CandidateRow `json:"candidates"`
 	NotifiedCount     int            `json:"notified_count"`
 	DryRun            bool           `json:"dry_run"`
@@ -107,11 +108,13 @@ func (s *Scanner) Inspect(ctx context.Context, opts ...ScanOptions) (*ScanReport
 			switch {
 			case strings.Contains(decision.Reason, "已关联"):
 				report.SkippedLinked++
+			case strings.Contains(decision.Reason, "缺少"):
+				report.SkippedIncomplete++
 			case strings.Contains(decision.Reason, "0或负数"):
 				report.SkippedZeroAmount++
 			case strings.Contains(decision.Reason, "交易状态"):
 				report.SkippedStatus++
-			case strings.Contains(decision.Reason, "报销状态"):
+			case strings.Contains(decision.Reason, "报销状态") || strings.Contains(decision.Reason, "核销"):
 				report.SkippedClaim++
 			case strings.Contains(decision.Reason, "持卡人"):
 				report.SkippedNoUser++

@@ -30,7 +30,74 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 		return nil
 	}
 
-	// 1. Check detail relation (deduplication): already linked to personal reimbursement detail?
+	// 1. Mandatory 5 fields completeness check (Per business rule from Zhu Yitao):
+	// Must guarantee that none of the following 5 fields are empty:
+	// - 结算金额 (Booked Amount)
+	// - 结算金额币种 (Booked Currency)
+	// - 交易流水号 (Transaction ID)
+	// - 持卡人 (Cardholder)
+	// - 交易时间 (Transaction Time)
+	// If any one of them is empty, do not send notification.
+	bookedAmtRaw := getFieldValue("booked_amount_cny")
+	if bookedAmtRaw == nil {
+		bookedAmtRaw = record["结算金额"]
+	}
+	if strings.TrimSpace(formatString(bookedAmtRaw, "")) == "" {
+		return FilterDecision{
+			ShouldNotify: false,
+			Reason:       "缺少结算金额（未出账/在途交易），不予催报",
+		}
+	}
+
+	bookedCurRaw := getFieldValue("booked_currency")
+	if bookedCurRaw == nil {
+		bookedCurRaw = record["结算金额币种"]
+		if bookedCurRaw == nil {
+			bookedCurRaw = record["结算币种"]
+		}
+	}
+	if strings.TrimSpace(formatString(bookedCurRaw, "")) == "" {
+		return FilterDecision{
+			ShouldNotify: false,
+			Reason:       "缺少结算金额币种，不予催报",
+		}
+	}
+
+	txIDRaw := getFieldValue("transaction_id")
+	if txIDRaw == nil {
+		txIDRaw = record["交易流水号"]
+	}
+	if strings.TrimSpace(formatString(txIDRaw, "")) == "" {
+		return FilterDecision{
+			ShouldNotify: false,
+			Reason:       "缺少交易流水号，不予催报",
+		}
+	}
+
+	cardholderRaw := getFieldValue("cardholder")
+	if cardholderRaw == nil {
+		cardholderRaw = record["持卡人"]
+	}
+	openID, _ := extractCardholderOpenID(cardholderRaw)
+	if openID == "" {
+		return FilterDecision{
+			ShouldNotify: false,
+			Reason:       "未识别到持卡人飞书有效账号，不予催报",
+		}
+	}
+
+	txTimeRaw := getFieldValue("transaction_time")
+	if txTimeRaw == nil {
+		txTimeRaw = record["交易时间"]
+	}
+	if strings.TrimSpace(formatTime(txTimeRaw)) == "" {
+		return FilterDecision{
+			ShouldNotify: false,
+			Reason:       "缺少交易时间，不予催报",
+		}
+	}
+
+	// 2. Check detail relation (deduplication): already linked to personal reimbursement detail?
 	detailRelRaw := getFieldValue("detail_relation")
 	if detailRelRaw == nil {
 		detailRelRaw = record["个人报销单号"]
@@ -42,7 +109,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 		}
 	}
 
-	// 2. Check transaction status: filter out failed, cancelled, reversed, or refunded
+	// 3. Check transaction status: filter out failed, cancelled, reversed, or refunded
 	txStatusRaw := getFieldValue("transaction_status")
 	if txStatusRaw == nil {
 		txStatusRaw = record["交易状态"]
@@ -55,7 +122,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 		}
 	}
 
-	// 3. Check claim status: filter out already claimed or no claim needed
+	// 4. Check claim status: filter out already claimed or no claim needed (含 核销 语义)
 	claimStatusRaw := getFieldValue("claim_status")
 	if claimStatusRaw == nil {
 		claimStatusRaw = record["报销状态"]
@@ -64,15 +131,11 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	if isIgnoredClaimStatus(claimStatusStr) {
 		return FilterDecision{
 			ShouldNotify: false,
-			Reason:       "报销状态已完结或无需报销（" + claimStatusStr + "），无需催报",
+			Reason:       "报销状态已完结或无需核销（" + claimStatusStr + "），无需催报",
 		}
 	}
 
-	// 4. Check amounts: filter out <= 0 amounts (e.g. $0 verification transactions)
-	bookedAmtRaw := getFieldValue("booked_amount_cny")
-	if bookedAmtRaw == nil {
-		bookedAmtRaw = record["结算金额"]
-	}
+	// 5. Check amounts: filter out <= 0 amounts (e.g. $0 verification transactions)
 	origAmtRaw := getFieldValue("original_amount")
 	if origAmtRaw == nil {
 		origAmtRaw = record["交易金额"]
@@ -82,19 +145,6 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 		return FilterDecision{
 			ShouldNotify: false,
 			Reason:       "交易金额为0或负数（预授权/核卡流水无需报销）",
-		}
-	}
-
-	// 5. Check cardholder: must have a cardholder to notify
-	cardholderRaw := getFieldValue("cardholder")
-	if cardholderRaw == nil {
-		cardholderRaw = record["持卡人"]
-	}
-	openID, _ := extractCardholderOpenID(cardholderRaw)
-	if openID == "" {
-		return FilterDecision{
-			ShouldNotify: false,
-			Reason:       "未识别到持卡人飞书有效账号",
 		}
 	}
 
@@ -124,7 +174,7 @@ func isIgnoredClaimStatus(status string) bool {
 		return false
 	}
 	ignoredKeywords := []string{
-		"已报销", "无需报销", "作废", "已归档", "已关闭", "不报销",
+		"已报销", "无需报销", "无需核销", "已核销", "作废", "已归档", "已关闭", "不报销", "不核销",
 	}
 	for _, kw := range ignoredKeywords {
 		if strings.Contains(status, kw) {

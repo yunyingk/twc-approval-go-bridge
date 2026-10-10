@@ -56,9 +56,12 @@ func runScanTransactions(ctx context.Context, cfg config.Config, logger *slog.Lo
 	fmt.Fprintf(output, "======================================================================\n")
 	fmt.Fprintf(output, "流水总记录数:        %d 条\n", report.TotalRows)
 	fmt.Fprintf(output, "  - 已关联报销明细:  %d 条 (无需催报)\n", report.SkippedLinked)
+	if report.SkippedIncomplete > 0 {
+		fmt.Fprintf(output, "  - 缺少必填要素(未入账): %d 条 (已过滤)\n", report.SkippedIncomplete)
+	}
 	fmt.Fprintf(output, "  - 0元/负数验证流水: %d 条 (已过滤)\n", report.SkippedZeroAmount)
 	fmt.Fprintf(output, "  - 失败/撤回/撤销:   %d 条 (已过滤)\n", report.SkippedStatus)
-	fmt.Fprintf(output, "  - 已报销/无需报销:  %d 条 (已过滤)\n", report.SkippedClaim)
+	fmt.Fprintf(output, "  - 已报销/无需核销:  %d 条 (已过滤)\n", report.SkippedClaim)
 	if report.SkippedNoUser > 0 {
 		fmt.Fprintf(output, "  - 未识别到持卡人:  %d 条 (跳过)\n", report.SkippedNoUser)
 	}
