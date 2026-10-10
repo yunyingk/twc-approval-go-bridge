@@ -68,3 +68,17 @@
    - `SQ *UME-CA-CUPERTINO Cupertino USA` (CNY 91.13，快餐正餐)
    - `TST*NEW ENGLAND LOBSTE Burlingame USA` (CNY 980.11，龙虾海鲜正餐)
    - `Apple Store #R824 CUPERTINO USA` (CNY 591.00，苹果硬件配件)
+
+---
+
+## 5. 全面触发与常驻自动巡检开启
+
+1. **全面触发派发**：
+   - 执行 `./bin/twc-approval-go-bridge scan-transactions -send`；
+   - 17 条样本全部完成明细建单、飞书待办创建与 IM 交互卡片投递（谢子豪 6 条、李俊 6 条、宋国杰 5 条）；
+   - 多维表格《交易流水表》152 条流水中，139 条全部进入“已关联”状态，13 条在途流水被 5 要素规则过滤，催报池精确定位至 0 条。
+2. **常驻后台自动巡检就绪**：
+   - `configs/config.toml` 中 `transactions.auto_notify` 设为 `true`；
+   - 本地后台守护进程 `com.yingqing.twc-approval-debug` 已平滑重启；
+   - 服务每 5 分钟自动巡检一次，一旦有新交易流水写入多维表格，系统将自动识别、过滤并向对应持卡人推送催报卡片。
+

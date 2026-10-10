@@ -156,8 +156,8 @@ func main() {
 
 	fmt.Printf("【一、保留继续联调样本: %d 条】\n", len(toKeep))
 	for i, k := range toKeep {
-		fmt.Printf("  %2d. [%s] 流水号: %-18s | 持卡人: %-6s | 金额: CNY %-8s | 商户: %s\n",
-			i+1, k.RecordID, k.TxID, k.Cardholder, k.BookedAmt, k.Merchant)
+		fmt.Printf("  %2d. [%s] 持卡人: %-6s (ID: %s) | 流水号: %-18s | 金额: CNY %-8s | 商户: %s\n",
+			i+1, k.RecordID, k.Cardholder, k.OpenID, k.TxID, k.BookedAmt, k.Merchant)
 	}
 
 	fmt.Printf("\n【二、待静默建单归档流水: %d 条】\n", len(toArchive))
