@@ -75,6 +75,10 @@ callback_token = ""
 http_addr = ":8080"
 log_level = "info"
 shutdown_timeout = "10s"
+# 持久化状态目录（存储发票防重 Checkpoint、待办任务与记录绑定关系）
+# • Docker 容器推荐："/data"（对应 deploy/docker-compose.yml 挂载卷）
+# • Linux 主机推荐："data"（当前运行目录下的 data/ 文件夹）
+# • 留空或缺省时：代码自动默认回退到 "data"
 state_dir = "data"
 # 监控看板访问密码（可选，留空则无需密码；公网部署建议设置，通过 HTTP Basic Auth 保护）
 dashboard_password = ""
