@@ -349,3 +349,123 @@ func TestServiceNotifyTransaction_Option1_PrefillAndTask(t *testing.T) {
 		t.Errorf("expected direct record url, got: %s", res.RecordURL)
 	}
 }
+
+func TestBatchCreatePrefillDetails(t *testing.T) {
+	batchCreated := false
+	var receivedRecords []map[string]any
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if strings.HasSuffix(r.URL.Path, "/auth/v3/tenant_access_token/internal") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":                0,
+				"msg":                 "ok",
+				"tenant_access_token": "mock-tenant-token",
+			})
+			return
+		}
+
+		if strings.HasSuffix(r.URL.Path, "/fields") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{
+					"items": []map[string]any{
+						{"field_id": "fld_detail_rel", "field_name": "关联流水号"},
+						{"field_id": "fld_emp", "field_name": "报销人"},
+						{"field_id": "fld_reason", "field_name": "消费事由"},
+						{"field_id": "fld_comment", "field_name": "审核意见"},
+					},
+				},
+			})
+			return
+		}
+
+		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/records/batch_create") {
+			batchCreated = true
+			var body struct {
+				Records []map[string]any `json:"records"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			receivedRecords = body.Records
+
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"msg":  "ok",
+				"data": map[string]any{
+					"records": []map[string]any{
+						{"record_id": "rec_batch_001"},
+						{"record_id": "rec_batch_002"},
+					},
+				},
+			})
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	cfg := config.Config{
+		Feishu: config.FeishuSettings{
+			AppCredentials: config.AppCredentials{
+				AppID:     "app_test",
+				AppSecret: "secret_test",
+			},
+			Host: "https://test.feishu.cn",
+		},
+		Business: &config.BusinessProfile{
+			Tables: config.BusinessTables{
+				ReimbursementDetails: config.TableBinding{
+					BaseToken: "app_base_token",
+					TableID:   "tbl_detail_id",
+					Fields: map[string]string{
+						"transaction_relation": "fld_detail_rel",
+						"employee":             "fld_emp",
+						"expense_reason":       "fld_reason",
+						"human_review_comment": "fld_comment",
+					},
+				},
+			},
+		},
+	}
+
+	svc, err := NewService(cfg)
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
+	svc.client.baseURL = server.URL
+
+	items := []SilentDetailItem{
+		{
+			TxRecordID:    "rec_tx_1",
+			OpenID:        "ou_user_1",
+			Merchant:      "MERCHANT ONE",
+			ExpenseReason: "[历史流水/待补发票] MERCHANT ONE",
+			ReviewComment: "历史流水批量建单归档（待补发票）",
+		},
+		{
+			TxRecordID:    "rec_tx_2",
+			OpenID:        "ou_user_2",
+			Merchant:      "MERCHANT TWO",
+			ExpenseReason: "[历史流水/待补发票] MERCHANT TWO",
+			ReviewComment: "历史流水批量建单归档（待补发票）",
+		},
+	}
+
+	createdIDs, err := svc.BatchCreatePrefillDetails(context.Background(), items)
+	if err != nil {
+		t.Fatalf("BatchCreatePrefillDetails failed: %v", err)
+	}
+
+	if !batchCreated {
+		t.Fatal("expected batch_create to be called")
+	}
+	if len(createdIDs) != 2 || createdIDs[0] != "rec_batch_001" || createdIDs[1] != "rec_batch_002" {
+		t.Fatalf("unexpected createdIDs: %v", createdIDs)
+	}
+	if len(receivedRecords) != 2 {
+		t.Fatalf("expected 2 received records, got %d", len(receivedRecords))
+	}
+}
+

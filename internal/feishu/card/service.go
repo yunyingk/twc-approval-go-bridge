@@ -297,6 +297,142 @@ func (s *Service) createPrefillDetail(ctx context.Context, token string, details
 	return result.Data.Record.RecordID, nil
 }
 
+// SilentDetailItem represents a single transaction to be silently prefilled in reimbursement details.
+type SilentDetailItem struct {
+	TxRecordID    string `json:"tx_record_id"`
+	OpenID        string `json:"open_id"`
+	Merchant      string `json:"merchant"`
+	ExpenseReason string `json:"expense_reason"`
+	ReviewComment string `json:"review_comment"`
+}
+
+// BatchCreatePrefillDetails creates records in ReimbursementDetails table in chunks of up to 100
+// without sending any notifications or creating any Feishu tasks.
+func (s *Service) BatchCreatePrefillDetails(ctx context.Context, items []SilentDetailItem) ([]string, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+	detailsBinding := s.cfg.Business.Tables.ReimbursementDetails
+	if detailsBinding.BaseToken == "" || detailsBinding.TableID == "" {
+		return nil, fmt.Errorf("reimbursement_details binding is missing base_token or table_id")
+	}
+
+	token, err := s.client.accessToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetch access token: %w", err)
+	}
+
+	relField := detailsBinding.Fields["transaction_relation"]
+	if relField == "" {
+		relField = "关联流水号"
+	}
+	empField := detailsBinding.Fields["employee"]
+	if empField == "" {
+		empField = "报销人"
+	}
+	reasonField := detailsBinding.Fields["expense_reason"]
+	if reasonField == "" {
+		reasonField = "消费事由"
+	}
+	commentField := detailsBinding.Fields["human_review_comment"]
+	if commentField == "" {
+		commentField = "审核意见"
+	}
+
+	fieldMap, err := s.fetchFieldMap(ctx, token, detailsBinding.BaseToken, detailsBinding.TableID)
+	if err == nil {
+		if name, ok := fieldMap[relField]; ok && name != "" {
+			relField = name
+		}
+		if name, ok := fieldMap[empField]; ok && name != "" {
+			empField = name
+		}
+		if name, ok := fieldMap[reasonField]; ok && name != "" {
+			reasonField = name
+		}
+		if name, ok := fieldMap[commentField]; ok && name != "" {
+			commentField = name
+		}
+	}
+
+	var createdIDs []string
+	const batchSize = 100
+	for i := 0; i < len(items); i += batchSize {
+		end := i + batchSize
+		if end > len(items) {
+			end = len(items)
+		}
+		chunk := items[i:end]
+
+		recordsPayload := make([]map[string]any, 0, len(chunk))
+		for _, it := range chunk {
+			fields := map[string]any{
+				relField: []string{it.TxRecordID},
+			}
+			if it.OpenID != "" {
+				fields[empField] = []map[string]string{{"id": it.OpenID}}
+			}
+			reason := it.ExpenseReason
+			if reason == "" {
+				reason = fmt.Sprintf("[历史流水/待补发票] %s", it.Merchant)
+			}
+			fields[reasonField] = reason
+			if it.ReviewComment != "" {
+				fields[commentField] = it.ReviewComment
+			}
+			recordsPayload = append(recordsPayload, map[string]any{
+				"fields": fields,
+			})
+		}
+
+		payload := map[string]any{
+			"records": recordsPayload,
+		}
+		bodyBytes, err := json.Marshal(payload)
+		if err != nil {
+			return createdIDs, err
+		}
+
+		apiURL := fmt.Sprintf("%s/bitable/v1/apps/%s/tables/%s/records/batch_create",
+			s.client.baseURL, url.PathEscape(detailsBinding.BaseToken), url.PathEscape(detailsBinding.TableID))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return createdIDs, err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := s.client.httpClient.Do(req)
+		if err != nil {
+			return createdIDs, err
+		}
+		var result struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+			Data struct {
+				Records []struct {
+					RecordID string `json:"record_id"`
+				} `json:"records"`
+			} `json:"data"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&result)
+		resp.Body.Close()
+		if decodeErr != nil {
+			return createdIDs, decodeErr
+		}
+		if result.Code != 0 {
+			return createdIDs, fmt.Errorf("batch create detail records failed (code %d): %s", result.Code, result.Msg)
+		}
+		for _, r := range result.Data.Records {
+			if r.RecordID != "" {
+				createdIDs = append(createdIDs, r.RecordID)
+			}
+		}
+	}
+	return createdIDs, nil
+}
+
+
 func (s *Service) createNoticeTask(ctx context.Context, recordURL, openID, txID, merchant, bookedAmt, origAmt, txTime string) (string, error) {
 	if s.taskClient == nil {
 		return "", nil
@@ -623,5 +759,43 @@ func (s *Service) InspectRowsWithSchema(ctx context.Context) ([]TransactionRow, 
 	}
 	rows, err := s.ListTransactionRows(ctx)
 	return rows, fieldMap, transBinding, err
+}
+
+// InspectDetailsWithSchema retrieves details rows along with resolved field mappings and table binding.
+func (s *Service) InspectDetailsWithSchema(ctx context.Context) ([]TransactionRow, map[string]string, config.TableBinding, error) {
+	detailsBinding := s.cfg.Business.Tables.ReimbursementDetails
+	token, err := s.client.accessToken(ctx)
+	if err != nil {
+		return nil, nil, detailsBinding, err
+	}
+	fieldMap, err := s.fetchFieldMap(ctx, token, detailsBinding.BaseToken, detailsBinding.TableID)
+	if err != nil {
+		return nil, nil, detailsBinding, err
+	}
+
+	apiURL := fmt.Sprintf("%s/bitable/v1/apps/%s/tables/%s/records?page_size=20",
+		s.client.baseURL, url.PathEscape(detailsBinding.BaseToken), url.PathEscape(detailsBinding.TableID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, nil, detailsBinding, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := s.client.httpClient.Do(req)
+	if err != nil {
+		return nil, nil, detailsBinding, err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			Items []TransactionRow `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, nil, detailsBinding, err
+	}
+	return result.Data.Items, fieldMap, detailsBinding, nil
 }
 

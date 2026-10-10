@@ -31,6 +31,28 @@ func main() {
 	fmt.Printf("📊 《交易流水表》线上数据全景分析 (总记录数: %d 条)\n", len(rows))
 	fmt.Printf("======================================================================\n\n")
 
+	fmt.Println("=== 线上交易流水表所有字段 (field_id -> field_name) ===")
+	for fid, fname := range fieldMap {
+		fmt.Printf("  ID: %-16s | Name: %s\n", fid, fname)
+	}
+	fmt.Println("======================================================================")
+
+	// Inspect reimbursement details table
+	detailRows, detailFieldMap, _, err := svc.InspectDetailsWithSchema(ctx)
+	if err == nil {
+		fmt.Println("\n=== 线上个人报销明细表所有字段 (field_id -> field_name) ===")
+		for fid, fname := range detailFieldMap {
+			fmt.Printf("  ID: %-16s | Name: %s\n", fid, fname)
+		}
+		fmt.Printf("====================================================================== (总拉取样本: %d 条)\n", len(detailRows))
+		if len(detailRows) > 0 {
+			fmt.Println("\n--- 明细表样本记录 1 ---")
+			for k, v := range detailRows[0].Fields {
+				fmt.Printf("  %s: %v\n", k, v)
+			}
+		}
+	}
+
 	getFieldValue := func(record map[string]any, semantic string) any {
 		if transBinding.Fields != nil {
 			fieldID := transBinding.Fields[semantic]
@@ -241,10 +263,20 @@ func main() {
 	fmt.Printf("======================================================================\n")
 
 	finalByCardholder := make(map[string]int)
+	merchantByCardholder := make(map[string]map[string]int)
 	for _, c := range finalCandidates {
-		finalByCardholder[c["cardholder"]]++
+		ch := c["cardholder"]
+		m := c["merchant"]
+		finalByCardholder[ch]++
+		if merchantByCardholder[ch] == nil {
+			merchantByCardholder[ch] = make(map[string]int)
+		}
+		merchantByCardholder[ch][m]++
 	}
 	for ch, cnt := range finalByCardholder {
 		fmt.Printf("  - %-15s: %d 条\n", ch, cnt)
+		for m, mcnt := range merchantByCardholder[ch] {
+			fmt.Printf("      * %-45s : %d 条\n", m, mcnt)
+		}
 	}
 }
