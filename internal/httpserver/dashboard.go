@@ -532,6 +532,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
     <footer>
       <span>自动无刷新轮询中 · 数据每 3 秒同步一次</span>
       <div class="links">
+        <a href="https://admin.doubao.com/ask/doubao/builtin-skill" target="_blank" style="color: #38bdf8; font-weight: 500;">豆包企业技能后台 ↗</a>
         <a href="/api/status" target="_blank">/api/status</a>
         <a href="/healthz" target="_blank">/healthz</a>
         <a href="/readyz" target="_blank">/readyz</a>
