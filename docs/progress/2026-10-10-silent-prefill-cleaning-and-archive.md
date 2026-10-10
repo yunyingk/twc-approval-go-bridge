@@ -82,3 +82,18 @@
    - 本地后台守护进程 `com.yingqing.twc-approval-debug` 已平滑重启；
    - 服务每 5 分钟自动巡检一次，一旦有新交易流水写入多维表格，系统将自动识别、过滤并向对应持卡人推送催报卡片。
 
+---
+
+## 6. 秒级长连接响应打通与状态存储绝对路径
+
+1. **状态中心绝对路径**：
+   - 配置与落盘路径：`/Users/yingqing/Code/影视飓风/twc-approval-go-bridge/data/public-debug/state/`；
+   - 内部按 `detailRecordID` 的 SHA-256 哈希命名文件（如 `6d1205850...json`），落盘格式为：
+     `{"record_id":"...","task_guid":"...","completed":false,"created_at":...}`。
+2. **秒级长连接事件驱动上线 (`internal/feishu/card/event_sink.go`)**：
+   - 飞书 WebSocket 长连接收到 `tblr0rFnvNntoSYR`（交易流水表）的 `record_added` 或 `record_edited` 事件时；
+   - 触发 3 秒防抖缓冲（平滑吸收易商卡在途多字段异步写入）；
+   - 防抖结束后，自动调用 `NotifyTransaction` 进行 5 要素强校验，通过后**秒级创建明细单据、创建飞书待办、向持卡人投递交互卡片**；
+   - 5 分钟轮询（`scanner.Start`）作为后台心跳补偿与保底双保险，形成“秒级捕获 + 定时兜底”双通道。
+
+

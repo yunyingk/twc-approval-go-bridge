@@ -237,8 +237,21 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 	var baseEventSink events.Sink
 	var receiptFlow *recognition.Processor
 	var attachmentClient *base.AttachmentClient
+	var taskService *task.Service
 	if cfg.FeishuEnabled() {
 		sink := events.LoggingSink(logger, cfg.Feishu.LogRawEvents)
+		if cfg.Runtime.StateDir != "" {
+			var taskStore task.Store
+			if st, err := state.NewFiles(cfg.Runtime.StateDir); err == nil {
+				taskStore = st
+			}
+			taskClient := task.NewClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret)
+			taskService = task.NewService(taskClient, taskStore)
+		} else {
+			taskClient := task.NewClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret)
+			taskService = task.NewService(taskClient, nil)
+		}
+
 		receiptProvider := cfg.ReceiptProvider()
 		if receiptProvider != "" {
 			var recognizer invoice.Recognizer
@@ -261,18 +274,6 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 			})
 			details := cfg.Business.Tables.ReimbursementDetails
 			ledger := cfg.Business.Tables.InvoiceLedger
-
-			var taskService *task.Service
-			if cfg.FeishuEnabled() {
-				var taskStore task.Store
-				if cfg.Runtime.StateDir != "" {
-					if st, err := state.NewFiles(cfg.Runtime.StateDir); err == nil {
-						taskStore = st
-					}
-				}
-				taskClient := task.NewClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret)
-				taskService = task.NewService(taskClient, taskStore)
-			}
 
 			if ledger.TableID != "" {
 				ledgerHandler, ledgerErr := invoiceledger.New(invoiceledger.Config{BaseToken: details.BaseToken, SourceTableID: details.TableID, SourceDetailFieldID: details.DetailIDField(), TableID: ledger.TableID, Fields: ledger.Fields}, base.NewLedgerClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret), logger)
@@ -367,7 +368,27 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 				return sourceSink.Sink(ctx, event)
 			}
 		}
-		if cfg.ReceiptProvider() == "" || cfg.ReceiptTriggerMode() != "poll" || reviewChangesEnabled(cfg) {
+		if cfg.Transactions.AutoNotify && cfg.Business != nil && cfg.Business.Tables.Transactions.TableID != "" {
+			cardSvc, cardErr := card.NewService(cfg, taskService)
+			if cardErr == nil {
+				txSink := card.NewEventSink(cardSvc, card.EventSinkOptions{
+					Debounce: 3 * time.Second,
+					Logger:   logger,
+				})
+				defer txSink.Close()
+				previousSink := sink
+				sink = func(ctx context.Context, event events.Event) error {
+					if err := previousSink(ctx, event); err != nil {
+						return err
+					}
+					return txSink.Sink(ctx, event)
+				}
+				logger.Info("real-time transaction event sink enabled", "table_id", cfg.Business.Tables.Transactions.TableID, "debounce", "3s")
+			} else {
+				logger.Warn("initialize real-time transaction sink failed", "error", cardErr)
+			}
+		}
+		if cfg.ReceiptProvider() == "" || cfg.ReceiptTriggerMode() != "poll" || reviewChangesEnabled(cfg) || cfg.Transactions.AutoNotify {
 			baseEventSink = sink
 		}
 	} else {
@@ -532,7 +553,7 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 		}
 	}
 	if cfg.Transactions.AutoNotify && cfg.FeishuEnabled() && cfg.Business != nil && cfg.Business.Tables.Transactions.TableID != "" {
-		cardSvc, cardErr := card.NewService(cfg)
+		cardSvc, cardErr := card.NewService(cfg, taskService)
 		if cardErr == nil {
 			scanner := card.NewScanner(cardSvc, logger)
 			go scanner.Start(ctx, cfg.Transactions.PollInterval)
