@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-代码基线是 `d48c186`（10 月 5 日收尾），本次开始时工作区干净。桥接服务与 FRP 两个 LaunchAgent 均为 running；本地 `127.0.0.1:18088` 和公网 `https://twc-approval.ying-qing.cn` 的 healthz、readyz、version 均返回 200，实际运行版本仍为 `public-debug-20261005-review-recovery`，使用排除 Anthropic 的构建。
+代码基线是 `d48c186`（10 月 5 日收尾），本次开始时工作区干净。桥接服务与 FRP 两个 LaunchAgent 均为 running；本地 `127.0.0.1:18088` 和公网 `https://<public-domain>` 的 healthz、readyz、version 均返回 200，实际运行版本仍为 `public-debug-20261005-review-recovery`，使用排除 Anthropic 的构建。
 
 本次 `check-business-config` 使用项目应用身份成功读取三个角色，核验交易流水 14 个字段、报销明细 20 个字段、台账 18 个字段。此项证明当前结构读取通过，不替代第三方写入权限或事件投递验收。本地 `review-status all` 为两份 Seal 历史审核 completed、delivered=true、decision=review，自动意图及来源收件队列均无待处理项；本次没有重新核对两份历史版本的当前业务事实。10 月 5 日最后核对时，两份已交付历史版本因新增支付输入/查重候选均已过时，见[审核恢复记录](2026-10-05-review-recovery.md)。
 

@@ -7,6 +7,15 @@ import (
 	"time"
 )
 
+// AnyreceiptStatus reports remaining credits and quota from Anyreceipt OCR service.
+type AnyreceiptStatus struct {
+	Configured         bool   `json:"configured"`
+	BalancePoints      int    `json:"balance_points"`
+	AvailableCallCount int    `json:"available_call_count"`
+	CallCostPoints     int    `json:"call_cost_points"`
+	Error              string `json:"error,omitempty"`
+}
+
 // Status contains live runtime and diagnostics information for health dashboards.
 type Status struct {
 	Version         string            `json:"version"`
@@ -24,17 +33,144 @@ type Status struct {
 	BaseToken       string            `json:"base_token,omitempty"`
 	BaseURL         string            `json:"base_url,omitempty"`
 	Tables          map[string]string `json:"tables,omitempty"`
+	Anyreceipt      *AnyreceiptStatus `json:"anyreceipt,omitempty"`
 }
 
 // StatusProvider produces a current status snapshot.
 type StatusProvider func() Status
+
+func (s *Server) renderLockScreen(w http.ResponseWriter, _ *http.Request, errMsg string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+
+	errHTML := ""
+	if errMsg != "" {
+		errHTML = fmt.Sprintf(`<div class="error-msg">⚠️ %s</div>`, errMsg)
+	}
+
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TWC 监控看板 · 访问验证</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    .lock-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 2.25rem 2rem;
+      width: 100%%;
+      max-width: 380px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+      text-align: center;
+    }
+    .icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.75rem;
+      display: inline-block;
+    }
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.35rem;
+    }
+    p {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+    .input-group {
+      margin-bottom: 1.25rem;
+      text-align: left;
+    }
+    input[type="password"] {
+      width: 100%%;
+      padding: 0.75rem 1rem;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      color: #fff;
+      font-size: 0.9375rem;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    input[type="password"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+    }
+    button {
+      width: 100%%;
+      padding: 0.75rem;
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      border-radius: 0.5rem;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    button:hover {
+      background: #0369a1;
+    }
+    .error-msg {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: var(--danger);
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.5rem;
+      font-size: 0.8125rem;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="lock-card">
+    <div class="icon">🔒</div>
+    <h1>监控看板验证</h1>
+    <p>请输入管理访问密码以解锁看板</p>
+    %s
+    <form action="/login" method="POST">
+      <div class="input-group">
+        <input type="password" name="password" placeholder="请输入密码..." autofocus required autocomplete="current-password" />
+      </div>
+      <button type="submit">解锁并进入 ➔</button>
+    </form>
+  </div>
+</body>
+</html>`, errHTML)
+	_, _ = w.Write([]byte(html))
+}
 
 func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		s.notFound(w, r)
 		return
 	}
-	if !s.checkAuth(w, r) {
+	if !s.isAuthenticated(r) {
+		s.renderLockScreen(w, r, "")
 		return
 	}
 
@@ -111,6 +247,37 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		tablesHTML = b.String()
 	}
 
+	// Anyreceipt card info
+	anyreceiptTagStyle := "background: rgba(107, 114, 128, 0.2); color: #9ca3af; border: 1px solid #4b5563;"
+	anyreceiptTagText := "未配置"
+	anyreceiptBalanceText := "—"
+	anyreceiptCallsText := "—"
+	anyreceiptCostText := "1 点 / 次"
+	anyreceiptChannelText := "未启用"
+
+	if status.Anyreceipt != nil && status.Anyreceipt.Configured {
+		if status.Anyreceipt.Error != "" {
+			anyreceiptTagStyle = "background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444;"
+			anyreceiptTagText = "查询异常"
+			anyreceiptChannelText = fmt.Sprintf("<span style='color: #ef4444;'>%s</span>", status.Anyreceipt.Error)
+		} else {
+			anyreceiptBalanceText = fmt.Sprintf("%d 点", status.Anyreceipt.BalancePoints)
+			anyreceiptCallsText = fmt.Sprintf("%d 次", status.Anyreceipt.AvailableCallCount)
+			if status.Anyreceipt.CallCostPoints > 0 {
+				anyreceiptCostText = fmt.Sprintf("%d 点 / 次", status.Anyreceipt.CallCostPoints)
+			}
+			if status.Anyreceipt.AvailableCallCount > 20 {
+				anyreceiptTagStyle = "background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981;"
+				anyreceiptTagText = "余额充足"
+				anyreceiptChannelText = "<span style='color: #10b981;'>正常运行中</span>"
+			} else {
+				anyreceiptTagStyle = "background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid #f59e0b;"
+				anyreceiptTagText = "余额偏低"
+				anyreceiptChannelText = "<span style='color: #f59e0b;'>请及时充值</span>"
+			}
+		}
+	}
+
 	html := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -148,6 +315,11 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
     }
     .title-group h1 { font-size: 1.5rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 0.6rem; }
     .title-group p { font-size: 0.875rem; color: var(--text-muted); margin-top: 0.25rem; }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
     .live-badge {
       display: inline-flex;
       align-items: center;
@@ -172,6 +344,20 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
       0%% { transform: scale(0.95); opacity: 0.8; }
       50%% { transform: scale(1.2); opacity: 1; }
       100%% { transform: scale(0.95); opacity: 0.8; }
+    }
+    .logout-btn {
+      color: var(--text-muted);
+      font-size: 0.8125rem;
+      text-decoration: none;
+      padding: 0.35rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 0.375rem;
+      transition: all 0.15s ease;
+    }
+    .logout-btn:hover {
+      color: #fff;
+      border-color: #64748b;
+      background: rgba(255,255,255,0.05);
     }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 1.25rem; }
     .card {
@@ -223,9 +409,12 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
         <h1><span>⚡</span> 海外易商卡报销网桥</h1>
         <p>TWC Approval Go Bridge · 实时运行状态与诊断监控</p>
       </div>
-      <div class="live-badge" id="system-badge">
-        <span class="pulse-dot"></span>
-        <span id="system-status-text">服务正常运行</span>
+      <div class="header-actions">
+        <div class="live-badge" id="system-badge">
+          <span class="pulse-dot"></span>
+          <span id="system-status-text">服务正常运行</span>
+        </div>
+        <a href="/logout" class="logout-btn">退出登录</a>
       </div>
     </header>
 
@@ -251,6 +440,30 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
         <div class="row">
           <span class="label">监听事件类型</span>
           <span class="val code">drive.file.bitable_record_changed_v1</span>
+        </div>
+      </div>
+
+      <!-- Anyreceipt 票据识别额度卡片 -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span>🧾</span> Anyreceipt 海外小票识别额度</div>
+          <span class="status-tag" id="anyreceipt-tag" style="%s">%s</span>
+        </div>
+        <div class="row">
+          <span class="label">账户剩余余额</span>
+          <span class="val" id="anyreceipt-balance" style="font-size: 1.125rem; font-weight: 700; color: #38bdf8;">%s</span>
+        </div>
+        <div class="row">
+          <span class="label">预计可用调用次数</span>
+          <span class="val code" id="anyreceipt-calls" style="color: #10b981;">%s</span>
+        </div>
+        <div class="row">
+          <span class="label">单次识别计费标准</span>
+          <span class="val">%s</span>
+        </div>
+        <div class="row">
+          <span class="label">通道状态</span>
+          <span class="val" id="anyreceipt-channel">%s</span>
         </div>
       </div>
 
@@ -331,7 +544,13 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
     async function updateStatus() {
       try {
         const res = await fetch('/api/status');
-        if (!res.ok) throw new Error('status error');
+        if (!res.ok) {
+          if (res.status === 401) {
+            window.location.reload();
+            return;
+          }
+          throw new Error('status error');
+        }
         const data = await res.json();
         
         // Update Feishu Tag
@@ -353,7 +572,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
           tag.style.borderColor = '#ef4444';
         }
 
-        if (data.feishu_event_count !== undefined) {
+        if (data.feishu_events !== undefined) {
           document.getElementById('feishu-event-count').textContent = data.feishu_events;
         }
         if (data.feishu_last_event) {
@@ -361,6 +580,31 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
         }
         if (data.uptime) {
           document.getElementById('system-uptime').textContent = data.uptime;
+        }
+
+        // Update Anyreceipt Tag
+        if (data.anyreceipt && data.anyreceipt.configured) {
+          const atag = document.getElementById('anyreceipt-tag');
+          if (data.anyreceipt.error) {
+            atag.textContent = '查询异常';
+            atag.style.background = 'rgba(239, 68, 68, 0.2)';
+            atag.style.color = '#ef4444';
+            atag.style.borderColor = '#ef4444';
+          } else {
+            document.getElementById('anyreceipt-balance').textContent = data.anyreceipt.balance_points + ' 点';
+            document.getElementById('anyreceipt-calls').textContent = data.anyreceipt.available_call_count + ' 次';
+            if (data.anyreceipt.available_call_count > 20) {
+              atag.textContent = '余额充足';
+              atag.style.background = 'rgba(16, 185, 129, 0.2)';
+              atag.style.color = '#10b981';
+              atag.style.borderColor = '#10b981';
+            } else {
+              atag.textContent = '余额偏低';
+              atag.style.background = 'rgba(245, 158, 11, 0.2)';
+              atag.style.color = '#f59e0b';
+              atag.style.borderColor = '#f59e0b';
+            }
+          }
         }
       } catch (e) {
         const badge = document.getElementById('system-badge');
@@ -378,6 +622,11 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		connectedTimeText,
 		status.FeishuEvents,
 		lastEventText,
+		anyreceiptTagStyle, anyreceiptTagText,
+		anyreceiptBalanceText,
+		anyreceiptCallsText,
+		anyreceiptCostText,
+		anyreceiptChannelText,
 		status.HTTPAddr,
 		status.Version,
 		status.Uptime,

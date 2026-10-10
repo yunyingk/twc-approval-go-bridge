@@ -7,20 +7,20 @@
 配置日期：2026-10-03。此入口把 HTTPS 请求接到当前 Mac 上运行的桥接服务，使用现有阿里云公网服务器，不经 Windows WSL。
 
 ```text
-https://twc-approval.ying-qing.cn
-  → 阿里云 118.31.4.210 nginx（HTTPS）
+https://twc-approval.example.com (替换为您的公网域名)
+  → 阿里云 nginx（HTTPS）
   → frps:8080
   → 本机独立 frpc：twc-approval-mac15-web（TLS）
   → 127.0.0.1:18088 桥接服务
 ```
 
-DNS 已解析到 `118.31.4.210`。nginx 当前采用域名白名单，因此新增独立虚拟主机；没有修改已有服务的域名列表或重启共享 FRP。部署的 nginx 配置见 [public-debug.conf](../deploy/nginx/public-debug.conf)。
+DNS 已解析至公网服务器。nginx 当前采用域名白名单，因此新增独立虚拟主机；没有修改已有服务的域名列表或重启共享 FRP。部署的 nginx 配置见 [public-debug.conf](../deploy/nginx/public-debug.conf)。
 
 ## 可访问接口
 
-- [健康检查](https://twc-approval.ying-qing.cn/healthz)：`200 {"status":"ok"}`。
-- [就绪检查](https://twc-approval.ying-qing.cn/readyz)：`200 {"status":"ready"}`。
-- [构建版本](https://twc-approval.ying-qing.cn/version)：当前运行 `public-debug-20261005-review-recovery`。
+- 健康检查：`GET /healthz` -> `200 {"status":"ok"}`。
+- 就绪检查：`GET /readyz` -> `200 {"status":"ready"}`。
+- 构建版本：`GET /version` -> 当前运行版本。
 - `POST /seal/callback/<密钥>`：密钥在本地私有配置及 Seal `test` 通道保存，不写入本文。
 
 公网根路径、mock 与其他路径返回 404；错误回调密钥返回 401；正确密钥搭配无效内容返回 400。nginx 限制请求体为 1 MiB，禁止记录该域名的访问 URL 和错误 URL；应用已有回调路径遮蔽。不要把完整回调 URL 复制到日志或公开文档。

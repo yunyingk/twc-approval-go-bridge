@@ -3,6 +3,8 @@ package httpserver
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -36,6 +38,8 @@ func New(addr string, logger *slog.Logger, version string) *Server {
 	mux.HandleFunc("GET /readyz", s.ready)
 	mux.HandleFunc("GET /version", s.versionHandler)
 	mux.HandleFunc("GET /api/status", s.statusAPI)
+	mux.HandleFunc("POST /login", s.handleLogin)
+	mux.HandleFunc("GET /logout", s.handleLogout)
 	mux.HandleFunc("/", s.renderDashboard)
 
 	s.httpServer = &http.Server{
@@ -46,22 +50,79 @@ func New(addr string, logger *slog.Logger, version string) *Server {
 	return s
 }
 
-// SetPassword configures HTTP basic auth protection for the dashboard and status API.
+// SetPassword configures password protection for the dashboard and status API.
 func (s *Server) SetPassword(pwd string) {
 	s.password = pwd
 }
 
-func (s *Server) checkAuth(w http.ResponseWriter, r *http.Request) bool {
+func (s *Server) tokenValue() string {
+	if s.password == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte("twc_dash_secret:" + s.password))
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *Server) isAuthenticated(r *http.Request) bool {
 	if s.password == "" {
 		return true
 	}
-	_, pass, ok := r.BasicAuth()
-	if !ok || pass != s.password {
-		w.Header().Set("WWW-Authenticate", `Basic realm="Restricted Dashboard"`)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return false
+	// 1. Check Cookie
+	if cookie, err := r.Cookie("twc_dash_token"); err == nil && cookie != nil {
+		if cookie.Value == s.tokenValue() {
+			return true
+		}
 	}
-	return true
+	// 2. Check X-Dashboard-Token header
+	if token := r.Header.Get("X-Dashboard-Token"); token != "" {
+		if token == s.tokenValue() || token == s.password {
+			return true
+		}
+	}
+	// 3. Check Basic Auth (兼容工具/脚本)
+	if _, pass, ok := r.BasicAuth(); ok && pass == s.password {
+		return true
+	}
+	// 4. Check Bearer token
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		token := strings.TrimPrefix(auth, "Bearer ")
+		if token == s.tokenValue() || token == s.password {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	pwd := r.FormValue("password")
+	if pwd == s.password {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "twc_dash_token",
+			Value:    s.tokenValue(),
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   30 * 24 * 3600, // 30 days
+		})
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	s.renderLockScreen(w, r, "密码错误，请核对后重试")
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "twc_dash_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 // SetStatusProvider attaches a live status reporter to the server dashboard.
@@ -101,7 +162,8 @@ func (s *Server) versionHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) statusAPI(w http.ResponseWriter, r *http.Request) {
-	if !s.checkAuth(w, r) {
+	if !s.isAuthenticated(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
 	if s.statusProvider != nil {

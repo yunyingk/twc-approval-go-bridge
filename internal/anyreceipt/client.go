@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -15,7 +16,18 @@ import (
 	"github.com/yunyingk/twc-approval-go-bridge/internal/receiptcompat"
 )
 
-const summaryURL = "https://pi.anyreceipt.cn/api/ocr/summary"
+const (
+	summaryURL = "https://pi.anyreceipt.cn/api/ocr/summary"
+	usageURL   = "https://pi.anyreceipt.cn/api/getApiKeyUsage"
+)
+
+// Usage contains balance and usage statistics for an Anyreceipt API key.
+type Usage struct {
+	APIKey             string `json:"apiKey"`
+	BalancePoints      int    `json:"balancePoints"`
+	AvailableCallCount int    `json:"availableCallCount"`
+	CallCostPoints     int    `json:"callCostPoints"`
+}
 
 // Client calls the same OCR endpoint as the existing Feishu field shortcut.
 type Client struct {
@@ -158,3 +170,40 @@ func valueToText(value any) string {
 		return fmt.Sprint(v)
 	}
 }
+
+// GetUsage queries Anyreceipt for the current API key balance and remaining quota.
+func (c *Client) GetUsage(ctx context.Context) (*Usage, error) {
+	if c == nil {
+		return nil, fmt.Errorf("Anyreceipt client is not initialized")
+	}
+	endpoint := fmt.Sprintf("%s?apiKey=%s", usageURL, url.QueryEscape(c.apiKey))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create Anyreceipt usage request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-API-KEY", c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("call Anyreceipt getApiKeyUsage: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("Anyreceipt returned HTTP %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data Usage  `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode Anyreceipt usage response: %w", err)
+	}
+	if result.Code != 200 {
+		return nil, fmt.Errorf("Anyreceipt reported error: %s (code %d)", result.Msg, result.Code)
+	}
+	return &result.Data, nil
+}
+

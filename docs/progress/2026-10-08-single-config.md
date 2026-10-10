@@ -36,6 +36,6 @@
 
 改动提交 c48e1b2 后，已将验证过的 no_anthropic 二进制原子替换为 public-debug-20261008-single-config，重启原 com.yingqing.twc-approval-debug LaunchAgent。保留上一版二进制的私有备份；FRP、公网域名和转发配置未修改。
 
-本地 127.0.0.1:18088 与公网 https://twc-approval.ying-qing.cn 的 healthz、readyz、version 六项均返回 200，版本均为 public-debug-20261008-single-config。日志在 14:45:24 显示新版本启动、SDK WebSocket connected 和 Feishu long connection ready，随后轮询完成。此次只验连接恢复，没有再修改线上记录验证事件或发起付费链路。
+本地 127.0.0.1:18088 与公网 https://<public-domain> 的 healthz、readyz、version 六项均返回 200，版本均为 public-debug-20261008-single-config。日志在 14:45:24 显示新版本启动、SDK WebSocket connected 和 Feishu long connection ready，随后轮询完成。此次只验连接恢复，没有再修改线上记录验证事件或发起付费链路。
 
 重启前后的 8 个状态 JSON SHA-256 完全相同；review-status 仍为两份 completed/delivered 的历史结果，无排队意图。config.json 权限为 0600；原 .env 与 .env.public-debug 已移入 data/private-config-archive-20261008（目录 0700、文件 0600），不再处于加载路径。真实密钥已扫描确认未进入提交 Diff；Git 工作区只管理脱敏示例及代码/文档。

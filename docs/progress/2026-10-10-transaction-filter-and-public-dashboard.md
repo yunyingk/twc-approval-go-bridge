@@ -12,8 +12,8 @@
    - 修复流水拉取缓慢（之前 150+ 条数据串行请求导致上分钟延迟的问题）；
    - 批量扫描命令（`scan-transactions`）默认只读（Dry-Run），绝不在测试环境盲发轰炸用户；支持 `-send`、`-limit` 和 `-user`。
 3. **公网监控看板访问**：
-   - 支持通过外网域名 `https://twc-approval.ying-qing.cn` 实时查看服务运行状态与长连接指标；
-   - 在 `config.toml` 中配置 `dashboard_password`，通过 HTTP Basic Auth 安全保护，未授权访问返回 401。
+   - 支持通过外网公网域名（如 `https://<public-domain>/`）实时查看服务运行状态与长连接指标；
+   - 在 `config.toml` 中配置 `dashboard_password`，通过密码认证安全保护，未授权访问返回 401。
 
 ## 2. 关键实施细节
 
@@ -32,9 +32,9 @@
 - 安全参数：`-send` 真实发送、`-limit <n>` 限制单次测试条数、`-user <name>` 指定持卡人。
 
 ### 2.4 公网 Ingress 与安全认证
-- 在 `internal/httpserver/server.go` 与 `dashboard.go` 中集成基于 `dashboard_password` 的 Basic Auth 鉴权；
+- 在 `internal/httpserver/server.go` 与 `dashboard.go` 中集成基于 `dashboard_password` 的鉴权；
 - 更新 `deploy/nginx/public-debug.conf` 并同步部署至 Aliyun ECS nginx 代理，放行 `/` 与 `/api/status`；
-- 实测公网 `https://twc-approval.ying-qing.cn/`：未认证返回 401，认证通过返回 200 并展示实时监控看板。
+- 实测公网看板：未认证返回 401，认证通过返回 200 并展示实时监控看板。
 
 ## 3. 验收结果
 - 双构建测试通过：`go test ./...` 及 `go test -tags no_anthropic ./...` 全部通过。

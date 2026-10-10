@@ -9,12 +9,15 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/yunyingk/twc-approval-go-bridge/internal/anyreceipt"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/app/recognition"
 	appreview "github.com/yunyingk/twc-approval-go-bridge/internal/app/review"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
@@ -385,6 +388,72 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 	}
 
 	startTime := time.Now()
+
+	var (
+		anyreceiptMu        sync.RWMutex
+		lastAnyreceiptUsage *anyreceipt.Usage
+		lastAnyreceiptErr   error
+		lastAnyreceiptTime  time.Time
+	)
+
+	fetchAnyreceiptUsage := func() {
+		ctxTimeout, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		httpClient := &http.Client{Timeout: 15 * time.Second}
+		cli, err := anyreceipt.New(cfg.Anyreceipt.APIKey, httpClient)
+		if err != nil {
+			anyreceiptMu.Lock()
+			lastAnyreceiptErr = err
+			lastAnyreceiptTime = time.Now()
+			anyreceiptMu.Unlock()
+			return
+		}
+		usage, err := cli.GetUsage(ctxTimeout)
+		anyreceiptMu.Lock()
+		if err == nil {
+			lastAnyreceiptUsage = usage
+			lastAnyreceiptErr = nil
+			lastAnyreceiptTime = time.Now()
+		} else {
+			lastAnyreceiptErr = err
+			// If error, allow retry after 5 seconds instead of 30 seconds
+			lastAnyreceiptTime = time.Now().Add(-25 * time.Second)
+		}
+		anyreceiptMu.Unlock()
+	}
+
+	if strings.TrimSpace(cfg.Anyreceipt.APIKey) != "" {
+		go fetchAnyreceiptUsage()
+	}
+
+	getAnyreceiptStatus := func() *httpserver.AnyreceiptStatus {
+		if strings.TrimSpace(cfg.Anyreceipt.APIKey) == "" {
+			return nil
+		}
+		anyreceiptMu.RLock()
+		u := lastAnyreceiptUsage
+		uErr := lastAnyreceiptErr
+		uTime := lastAnyreceiptTime
+		anyreceiptMu.RUnlock()
+
+		if time.Since(uTime) > 30*time.Second {
+			go fetchAnyreceiptUsage()
+		}
+
+		res := &httpserver.AnyreceiptStatus{
+			Configured: true,
+		}
+		if u != nil {
+			res.BalancePoints = u.BalancePoints
+			res.AvailableCallCount = u.AvailableCallCount
+			res.CallCostPoints = u.CallCostPoints
+		}
+		if uErr != nil {
+			res.Error = uErr.Error()
+		}
+		return res
+	}
+
 	server.SetStatusProvider(func() httpserver.Status {
 		feishuState := "disabled"
 		var feishuConnected, feishuLastEvent string
@@ -430,6 +499,7 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 			BaseToken:       baseToken,
 			BaseURL:         baseURL,
 			Tables:          tables,
+			Anyreceipt:      getAnyreceiptStatus(),
 		}
 	})
 
