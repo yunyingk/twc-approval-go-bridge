@@ -7,17 +7,17 @@ import (
 )
 
 func TestVersionDefaults(t *testing.T) {
-	if Version != "0.3.0" {
-		t.Fatalf("expected default Version to be 0.3.0, got %s", Version)
+	if Version != "0.3.1" {
+		t.Fatalf("expected default Version to be 0.3.1, got %s", Version)
 	}
 
-	if Short() != "0.3.0" {
-		t.Fatalf("expected Short() to be 0.3.0, got %s", Short())
+	if Short() != "0.3.1" {
+		t.Fatalf("expected Short() to be 0.3.1, got %s", Short())
 	}
 
 	info := Get()
-	if info.Version != "0.3.0" {
-		t.Fatalf("expected info.Version to be 0.3.0, got %s", info.Version)
+	if info.Version != "0.3.1" {
+		t.Fatalf("expected info.Version to be 0.3.1, got %s", info.Version)
 	}
 	if info.GoVersion == "" {
 		t.Fatal("expected GoVersion to be non-empty")
@@ -27,8 +27,8 @@ func TestVersionDefaults(t *testing.T) {
 	}
 
 	str := Full()
-	if !strings.HasPrefix(str, "v0.3.0") {
-		t.Fatalf("expected Full() to start with v0.3.0, got %s", str)
+	if !strings.HasPrefix(str, "v0.3.1") {
+		t.Fatalf("expected Full() to start with v0.3.1, got %s", str)
 	}
 }
 
@@ -43,8 +43,8 @@ func TestVersionJSON(t *testing.T) {
 		t.Fatalf("failed to unmarshal JSON output: %v", err)
 	}
 
-	if parsed.Version != "0.3.0" {
-		t.Fatalf("unmarshaled version = %s, want 0.3.0", parsed.Version)
+	if parsed.Version != "0.3.1" {
+		t.Fatalf("unmarshaled version = %s, want 0.3.1", parsed.Version)
 	}
 }
 

@@ -23,7 +23,7 @@ make test
 make vet
 make build
 
-# 0. 查看版本与构建元数据（当前基线 v0.3.0）
+# 0. 查看版本与构建元数据（当前基线 v0.3.1）
 ./bin/twc-approval-go-bridge version
 ./bin/twc-approval-go-bridge version -json
 

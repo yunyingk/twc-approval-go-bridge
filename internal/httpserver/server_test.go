@@ -143,7 +143,7 @@ func TestPasswordLockScreenAndCookieAuth(t *testing.T) {
 }
 
 func TestVersionEndpoint(t *testing.T) {
-	s := New(":0", slog.Default(), "0.3.0")
+	s := New(":0", slog.Default(), "0.3.1")
 	req := httptest.NewRequest(http.MethodGet, "/version", nil)
 	res := httptest.NewRecorder()
 
@@ -153,13 +153,13 @@ func TestVersionEndpoint(t *testing.T) {
 		t.Fatalf("version status = %d, want 200", res.Code)
 	}
 	body := res.Body.String()
-	if !strings.Contains(body, `"version":"0.3.0"`) {
-		t.Fatalf("expected version 0.3.0 in response, got: %s", body)
+	if !strings.Contains(body, `"version":"0.3.1"`) {
+		t.Fatalf("expected version 0.3.1 in response, got: %s", body)
 	}
 }
 
 func TestAuditEndpoints(t *testing.T) {
-	s := New(":0", slog.Default(), "0.3.0")
+	s := New(":0", slog.Default(), "0.3.1")
 
 	// 1. GET /api/audit
 	req := httptest.NewRequest(http.MethodGet, "/api/audit", nil)

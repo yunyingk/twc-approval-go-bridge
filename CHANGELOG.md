@@ -31,6 +31,21 @@
 ## [Unreleased]
 
 ### 新增 (Added)
+- 暂无 (聚焦 SealAI 审批主线能力与真实联调优化)
+
+### 变更 (Changed)
+- 暂无
+
+### 修复 (Fixed)
+- 暂无
+
+---
+
+## [0.3.1] - 2026-10-10
+
+### 运行时业务元数据与审计追溯体系 (Business Audit & Traceability)
+
+#### 新增 (Added)
 - **运行时业务元数据与操作审计追溯体系 (`internal/audit`)**：
   - 自动捕获全链路四大核心里程碑业务元数据：
     1. **什么时候推送了谁**：记录持卡人 open_id、姓名、流水 ID、金额、商户及消息 ID (`notify_card_sent`)；
@@ -42,12 +57,6 @@
     - `audit-query [options]`：支持按人员 (`-user`)、按类型 (`-type`)、按单据 (`-id`)、按时间 (`-since`) 多维过滤；
   - HTTP 端点提供 `GET /api/audit` 与 `GET /api/audit/timeline`；
   - Web 监控看板集成实时业务操作流水与单据时间线交互式查询面板。
-
-### 变更 (Changed)
-- 暂无
-
-### 修复 (Fixed)
-- 暂无
 
 ---
 
