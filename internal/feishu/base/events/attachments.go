@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/yunyingk/twc-approval-go-bridge/internal/app/recognition"
 	"log/slog"
 	"strings"
+	"time"
+
+	"github.com/yunyingk/twc-approval-go-bridge/internal/app/recognition"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/audit"
 )
 
 type ChangeConsumer interface {
@@ -67,6 +70,22 @@ func (p *AttachmentSink) Sink(ctx context.Context, incoming Event) error {
 		if len(newTokens) == 0 {
 			continue
 		}
+		tokenList := make([]string, 0, len(newTokens))
+		for tok := range newTokens {
+			tokenList = append(tokenList, tok)
+		}
+		audit.Log(audit.Entry{
+			Timestamp: time.Now(),
+			Type:      audit.TypeFileUploaded,
+			RecordID:  action.RecordID,
+			Action:    fmt.Sprintf("明细记录添加发票附件 (%d 个新文件)", len(newTokens)),
+			Details: map[string]any{
+				"file_tokens": tokenList,
+				"base_token":  p.config.BaseToken,
+				"table_id":    p.config.TableID,
+				"event_id":    incoming.ID,
+			},
+		})
 		if err := p.consumer.EnqueueChange(ctx, recognition.Change{BaseToken: p.config.BaseToken, TableID: p.config.TableID, FieldID: p.config.FieldID, RecordID: action.RecordID, EventID: incoming.ID, Tokens: newTokens}); err != nil {
 			return err
 		}

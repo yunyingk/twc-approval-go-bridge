@@ -536,10 +536,45 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
       </div>
     </div>
 
+    <!-- 业务运行时操作审计流水 -->
+    <div class="card" style="margin-top: 1.5rem;">
+      <div class="card-header">
+        <div class="card-title"><span>📜</span> 业务运行时操作审计与单据生命周期追溯</div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <input type="text" id="audit-search-id" placeholder="输入记录ID (如 reczz28...)" style="background: rgba(15,23,42,0.8); border: 1px solid var(--border); color: #f8fafc; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.85rem; outline: none; width: 220px;" onkeypress="if(event.key==='Enter') queryTimeline();">
+          <button onclick="queryTimeline()" style="background: var(--accent); color: #0f172a; border: none; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer;">查时间线</button>
+        </div>
+      </div>
+      <div id="timeline-box" style="display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(15,23,42,0.8); border-radius: 8px; border: 1px solid rgba(56,189,248,0.3);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <span style="font-weight: 600; color: var(--accent);" id="timeline-title">单据全生命周期时间线</span>
+          <button onclick="closeTimeline()" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer;">✕ 关闭</button>
+        </div>
+        <div id="timeline-content" style="font-family: monospace; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap;"></div>
+      </div>
+      <div style="overflow-x: auto;">
+        <table style="width: 100%%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
+          <thead>
+            <tr style="border-bottom: 1px solid var(--border); color: var(--text-muted);">
+              <th style="padding: 0.5rem;">发生时间</th>
+              <th style="padding: 0.5rem;">事件分类</th>
+              <th style="padding: 0.5rem;">单据记录ID</th>
+              <th style="padding: 0.5rem;">人员</th>
+              <th style="padding: 0.5rem;">动作与元数据</th>
+            </tr>
+          </thead>
+          <tbody id="audit-table-body">
+            <tr><td colspan="5" style="padding: 1rem; text-align: center; color: var(--text-muted);">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <footer>
       <span>自动无刷新轮询中 · 数据每 3 秒同步一次</span>
       <div class="links">
         <a href="https://admin.doubao.com/ask/doubao/builtin-skill" target="_blank" style="color: #38bdf8; font-weight: 500;">豆包企业技能后台 ↗</a>
+        <a href="/api/audit" target="_blank">/api/audit</a>
         <a href="/api/status" target="_blank">/api/status</a>
         <a href="/healthz" target="_blank">/healthz</a>
         <a href="/readyz" target="_blank">/readyz</a>
@@ -622,7 +657,96 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
         document.getElementById('system-status-text').textContent = '服务离线或网络异常';
       }
     }
+
+    async function updateAudits() {
+      try {
+        const res = await fetch('/api/audit?limit=10');
+        if (!res.ok) return;
+        const data = await res.json();
+        const tbody = document.getElementById('audit-table-body');
+        if (!data.entries || data.entries.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="padding: 1rem; text-align: center; color: var(--text-muted);">暂无业务操作日志</td></tr>';
+          return;
+        }
+        let html = '';
+        for (const e of data.entries) {
+          const t = new Date(e.timestamp).toLocaleString('zh-CN', { hour12: false });
+          let badge = '🔹 ' + e.type;
+          if (e.type === 'notify_card_sent') badge = '<span style="color: #38bdf8;">📱 推送卡片</span>';
+          else if (e.type === 'file_uploaded') badge = '<span style="color: #a855f7;">📎 文件上传</span>';
+          else if (e.type === 'ocr_initiated') badge = '<span style="color: #f59e0b;">🔍 发起OCR</span>';
+          else if (e.type === 'ocr_completed') badge = '<span style="color: #10b981;">✅ OCR完成</span>';
+          else if (e.type === 'ocr_failed') badge = '<span style="color: #ef4444;">❌ OCR失败</span>';
+          else if (e.type === 'review_submitted') badge = '<span style="color: #f97316;">⚖️ 发起审核</span>';
+          else if (e.type === 'review_completed') badge = '<span style="color: #10b981;">🎯 机审完成</span>';
+          else if (e.type === 'review_writeback') badge = '<span style="color: #38bdf8;">📝 结果回写</span>';
+          
+          let actor = e.operator_name || e.operator || '-';
+          let details = '';
+          if (e.details && Object.keys(e.details).length > 0) {
+            details = ' <span style="color: var(--text-muted); font-size: 0.8rem;">(' + Object.entries(e.details).map(([k,v]) => k + ': ' + v).join(', ') + ')</span>';
+          }
+          html += '<tr style="border-bottom: 1px solid rgba(255,255,255,0.04);">' +
+            '<td style="padding: 0.4rem 0.5rem; color: var(--text-muted);">' + t + '</td>' +
+            '<td style="padding: 0.4rem 0.5rem;">' + badge + '</td>' +
+            '<td style="padding: 0.4rem 0.5rem;"><a href="javascript:void(0)" onclick="quickQuery(\'' + e.record_id + '\')" style="color: var(--accent); text-decoration: none;" class="code">' + e.record_id + '</a></td>' +
+            '<td style="padding: 0.4rem 0.5rem;">' + actor + '</td>' +
+            '<td style="padding: 0.4rem 0.5rem;">' + e.action + details + '</td>' +
+            '</tr>';
+        }
+        tbody.innerHTML = html;
+      } catch (err) {}
+    }
+
+    async function queryTimeline() {
+      const id = document.getElementById('audit-search-id').value.trim();
+      if (!id) return;
+      const box = document.getElementById('timeline-box');
+      const content = document.getElementById('timeline-content');
+      document.getElementById('timeline-title').textContent = '单据 [' + id + '] 全生命周期演进时间线';
+      box.style.display = 'block';
+      content.textContent = '查询中...';
+
+      try {
+        const res = await fetch('/api/audit/timeline?record_id=' + encodeURIComponent(id));
+        if (!res.ok) {
+          content.textContent = '查询失败: ' + res.statusText;
+          return;
+        }
+        const data = await res.json();
+        if (!data.timeline || data.timeline.length === 0) {
+          content.textContent = '单据 [' + id + '] 暂无业务生命周期日志记录';
+          return;
+        }
+        let txt = '';
+        data.timeline.forEach((e, idx) => {
+          const isLast = idx === data.timeline.length - 1;
+          const prefix = isLast ? '└─ ' : '├─ ';
+          const t = new Date(e.timestamp).toLocaleString('zh-CN', { hour12: false });
+          let meta = '';
+          if (e.details && Object.keys(e.details).length > 0) {
+            meta = '\n   ' + (isLast ? '   ' : '│  ') + '元数据: ' + JSON.stringify(e.details);
+          }
+          txt += prefix + '[' + t + '] 【' + e.type + '】 ' + (e.operator_name || e.operator || '') + ' ' + e.action + meta + '\n';
+        });
+        content.textContent = txt;
+      } catch (err) {
+        content.textContent = '网络错误: ' + err.message;
+      }
+    }
+
+    function quickQuery(id) {
+      document.getElementById('audit-search-id').value = id;
+      queryTimeline();
+    }
+
+    function closeTimeline() {
+      document.getElementById('timeline-box').style.display = 'none';
+    }
+
+    updateAudits();
     setInterval(updateStatus, 3000);
+    setInterval(updateAudits, 3000);
   </script>
 </body>
 </html>`,

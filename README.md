@@ -30,7 +30,14 @@ make build
 # 1. 运行系统体检（核验凭证、权限与多维表格拓扑）
 ./bin/twc-approval-go-bridge doctor
 
-# 2. 启动常驻服务
+# 2. 运行时业务元数据与审计追溯查询
+./bin/twc-approval-go-bridge audit <record-id>               # 查单据全生命周期时间线
+./bin/twc-approval-go-bridge audit-query -type notify         # 查什么时候推送了谁
+./bin/twc-approval-go-bridge audit-query -type file           # 查谁填了文件
+./bin/twc-approval-go-bridge audit-query -type ocr            # 查什么时候发起了 OCR
+./bin/twc-approval-go-bridge audit-query -type review         # 查什么时候发起了审核
+
+# 3. 启动常驻服务
 ./bin/twc-approval-go-bridge server
 ```
 
@@ -50,7 +57,10 @@ make build
 | --- | --- | --- |
 | GET | `/healthz` | 进程存活检查 |
 | GET | `/readyz` | 服务就绪检查 |
-| GET | `/version` | 构建版本 |
+| GET | `/version` | 构建版本元数据 |
+| GET | `/api/status` | 运行时指标与健康状态 |
+| GET | `/api/audit` | 业务运行时操作审计流水多维查询 |
+| GET | `/api/audit/timeline` | 单据全生命周期时间线检索 |
 | POST | `/seal/callback/mock` | 仅供本机模拟 Seal 审核结果；不作业务回写 |
 
 mock 回调只接受来自本机的请求并返回 `{ "success": true }`；它不是公网回调。设置 `seal.callback_token` 后可接收 `POST /seal/callback/<token>` 并应用已知版本的审核结果；需在 Seal 配置对应的 HTTPS URL。测试租户已通过[本机公网入口](docs/public-debug.md)验证真实回调与重复投递，配置与鉴权约定见[运行说明](docs/runtime-and-handoff.md)。

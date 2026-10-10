@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yunyingk/twc-approval-go-bridge/internal/audit"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/dupcheck"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice/aggregate"
 	core "github.com/yunyingk/twc-approval-go-bridge/internal/core/review"
@@ -134,9 +135,37 @@ func (s *Service) Submit(ctx context.Context, recordID string) (core.Submission,
 			return *attempt.Submission, nil
 		}
 	}
+	audit.Log(audit.Entry{
+		Timestamp: time.Now(),
+		Type:      audit.TypeReviewSubmitted,
+		RecordID:  recordID,
+		RelatedID: r.Document.DocumentID,
+		Action:    fmt.Sprintf("向机审引擎发起送审请求 (单据: %s)", r.Document.DocumentID),
+		Details: map[string]any{
+			"document_id":    r.Document.DocumentID,
+			"revision":       r.Revision,
+			"provider":       r.Provider,
+			"invoices_count": len(r.Document.Invoices),
+		},
+	})
 	result, callErr := s.reviewer.Review(ctx, r)
 	if callErr == nil {
 		callErr = validateSubmission(r, result)
+	}
+	if callErr == nil && result.Outcome != nil {
+		audit.Log(audit.Entry{
+			Timestamp: time.Now(),
+			Type:      audit.TypeReviewCompleted,
+			RecordID:  recordID,
+			RelatedID: r.Document.DocumentID,
+			Action:    fmt.Sprintf("单据机审完成 (结论: %s)", result.Outcome.Decision),
+			Details: map[string]any{
+				"status":      result.Status,
+				"decision":    result.Outcome.Decision,
+				"comment":     result.Outcome.Comment,
+				"external_id": result.Outcome.ExternalID,
+			},
+		})
 	}
 	if s.options.Store != nil {
 		// A lost response may mean the provider accepted the request. Never auto-resubmit.
@@ -213,6 +242,19 @@ func (s *Service) Complete(ctx context.Context, documentID, provider string, out
 	if err != nil {
 		return err
 	}
+	audit.Log(audit.Entry{
+		Timestamp: time.Now(),
+		Type:      audit.TypeReviewCompleted,
+		RecordID:  attempt.Request.Document.DocumentID,
+		RelatedID: documentID,
+		Action:    fmt.Sprintf("机审回调完成 (结论: %s)", outcome.Decision),
+		Details: map[string]any{
+			"provider":    provider,
+			"decision":    outcome.Decision,
+			"comment":     outcome.Comment,
+			"external_id": outcome.ExternalID,
+		},
+	})
 	return s.deliver(ctx, attempt)
 }
 
@@ -233,6 +275,16 @@ func (s *Service) deliver(ctx context.Context, attempt core.Attempt) error {
 	if err := s.options.Writer.WriteReviewResult(ctx, attempt.Request, *attempt.Submission.Outcome); err != nil {
 		return errors.Join(err, s.saveDelivery(ctx, attempt, "write_failed", "", failureInfo("writeback", "writeback_failed", err)))
 	}
+	audit.Log(audit.Entry{
+		Timestamp: time.Now(),
+		Type:      audit.TypeReviewWriteback,
+		RecordID:  attempt.Request.Document.DocumentID,
+		Action:    "机审结论与审核留痕已成功回写至多维表格明细表",
+		Details: map[string]any{
+			"decision": attempt.Submission.Outcome.Decision,
+			"comment":  attempt.Submission.Outcome.Comment,
+		},
+	})
 	return s.saveDelivery(ctx, attempt, "delivered", "", nil)
 }
 

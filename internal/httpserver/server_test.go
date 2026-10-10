@@ -158,3 +158,35 @@ func TestVersionEndpoint(t *testing.T) {
 	}
 }
 
+func TestAuditEndpoints(t *testing.T) {
+	s := New(":0", slog.Default(), "0.3.0")
+
+	// 1. GET /api/audit
+	req := httptest.NewRequest(http.MethodGet, "/api/audit", nil)
+	res := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("audit status = %d, want 200", res.Code)
+	}
+	if !strings.Contains(res.Body.String(), `"entries"`) {
+		t.Fatalf("audit response missing entries key: %s", res.Body.String())
+	}
+
+	// 2. GET /api/audit/timeline missing record_id -> 400
+	req2 := httptest.NewRequest(http.MethodGet, "/api/audit/timeline", nil)
+	res2 := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res2, req2)
+	if res2.Code != http.StatusBadRequest {
+		t.Fatalf("timeline missing param status = %d, want 400", res2.Code)
+	}
+
+	// 3. GET /api/audit/timeline with record_id -> 200
+	req3 := httptest.NewRequest(http.MethodGet, "/api/audit/timeline?record_id=rec_test123", nil)
+	res3 := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res3, req3)
+	if res3.Code != http.StatusOK {
+		t.Fatalf("timeline status = %d, want 200", res3.Code)
+	}
+}
+

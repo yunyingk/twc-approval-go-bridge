@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/yunyingk/twc-approval-go-bridge/internal/audit"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 )
 
@@ -175,9 +176,62 @@ func (p *Processor) Run(ctx context.Context) {
 					result, cached := recognized[key]
 					var recognizeErr error
 					if !cached {
+						ocrStart := time.Now()
+						audit.Log(audit.Entry{
+							Timestamp: ocrStart,
+							Type:      audit.TypeOCRInitiated,
+							RecordID:  job.recordID,
+							Action:    fmt.Sprintf("发起小票 OCR 识别 (文件: %s)", attachment.Name),
+							Details: map[string]any{
+								"file_token": tokens[i],
+								"file_name":  attachment.Name,
+								"trigger":    job.trigger,
+								"event_id":   job.eventID,
+							},
+						})
 						result, recognizeErr = p.recognizer.Recognize(workCtx, attachment)
 						if recognizeErr == nil {
 							recognized[key] = result
+							amount := result.Total
+							merchant := result.Title
+							currency := ""
+							if result.Facts != nil {
+								if result.Facts.Total != "" {
+									amount = result.Facts.Total
+								}
+								if result.Facts.Seller != "" {
+									merchant = result.Facts.Seller
+								}
+								currency = result.Facts.Currency
+							}
+							audit.Log(audit.Entry{
+								Timestamp: time.Now(),
+								Type:      audit.TypeOCRCompleted,
+								RecordID:  job.recordID,
+								Action:    fmt.Sprintf("小票 OCR 识别完成 (金额: %s %s, 商户: %s)", currency, amount, merchant),
+								Details: map[string]any{
+									"file_token":  tokens[i],
+									"file_name":   attachment.Name,
+									"amount":      amount,
+									"currency":    currency,
+									"merchant":    merchant,
+									"date":        result.Date,
+									"trace_id":    result.Origin.TraceID,
+									"duration_ms": time.Since(ocrStart).Milliseconds(),
+								},
+							})
+						} else {
+							audit.Log(audit.Entry{
+								Timestamp: time.Now(),
+								Type:      audit.TypeOCRFailed,
+								RecordID:  job.recordID,
+								Action:    fmt.Sprintf("小票 OCR 识别失败: %v", recognizeErr),
+								Details: map[string]any{
+									"file_token": tokens[i],
+									"file_name":  attachment.Name,
+									"error":      recognizeErr.Error(),
+								},
+							})
 						}
 					}
 					if recognizeErr != nil {

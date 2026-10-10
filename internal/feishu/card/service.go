@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yunyingk/twc-approval-go-bridge/internal/audit"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/task"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/state"
@@ -210,6 +211,25 @@ func (s *Service) NotifyTransaction(ctx context.Context, transactionRecordID str
 	if err != nil {
 		return nil, fmt.Errorf("send card to %s (%s): %w", recipientName, openID, err)
 	}
+
+	audit.Log(audit.Entry{
+		Timestamp:    time.Now(),
+		Type:         audit.TypeNotifyCardSent,
+		RecordID:     transactionRecordID,
+		RelatedID:    detailRecordID,
+		Operator:     openID,
+		OperatorName: recipientName,
+		Action:       fmt.Sprintf("向持卡人 %s 推送交易补票卡片", recipientName),
+		Details: map[string]any{
+			"message_id":     msgID,
+			"transaction_id": txID,
+			"merchant":       merchant,
+			"booked_amount":  bookedAmountStr,
+			"orig_amount":    origAmountStr,
+			"task_guid":      taskGUID,
+			"form_url":       targetURL,
+		},
+	})
 
 	return &NotifyResult{
 		Status:         "success",

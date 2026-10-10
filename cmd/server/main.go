@@ -20,6 +20,7 @@ import (
 	"github.com/yunyingk/twc-approval-go-bridge/internal/anyreceipt"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/app/recognition"
 	appreview "github.com/yunyingk/twc-approval-go-bridge/internal/app/review"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/audit"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base"
@@ -59,6 +60,10 @@ func main() {
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.Runtime.LogLevel}))
+
+	if _, err := audit.InitFileStore(cfg.Runtime.StateDir); err != nil {
+		logger.Warn("initialize audit store failed, audit logging disabled", "error", err)
+	}
 
 	cmd := os.Args[1]
 
@@ -136,6 +141,14 @@ func main() {
 		cmdErr = runExportSkill(os.Args[2:], os.Stdout)
 	case "version":
 		printVersion(os.Args[2:], os.Stdout)
+	case "audit":
+		if len(os.Args) < 3 {
+			cmdErr = errors.New("usage: audit <record-id> [-json]")
+		} else {
+			cmdErr = runAuditTimeline(ctx, cfg, os.Args[2], os.Args[3:], os.Stdout)
+		}
+	case "audit-query":
+		cmdErr = runAuditQuery(ctx, cfg, os.Args[2:], os.Stdout)
 	default:
 		fmt.Fprintf(os.Stderr, "未知子命令: %s\n\n", cmd)
 		printUsage(os.Stderr)
@@ -169,6 +182,10 @@ func printUsage(w io.Writer) {
 版本与帮助:
   version [-json]          查看当前程序版本与构建元数据（支持 -v, --version）
   help                     显示帮助信息（支持 -h, --help）
+
+业务元数据与审计追溯:
+  audit <record-id> [-json] 查询指定单据的全生命周期演进时间线 (推送/上传/OCR/审核等)
+  audit-query [options]    多维查询运行时业务审计日志 (按人员/类型/时间/ID检索)
 
 核心服务:
   server                   启动常驻后台服务（长连接监听、小票识别、AI 审核与回调服务）

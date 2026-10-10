@@ -9,9 +9,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/yunyingk/twc-approval-go-bridge/internal/audit"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/version"
 )
 
@@ -40,6 +42,8 @@ func New(addr string, logger *slog.Logger, version string) *Server {
 	mux.HandleFunc("GET /readyz", s.ready)
 	mux.HandleFunc("GET /version", s.versionHandler)
 	mux.HandleFunc("GET /api/status", s.statusAPI)
+	mux.HandleFunc("GET /api/audit", s.auditAPI)
+	mux.HandleFunc("GET /api/audit/timeline", s.auditTimelineAPI)
 	mux.HandleFunc("POST /login", s.handleLogin)
 	mux.HandleFunc("GET /logout", s.handleLogout)
 	mux.HandleFunc("/", s.renderDashboard)
@@ -191,6 +195,52 @@ func (s *Server) statusAPI(w http.ResponseWriter, r *http.Request) {
 		Uptime:        uptime.String(),
 		UptimeSeconds: int64(uptime.Seconds()),
 		FeishuState:   "disabled",
+	})
+}
+
+func (s *Server) auditAPI(w http.ResponseWriter, r *http.Request) {
+	if !s.isAuthenticated(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	filter := audit.QueryFilter{
+		RecordID: r.URL.Query().Get("record_id"),
+		Type:     r.URL.Query().Get("type"),
+		Operator: r.URL.Query().Get("user"),
+		Limit:    limit,
+	}
+	entries, total, err := audit.Default().Query(r.Context(), filter)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"total":   total,
+		"count":   len(entries),
+		"entries": entries,
+	})
+}
+
+func (s *Server) auditTimelineAPI(w http.ResponseWriter, r *http.Request) {
+	if !s.isAuthenticated(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	recordID := r.URL.Query().Get("record_id")
+	if recordID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "record_id parameter is required"})
+		return
+	}
+	timeline, err := audit.Default().Timeline(r.Context(), recordID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"record_id": recordID,
+		"count":     len(timeline),
+		"timeline":  timeline,
 	})
 }
 

@@ -31,7 +31,17 @@
 ## [Unreleased]
 
 ### 新增 (Added)
-- 暂无
+- **运行时业务元数据与操作审计追溯体系 (`internal/audit`)**：
+  - 自动捕获全链路四大核心里程碑业务元数据：
+    1. **什么时候推送了谁**：记录持卡人 open_id、姓名、流水 ID、金额、商户及消息 ID (`notify_card_sent`)；
+    2. **谁填了文件**：记录明细记录中新上传的附件 Token、文件名与操作时间 (`file_uploaded`)；
+    3. **什么时候发起了 OCR**：记录 OCR 任务发起时间、完成时间、提取要素（金额、币种、商户）与流水号 (`ocr_initiated` / `ocr_completed`)；
+    4. **什么时候发起了审核**：记录单据送审时间、审核提供方、版本号、机审结论及回写飞书状态 (`review_submitted` / `review_completed` / `review_writeback`)；
+  - 提供 CLI 快速查询命令：
+    - `audit <record-id> [-json]`：打印单据全生命周期树形时间线；
+    - `audit-query [options]`：支持按人员 (`-user`)、按类型 (`-type`)、按单据 (`-id`)、按时间 (`-since`) 多维过滤；
+  - HTTP 端点提供 `GET /api/audit` 与 `GET /api/audit/timeline`；
+  - Web 监控看板集成实时业务操作流水与单据时间线交互式查询面板。
 
 ### 变更 (Changed)
 - 暂无
