@@ -175,7 +175,7 @@ func (s *Scanner) Inspect(ctx context.Context, opts ...ScanOptions) (*ScanReport
 				s.logger.WarnContext(ctx, "failed to notify transaction", "record_id", c.RecordID, "error", err)
 				continue
 			}
-			if res.Status == "sent" {
+			if res.Status == "success" || res.Status == "sent" {
 				report.NotifiedCount++
 				s.logger.InfoContext(ctx, "sent transaction reminder",
 					"record_id", c.RecordID, "recipient", c.Cardholder, "tx_id", c.TransactionID)
