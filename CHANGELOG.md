@@ -34,10 +34,15 @@
 - **SealAI 单据原始链接直达**：向 SealAI Webhook 发起机审时注入单据原始直达链接（`DocumentRequest.DocumentURL` 与单据/明细字段 `source_record_url`，Label 为 `"单据原始链接"`），针对单行个人报销明细自动精准拼接飞书多维表格行记录展开链接（`${host}/base/${baseToken}?table=${tableID}&record=${recordID}`），支持企业专属域名配置与通用域名安全兜底。
 - **飞书 Tenant Token 集中缓存 (`internal/feishu/token`)**：新增轻量、并发安全且带 TTL 内存缓存与提前刷新机制的统一 Token Provider，全系统（`base`、`card`、`task`、`provision`、`health`）收敛至单一实现，彻底消除无缓存重复向飞书换取 Token 导致的限流与网络开销风险。
 - **流水过滤决策类型枚举 (`internal/feishu/card`)**：引入强类型 `DecisionCode` 枚举（如 `notify`、`already_linked`、`incomplete_fields` 等），替换原先脆弱的中文原因子串匹配统计，提高过滤规则可维护性与稳定性。
+- **死信识别任务运维命令 (`cmd/server`, `internal/state`)**：新增 `list-failed-receipts` 与 `retry-receipt <id>` CLI 命令，支持运维人员查看死信附件列表、失败原因及一键重置重试计数重新发起识别。
+- **SealAI 回调宽容解析与运维反馈 (`internal/seal`, `cmd/server`)**：`DecodeCallback` 增加 snake_case 别名支持与不区分大小写的审核结论解析；`apply-seal-result` 执行成功后输出标准 JSON 结果反馈。
+- **状态持久化单元测试覆盖 (`internal/state`)**：补齐状态模块单元测试，覆盖识别任务的入队、加载、失败标记、死信列表与重置重试全生命周期。
 
 ### 变更 (Changed)
 - **配置纯粹性治理**：彻底移除早期草稿遗留的冗余别名配置字段 `enterprise_host`，全系统统一严格收敛至单一主配置项 `[feishu] host`，杜绝二义性。
 - **Seal 审核版本指纹解耦 (`cmd/server`)**：将机审状态机的 `ProviderVersion` 稳定为固定的 `"v1"`，避免包含动态 Webhook URL 导致环境配置漂移时意外触发全部在途单据指纹失效与全量重审。
+- **单 Go 文件流水过滤规则整洁化 (`internal/feishu/card`)**：梳理 `filter.go` 内部两层中文列名查找逻辑，提取中心化字段别名映射表 `defaultFieldAliases` 与统一取值器 `getField`，保持单 Go 文件表达业务规则的极简性与类型安全。
+- **审计记录全流程 RecordID 对齐 (`internal/app/review`)**：将机审完成与回写阶段的审计 RecordID 对齐为单据原始记录 ID (`Document.RecordID`)，确保 `audit <record-id>` 能完整按链路串联从推送、上传、OCR 到机审完成与回写的全生命周期。
 
 ### 修复 (Fixed)
 - **OCR 识别失败无限重试止血 (`internal/app/recognition`, `internal/state`)**：为小票识别任务 Checkpoint 增加 `Attempts` 计数、`LastError`、`LastAttemptAt` 与 `Failed` 死信标记。当识别失败达到最大重试次数（默认 3 次）时转入死信态，终止 30 秒轮询无限扣费漏洞。

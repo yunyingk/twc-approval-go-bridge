@@ -27,18 +27,37 @@ type FilterDecision struct {
 	Reason       string       `json:"reason,omitempty"`
 }
 
+// defaultFieldAliases defines standard Chinese column name fallbacks for transaction fields
+// when the field ID binding is missing or during standalone unit testing.
+var defaultFieldAliases = map[string][]string{
+	"booked_amount_cny":  {"结算金额"},
+	"booked_currency":    {"结算金额币种", "结算币种"},
+	"transaction_id":     {"交易流水号"},
+	"cardholder":         {"持卡人"},
+	"transaction_time":   {"交易时间"},
+	"detail_relation":    {"个人报销单号"},
+	"transaction_status": {"交易状态"},
+	"claim_status":       {"报销状态"},
+	"original_amount":    {"交易金额"},
+}
+
 // EvaluateTransactionFilter applies dedicated, hardcoded Go business rules
 // to filter out 0-amount, failed, withdrawn, or already linked transactions.
 // Any modifications to transaction filtering logic should be maintained strictly within this file.
 func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string, transBinding config.TableBinding) FilterDecision {
-	getFieldValue := func(semantic string) any {
+	getField := func(semantic string) any {
 		if transBinding.Fields != nil {
-			fieldID := transBinding.Fields[semantic]
-			if fieldID != "" {
-				fieldName := fieldMap[fieldID]
-				if fieldName != "" {
-					return record[fieldName]
+			if fieldID := transBinding.Fields[semantic]; fieldID != "" {
+				if fieldName := fieldMap[fieldID]; fieldName != "" {
+					if val, ok := record[fieldName]; ok && val != nil {
+						return val
+					}
 				}
+			}
+		}
+		for _, alias := range defaultFieldAliases[semantic] {
+			if val, ok := record[alias]; ok && val != nil {
+				return val
 			}
 		}
 		return nil
@@ -52,10 +71,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	// - 持卡人 (Cardholder)
 	// - 交易时间 (Transaction Time)
 	// If any one of them is empty, do not send notification.
-	bookedAmtRaw := getFieldValue("booked_amount_cny")
-	if bookedAmtRaw == nil {
-		bookedAmtRaw = record["结算金额"]
-	}
+	bookedAmtRaw := getField("booked_amount_cny")
 	if strings.TrimSpace(formatString(bookedAmtRaw, "")) == "" {
 		return FilterDecision{
 			ShouldNotify: false,
@@ -64,13 +80,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 		}
 	}
 
-	bookedCurRaw := getFieldValue("booked_currency")
-	if bookedCurRaw == nil {
-		bookedCurRaw = record["结算金额币种"]
-		if bookedCurRaw == nil {
-			bookedCurRaw = record["结算币种"]
-		}
-	}
+	bookedCurRaw := getField("booked_currency")
 	if strings.TrimSpace(formatString(bookedCurRaw, "")) == "" {
 		return FilterDecision{
 			ShouldNotify: false,
@@ -79,10 +89,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 		}
 	}
 
-	txIDRaw := getFieldValue("transaction_id")
-	if txIDRaw == nil {
-		txIDRaw = record["交易流水号"]
-	}
+	txIDRaw := getField("transaction_id")
 	if strings.TrimSpace(formatString(txIDRaw, "")) == "" {
 		return FilterDecision{
 			ShouldNotify: false,
@@ -91,10 +98,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 		}
 	}
 
-	cardholderRaw := getFieldValue("cardholder")
-	if cardholderRaw == nil {
-		cardholderRaw = record["持卡人"]
-	}
+	cardholderRaw := getField("cardholder")
 	openID, _ := extractCardholderOpenID(cardholderRaw)
 	if openID == "" {
 		return FilterDecision{
@@ -104,10 +108,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 		}
 	}
 
-	txTimeRaw := getFieldValue("transaction_time")
-	if txTimeRaw == nil {
-		txTimeRaw = record["交易时间"]
-	}
+	txTimeRaw := getField("transaction_time")
 	if strings.TrimSpace(formatTime(txTimeRaw)) == "" {
 		return FilterDecision{
 			ShouldNotify: false,
@@ -117,10 +118,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	}
 
 	// 2. Check detail relation (deduplication): already linked to personal reimbursement detail?
-	detailRelRaw := getFieldValue("detail_relation")
-	if detailRelRaw == nil {
-		detailRelRaw = record["个人报销单号"]
-	}
+	detailRelRaw := getField("detail_relation")
 	if isAlreadyLinked(detailRelRaw) {
 		return FilterDecision{
 			ShouldNotify: false,
@@ -130,10 +128,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	}
 
 	// 3. Check transaction status: filter out failed, cancelled, reversed, or refunded
-	txStatusRaw := getFieldValue("transaction_status")
-	if txStatusRaw == nil {
-		txStatusRaw = record["交易状态"]
-	}
+	txStatusRaw := getField("transaction_status")
 	txStatusStr := strings.ToLower(strings.TrimSpace(formatString(txStatusRaw, "")))
 	if isIgnoredTransactionStatus(txStatusStr) {
 		return FilterDecision{
@@ -144,10 +139,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	}
 
 	// 4. Check claim status: filter out already claimed or no claim needed (含 核销 语义)
-	claimStatusRaw := getFieldValue("claim_status")
-	if claimStatusRaw == nil {
-		claimStatusRaw = record["报销状态"]
-	}
+	claimStatusRaw := getField("claim_status")
 	claimStatusStr := strings.ToLower(strings.TrimSpace(formatString(claimStatusRaw, "")))
 	if isIgnoredClaimStatus(claimStatusStr) {
 		return FilterDecision{
@@ -158,11 +150,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	}
 
 	// 5. Check amounts: filter out <= 0 amounts (e.g. $0 verification transactions)
-	origAmtRaw := getFieldValue("original_amount")
-	if origAmtRaw == nil {
-		origAmtRaw = record["交易金额"]
-	}
-
+	origAmtRaw := getField("original_amount")
 	if isZeroOrNegativeAmount(bookedAmtRaw) && isZeroOrNegativeAmount(origAmtRaw) {
 		return FilterDecision{
 			ShouldNotify: false,

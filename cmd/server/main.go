@@ -149,6 +149,15 @@ func main() {
 		}
 	case "audit-query":
 		cmdErr = runAuditQuery(ctx, cfg, os.Args[2:], os.Stdout)
+	case "list-failed-receipts":
+		jsonOutput := len(os.Args) > 2 && os.Args[2] == "-json"
+		cmdErr = runListFailedReceipts(ctx, cfg, jsonOutput, os.Stdout)
+	case "retry-receipt":
+		if len(os.Args) < 3 {
+			cmdErr = errors.New("usage: retry-receipt <record-id-or-key>")
+		} else {
+			cmdErr = runRetryReceipt(ctx, cfg, os.Args[2], os.Stdout)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "未知子命令: %s\n\n", cmd)
 		printUsage(os.Stderr)
@@ -206,6 +215,8 @@ func printUsage(w io.Writer) {
   check-review <id>        校验单据机审结果与一致性
   retry-writeback <id>     手动重试机审结果回写
   apply-seal-result <file> 本地测试应用 SealAI 回调结果
+  list-failed-receipts [-json] 查看识别死信任务与失败原因
+  retry-receipt <id>       重置死信识别任务并重新触发识别
   export-skill [-o path]   导出豆包企业内置技能文档 (默认生成符合规范的 SKILL.md)
 `)
 }

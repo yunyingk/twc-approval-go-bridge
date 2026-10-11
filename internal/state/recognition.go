@@ -87,3 +87,83 @@ func (s *Files) RecognitionBaseline(ctx context.Context, scope string, initial m
 	})
 	return baseline, found, err
 }
+
+// FailedRecognition returns all recognition tasks that are marked as failed.
+// If scope is non-empty, only tasks matching that scope are returned.
+func (s *Files) FailedRecognition(ctx context.Context, scope string) ([]recognition.Checkpoint, error) {
+	entries, err := os.ReadDir(s.root)
+	if err != nil {
+		return nil, err
+	}
+	var tasks []recognition.Checkpoint
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(s.root, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var task recognition.Checkpoint
+		if err := json.Unmarshal(raw, &task); err != nil {
+			continue
+		}
+		if task.Key == "" || task.Delivered {
+			continue
+		}
+		if task.Failed && (scope == "" || task.Scope == scope) {
+			tasks = append(tasks, task)
+		}
+	}
+	return tasks, nil
+}
+
+// RetryRecognition finds any recognition task matching the given recordID or key,
+// and resets its failed and attempts state so it can be reprocessed on the next scan.
+// Returns the number of retried tasks.
+func (s *Files) RetryRecognition(ctx context.Context, recordIDOrKey string) (int, error) {
+	entries, err := os.ReadDir(s.root)
+	if err != nil {
+		return 0, err
+	}
+	retried := 0
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return retried, err
+		}
+		if !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(s.root, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var task recognition.Checkpoint
+		if err := json.Unmarshal(raw, &task); err != nil {
+			continue
+		}
+		if task.Key == "" || task.Delivered {
+			continue
+		}
+		if task.Key == recordIDOrKey || task.Result.RecordID == recordIDOrKey {
+			err := s.Transaction(ctx, "receipt:"+task.Key, func(raw json.RawMessage) (any, error) {
+				var current recognition.Checkpoint
+				if err := json.Unmarshal(raw, &current); err != nil {
+					return nil, err
+				}
+				current.Failed = false
+				current.Attempts = 0
+				current.LastError = ""
+				return current, nil
+			})
+			if err != nil {
+				return retried, err
+			}
+			retried++
+		}
+	}
+	return retried, nil
+}

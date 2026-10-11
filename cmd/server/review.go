@@ -130,5 +130,15 @@ func runSealResult(ctx context.Context, cfg config.Config, path string) error {
 	if err != nil {
 		return err
 	}
-	return service.Complete(ctx, id, "seal", outcome)
+	if err := service.Complete(ctx, id, "seal", outcome); err != nil {
+		return err
+	}
+	return json.NewEncoder(os.Stdout).Encode(map[string]any{
+		"applied":     true,
+		"document_id": id,
+		"decision":    outcome.Decision,
+		"comment":     outcome.Comment,
+		"external_id": outcome.ExternalID,
+		"url":         outcome.URL,
+	})
 }

@@ -243,10 +243,14 @@ func (s *Service) Complete(ctx context.Context, documentID, provider string, out
 	if err != nil {
 		return err
 	}
+	recID := attempt.Request.Document.RecordID
+	if recID == "" {
+		recID = attempt.Request.Document.DocumentID
+	}
 	audit.Log(audit.Entry{
 		Timestamp: time.Now(),
 		Type:      audit.TypeReviewCompleted,
-		RecordID:  attempt.Request.Document.DocumentID,
+		RecordID:  recID,
 		RelatedID: documentID,
 		Action:    fmt.Sprintf("机审回调完成 (结论: %s)", outcome.Decision),
 		Details: map[string]any{
@@ -276,10 +280,15 @@ func (s *Service) deliver(ctx context.Context, attempt core.Attempt) error {
 	if err := s.options.Writer.WriteReviewResult(ctx, attempt.Request, *attempt.Submission.Outcome); err != nil {
 		return errors.Join(err, s.saveDelivery(ctx, attempt, "write_failed", "", failureInfo("writeback", "writeback_failed", err)))
 	}
+	recID := attempt.Request.Document.RecordID
+	if recID == "" {
+		recID = attempt.Request.Document.DocumentID
+	}
 	audit.Log(audit.Entry{
 		Timestamp: time.Now(),
 		Type:      audit.TypeReviewWriteback,
-		RecordID:  attempt.Request.Document.DocumentID,
+		RecordID:  recID,
+		RelatedID: attempt.Request.Document.DocumentID,
 		Action:    "机审结论与审核留痕已成功回写至多维表格明细表",
 		Details: map[string]any{
 			"decision": attempt.Submission.Outcome.Decision,
