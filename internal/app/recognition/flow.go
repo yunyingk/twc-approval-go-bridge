@@ -165,7 +165,7 @@ func (p *Processor) Run(ctx context.Context) {
 						if err != nil {
 							break
 						}
-						if checkpoint.Delivered {
+						if checkpoint.Delivered || checkpoint.Failed {
 							seen[key] = true
 							continue
 						}
@@ -176,15 +176,20 @@ func (p *Processor) Run(ctx context.Context) {
 					result, cached := recognized[key]
 					var recognizeErr error
 					if !cached {
+						if p.checkpoints != nil {
+							checkpoint.Attempts++
+							checkpoint.LastAttemptAt = time.Now()
+						}
 						ocrStart := time.Now()
 						audit.Log(audit.Entry{
 							Timestamp: ocrStart,
 							Type:      audit.TypeOCRInitiated,
 							RecordID:  job.recordID,
-							Action:    fmt.Sprintf("发起小票 OCR 识别 (文件: %s)", attachment.Name),
+							Action:    fmt.Sprintf("发起小票 OCR 识别 (文件: %s, 第 %d 次)", attachment.Name, checkpoint.Attempts),
 							Details: map[string]any{
 								"file_token": tokens[i],
 								"file_name":  attachment.Name,
+								"attempts":   checkpoint.Attempts,
 								"trigger":    job.trigger,
 								"event_id":   job.eventID,
 							},
@@ -229,9 +234,20 @@ func (p *Processor) Run(ctx context.Context) {
 								Details: map[string]any{
 									"file_token": tokens[i],
 									"file_name":  attachment.Name,
+									"attempts":   checkpoint.Attempts,
 									"error":      recognizeErr.Error(),
 								},
 							})
+							if p.checkpoints != nil {
+								checkpoint.LastError = recognizeErr.Error()
+								if checkpoint.Attempts >= DefaultMaxRecognitionAttempts {
+									checkpoint.Failed = true
+									p.logger.ErrorContext(workCtx, "receipt recognition exceeded max attempts, marked as dead letter to stop retries",
+										"record_id", job.recordID, "file_token", tokens[i], "file_name", attachment.Name,
+										"attempts", checkpoint.Attempts, "error", recognizeErr)
+								}
+								_ = p.checkpoints.SaveRecognition(workCtx, checkpoint)
+							}
 						}
 					}
 					if recognizeErr != nil {
@@ -247,6 +263,15 @@ func (p *Processor) Run(ctx context.Context) {
 					}
 					if handleErr := p.handler(workCtx, output); handleErr != nil {
 						err = handleErr
+						if p.checkpoints != nil {
+							checkpoint.LastError = handleErr.Error()
+							if checkpoint.Attempts >= DefaultMaxRecognitionAttempts {
+								checkpoint.Failed = true
+								p.logger.ErrorContext(workCtx, "receipt delivery exceeded max attempts, marked as dead letter",
+									"record_id", job.recordID, "file_token", tokens[i], "attempts", checkpoint.Attempts, "error", handleErr)
+							}
+							_ = p.checkpoints.SaveRecognition(workCtx, checkpoint)
+						}
 						break
 					}
 					if p.checkpoints != nil {

@@ -11,15 +11,9 @@ import (
 // ScanAttachmentRecords lists only one configured Bitable table and yields rows
 // with non-empty values in the configured attachment field.
 func (c *AttachmentClient) ScanAttachmentRecords(ctx context.Context, base, table, fieldID string, yield func(string, map[string]bool) error) error {
-	var auth struct {
-		Code              int    `json:"code"`
-		TenantAccessToken string `json:"tenant_access_token"`
-	}
-	if err := c.request(ctx, http.MethodPost, feishuAPI+"/auth/v3/tenant_access_token/internal", "", map[string]string{"app_id": c.appID, "app_secret": c.appSecret}, &auth); err != nil {
+	token, err := c.accessToken(ctx)
+	if err != nil {
 		return err
-	}
-	if auth.TenantAccessToken == "" {
-		return fmt.Errorf("Feishu app authentication failed: code %d", auth.Code)
 	}
 	root := fmt.Sprintf("%s/bitable/v1/apps/%s/tables/%s", feishuAPI, url.PathEscape(base), url.PathEscape(table))
 	var fields struct {
@@ -37,7 +31,7 @@ func (c *AttachmentClient) ScanAttachmentRecords(ctx context.Context, base, tabl
 		if next != "" {
 			endpoint += "&page_token=" + url.QueryEscape(next)
 		}
-		if err := c.request(ctx, http.MethodGet, endpoint, auth.TenantAccessToken, nil, &fields); err != nil {
+		if err := c.request(ctx, http.MethodGet, endpoint, token, nil, &fields); err != nil {
 			return err
 		}
 		for _, field := range fields.Items {
@@ -71,7 +65,7 @@ func (c *AttachmentClient) ScanAttachmentRecords(ctx context.Context, base, tabl
 		if next != "" {
 			endpoint += "&page_token=" + url.QueryEscape(next)
 		}
-		if err := c.request(ctx, http.MethodGet, endpoint, auth.TenantAccessToken, nil, &page); err != nil {
+		if err := c.request(ctx, http.MethodGet, endpoint, token, nil, &page); err != nil {
 			return err
 		}
 		for _, record := range page.Items {

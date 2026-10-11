@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/core/invoice"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/token"
 )
 
 const feishuAPI = "https://open.feishu.cn/open-apis"
@@ -21,24 +22,31 @@ const maxAttachmentSize = 20 << 20
 type AttachmentClient struct {
 	appID, appSecret string
 	httpClient       *http.Client
+	tokenProvider    *token.Provider
 }
 
 func NewAttachmentClient(appID, appSecret string) *AttachmentClient {
-	return &AttachmentClient{appID: appID, appSecret: appSecret, httpClient: &http.Client{Timeout: 45 * time.Second}}
+	c := &http.Client{Timeout: 45 * time.Second}
+	return &AttachmentClient{
+		appID:         appID,
+		appSecret:     appSecret,
+		httpClient:    c,
+		tokenProvider: token.New(appID, appSecret, token.WithClient(c), token.WithAPIBase(feishuAPI)),
+	}
+}
+
+func (c *AttachmentClient) accessToken(ctx context.Context) (string, error) {
+	if c.tokenProvider == nil {
+		c.tokenProvider = token.New(c.appID, c.appSecret, token.WithClient(c.httpClient), token.WithAPIBase(feishuAPI))
+	}
+	return c.tokenProvider.TenantAccessToken(ctx)
 }
 
 func (c *AttachmentClient) ReadAttachments(ctx context.Context, base, table, record, fieldID string, selected map[string]bool) ([]invoice.Attachment, []string, error) {
-	var auth struct {
-		Code              int    `json:"code"`
-		TenantAccessToken string `json:"tenant_access_token"`
-	}
-	if err := c.request(ctx, http.MethodPost, feishuAPI+"/auth/v3/tenant_access_token/internal", "", map[string]string{"app_id": c.appID, "app_secret": c.appSecret}, &auth); err != nil {
+	token, err := c.accessToken(ctx)
+	if err != nil {
 		return nil, nil, err
 	}
-	if auth.Code != 0 || auth.TenantAccessToken == "" {
-		return nil, nil, fmt.Errorf("Feishu app authentication failed: code %d", auth.Code)
-	}
-	token := auth.TenantAccessToken
 	root := fmt.Sprintf("%s/bitable/v1/apps/%s/tables/%s", feishuAPI, url.PathEscape(base), url.PathEscape(table))
 	var fields struct {
 		Items []struct {

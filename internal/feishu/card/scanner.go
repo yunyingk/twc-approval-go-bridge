@@ -105,18 +105,18 @@ func (s *Scanner) Inspect(ctx context.Context, opts ...ScanOptions) (*ScanReport
 	for _, row := range rows {
 		decision := EvaluateTransactionFilter(row.Fields, fieldMap, transBinding)
 		if !decision.ShouldNotify {
-			switch {
-			case strings.Contains(decision.Reason, "已关联"):
+			switch decision.Code {
+			case DecisionAlreadyLinked:
 				report.SkippedLinked++
-			case strings.Contains(decision.Reason, "缺少"):
+			case DecisionIncompleteFields:
 				report.SkippedIncomplete++
-			case strings.Contains(decision.Reason, "0或负数"):
+			case DecisionZeroOrNegative:
 				report.SkippedZeroAmount++
-			case strings.Contains(decision.Reason, "交易状态"):
+			case DecisionInvalidTxStatus:
 				report.SkippedStatus++
-			case strings.Contains(decision.Reason, "报销状态") || strings.Contains(decision.Reason, "核销"):
+			case DecisionClaimSettled:
 				report.SkippedClaim++
-			case strings.Contains(decision.Reason, "持卡人"):
+			case DecisionNoCardholder:
 				report.SkippedNoUser++
 			}
 			continue

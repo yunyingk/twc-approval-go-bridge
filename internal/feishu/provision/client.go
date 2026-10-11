@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/token"
 )
 
 const defaultFeishuAPI = "https://open.feishu.cn/open-apis"
@@ -31,41 +33,40 @@ type TableRoleReq struct {
 
 // Client interacts with Feishu OpenAPI to provision and administer Bitables.
 type Client struct {
-	appID      string
-	appSecret  string
-	apiBase    string
-	httpClient *http.Client
+	appID         string
+	appSecret     string
+	apiBase       string
+	httpClient    *http.Client
+	tokenProvider *token.Provider
 }
 
 // NewClient returns a provision Client initialized with Feishu credentials.
 func NewClient(appID, appSecret string) *Client {
+	hc := &http.Client{Timeout: 30 * time.Second}
 	return &Client{
-		appID:      appID,
-		appSecret:  appSecret,
-		apiBase:    defaultFeishuAPI,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		appID:         appID,
+		appSecret:     appSecret,
+		apiBase:       defaultFeishuAPI,
+		httpClient:    hc,
+		tokenProvider: token.New(appID, appSecret, token.WithClient(hc), token.WithAPIBase(defaultFeishuAPI)),
 	}
 }
 
 // SetAPIBase allows overriding openapi URL in tests.
 func (c *Client) SetAPIBase(base string) {
 	c.apiBase = strings.TrimRight(base, "/")
+	if c.tokenProvider != nil {
+		c.tokenProvider.SetAPIBase(c.apiBase)
+	}
 }
 
 func (c *Client) accessToken(ctx context.Context) (string, error) {
-	var auth struct {
-		Code              int    `json:"code"`
-		Msg               string `json:"msg"`
-		TenantAccessToken string `json:"tenant_access_token"`
+	if c.tokenProvider == nil {
+		c.tokenProvider = token.New(c.appID, c.appSecret, token.WithClient(c.httpClient), token.WithAPIBase(c.apiBase))
+	} else if c.tokenProvider.APIBase() != c.apiBase {
+		c.tokenProvider.SetAPIBase(c.apiBase)
 	}
-	body := map[string]string{"app_id": c.appID, "app_secret": c.appSecret}
-	if err := c.request(ctx, http.MethodPost, c.apiBase+"/auth/v3/tenant_access_token/internal", "", body, &auth); err != nil {
-		return "", err
-	}
-	if auth.Code != 0 || auth.TenantAccessToken == "" {
-		return "", fmt.Errorf("feishu authentication failed (code %d): %s", auth.Code, auth.Msg)
-	}
-	return auth.TenantAccessToken, nil
+	return c.tokenProvider.TenantAccessToken(ctx)
 }
 
 func (c *Client) request(ctx context.Context, method, endpoint, token string, in, out any) error {

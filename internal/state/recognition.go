@@ -65,7 +65,7 @@ func (s *Files) PendingRecognition(ctx context.Context, scope string) ([]recogni
 		if err := json.Unmarshal(raw, &task); err != nil {
 			return nil, err
 		}
-		if task.Scope == scope && !task.Delivered {
+		if task.Scope == scope && !task.Delivered && !task.Failed {
 			tasks = append(tasks, task)
 		}
 	}

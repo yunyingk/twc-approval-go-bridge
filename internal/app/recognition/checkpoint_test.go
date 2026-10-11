@@ -110,3 +110,62 @@ func TestBaselineAndWorkerOwnershipSurviveReopen(t *testing.T) {
 	}
 	other.Close()
 }
+
+type failingRecognizer struct {
+	calls atomic.Int32
+}
+
+func (f *failingRecognizer) Recognize(context.Context, invoice.Attachment) (invoice.Recognition, error) {
+	f.calls.Add(1)
+	return invoice.Recognition{}, errors.New("corrupted receipt file")
+}
+
+func TestFailedRecognitionStopsAtMaxAttempts(t *testing.T) {
+	store, err := state.NewFiles(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	failing := &failingRecognizer{}
+	p, err := app.New(app.Config{BaseToken: "base", TableID: "table", FieldID: "field"}, reader{}, failing, func(context.Context, app.Result) error {
+		return nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.WithCheckpoints(store, "scope")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Enqueue and run processor for 3 attempts
+	for i := 0; i < app.DefaultMaxRecognitionAttempts; i++ {
+		done := make(chan struct{})
+		runCtx, runCancel := context.WithCancel(ctx)
+		go func() {
+			p.Run(runCtx)
+			close(done)
+		}()
+
+		if err := p.EnqueueRecord(runCtx, "rec_fail", map[string]bool{"file": true}); err != nil {
+			t.Fatal(err)
+		}
+
+		// Wait briefly for job to be processed and fail
+		time.Sleep(100 * time.Millisecond)
+		runCancel()
+		<-done
+	}
+
+	if failing.calls.Load() != app.DefaultMaxRecognitionAttempts {
+		t.Fatalf("expected exactly %d attempts, got %d", app.DefaultMaxRecognitionAttempts, failing.calls.Load())
+	}
+
+	// Verify checkpoint is marked as Failed
+	pending, err := store.PendingRecognition(ctx, "scope")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("failed task must not be returned in pending tasks, got %d", len(pending))
+	}
+}
+

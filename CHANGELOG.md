@@ -32,12 +32,17 @@
 
 ### 新增 (Added)
 - **SealAI 单据原始链接直达**：向 SealAI Webhook 发起机审时注入单据原始直达链接（`DocumentRequest.DocumentURL` 与单据/明细字段 `source_record_url`，Label 为 `"单据原始链接"`），针对单行个人报销明细自动精准拼接飞书多维表格行记录展开链接（`${host}/base/${baseToken}?table=${tableID}&record=${recordID}`），支持企业专属域名配置与通用域名安全兜底。
+- **飞书 Tenant Token 集中缓存 (`internal/feishu/token`)**：新增轻量、并发安全且带 TTL 内存缓存与提前刷新机制的统一 Token Provider，全系统（`base`、`card`、`task`、`provision`、`health`）收敛至单一实现，彻底消除无缓存重复向飞书换取 Token 导致的限流与网络开销风险。
+- **流水过滤决策类型枚举 (`internal/feishu/card`)**：引入强类型 `DecisionCode` 枚举（如 `notify`、`already_linked`、`incomplete_fields` 等），替换原先脆弱的中文原因子串匹配统计，提高过滤规则可维护性与稳定性。
 
 ### 变更 (Changed)
 - **配置纯粹性治理**：彻底移除早期草稿遗留的冗余别名配置字段 `enterprise_host`，全系统统一严格收敛至单一主配置项 `[feishu] host`，杜绝二义性。
+- **Seal 审核版本指纹解耦 (`cmd/server`)**：将机审状态机的 `ProviderVersion` 稳定为固定的 `"v1"`，避免包含动态 Webhook URL 导致环境配置漂移时意外触发全部在途单据指纹失效与全量重审。
 
 ### 修复 (Fixed)
-- 暂无
+- **OCR 识别失败无限重试止血 (`internal/app/recognition`, `internal/state`)**：为小票识别任务 Checkpoint 增加 `Attempts` 计数、`LastError`、`LastAttemptAt` 与 `Failed` 死信标记。当识别失败达到最大重试次数（默认 3 次）时转入死信态，终止 30 秒轮询无限扣费漏洞。
+- **单据处理静默失败可观测性 (`internal/feishu/card`)**：补齐流水建单、预填明细与创建待办失败时的告警日志，杜绝静默吞掉错误导致排查无感知。
+- **模型审核底层错误保留 (`internal/anthropic/review`)**：在审核错误抛出时使用 `%w` 包装底层错误，保证调用方可通过 `errors.As` 精准分类排查。
 
 
 ---

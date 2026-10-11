@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/token"
 )
 
 const feishuAPI = "https://open.feishu.cn/open-apis"
@@ -629,34 +630,8 @@ func (c *Checker) checkRuntimeEnvironment(ctx context.Context) []CheckItem {
 // -------------------------------------------------------------------------
 
 func (c *Checker) fetchTenantToken(ctx context.Context) (string, error) {
-	reqBody, _ := json.Marshal(map[string]string{
-		"app_id":     c.cfg.Feishu.AppID,
-		"app_secret": c.cfg.Feishu.AppSecret,
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/auth/v3/tenant_access_token/internal", bytes.NewReader(reqBody))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Code              int    `json:"code"`
-		Msg               string `json:"msg"`
-		TenantAccessToken string `json:"tenant_access_token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
-	}
-	if result.Code != 0 || result.TenantAccessToken == "" {
-		return "", fmt.Errorf("code %d: %s", result.Code, result.Msg)
-	}
-	return result.TenantAccessToken, nil
+	p := token.New(c.cfg.Feishu.AppID, c.cfg.Feishu.AppSecret, token.WithClient(c.httpClient), token.WithAPIBase(c.baseURL))
+	return p.TenantAccessToken(ctx)
 }
 
 func (c *Checker) probeHost(ctx context.Context, host string) error {

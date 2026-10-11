@@ -19,17 +19,7 @@ func NewLedgerClient(appID, appSecret string) *LedgerClient {
 }
 
 func (c *LedgerClient) accessToken(ctx context.Context) (string, error) {
-	var auth struct {
-		Code              int    `json:"code"`
-		TenantAccessToken string `json:"tenant_access_token"`
-	}
-	if err := c.request(ctx, http.MethodPost, feishuAPI+"/auth/v3/tenant_access_token/internal", "", map[string]string{"app_id": c.appID, "app_secret": c.appSecret}, &auth); err != nil {
-		return "", err
-	}
-	if auth.TenantAccessToken == "" {
-		return "", fmt.Errorf("Feishu app authentication failed: code %d", auth.Code)
-	}
-	return auth.TenantAccessToken, nil
+	return c.AttachmentClient.accessToken(ctx)
 }
 
 func (c *LedgerClient) fieldNames(ctx context.Context, token, base, table string) (map[string]string, error) {

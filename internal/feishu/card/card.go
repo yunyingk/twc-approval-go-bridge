@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/token"
 )
 
 const feishuAPI = "https://open.feishu.cn/open-apis"
@@ -59,19 +61,22 @@ func BuildFormURL(enterpriseHost, formShareToken, prefillFieldName, recordID str
 
 // Client delivers message cards using app identity.
 type Client struct {
-	appID      string
-	appSecret  string
-	baseURL    string
-	httpClient *http.Client
+	appID         string
+	appSecret     string
+	baseURL       string
+	httpClient    *http.Client
+	tokenProvider *token.Provider
 }
 
 // NewClient creates a card client for Feishu message dispatching.
 func NewClient(appID, appSecret string) *Client {
+	c := &http.Client{Timeout: 10 * time.Second}
 	return &Client{
-		appID:      appID,
-		appSecret:  appSecret,
-		baseURL:    feishuAPI,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		appID:         appID,
+		appSecret:     appSecret,
+		baseURL:       feishuAPI,
+		httpClient:    c,
+		tokenProvider: token.New(appID, appSecret, token.WithClient(c), token.WithAPIBase(feishuAPI)),
 	}
 }
 
@@ -255,36 +260,10 @@ func (c *Client) FetchBotName(ctx context.Context) (string, error) {
 }
 
 func (c *Client) accessToken(ctx context.Context) (string, error) {
-	reqBody, err := json.Marshal(map[string]string{
-		"app_id":     c.appID,
-		"app_secret": c.appSecret,
-	})
-	if err != nil {
-		return "", err
+	if c.tokenProvider == nil {
+		c.tokenProvider = token.New(c.appID, c.appSecret, token.WithClient(c.httpClient), token.WithAPIBase(c.baseURL))
+	} else if c.tokenProvider.APIBase() != c.baseURL {
+		c.tokenProvider.SetAPIBase(c.baseURL)
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/auth/v3/tenant_access_token/internal", bytes.NewReader(reqBody))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	var auth struct {
-		Code              int    `json:"code"`
-		Msg               string `json:"msg"`
-		TenantAccessToken string `json:"tenant_access_token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&auth); err != nil {
-		return "", err
-	}
-	if auth.Code != 0 || auth.TenantAccessToken == "" {
-		return "", fmt.Errorf("Feishu auth failed (code %d): %s", auth.Code, auth.Msg)
-	}
-	return auth.TenantAccessToken, nil
+	return c.tokenProvider.TenantAccessToken(ctx)
 }

@@ -7,10 +7,24 @@ import (
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
 )
 
+// DecisionCode classifies transaction filter decisions for stable metrics and reports.
+type DecisionCode string
+
+const (
+	DecisionNotify           DecisionCode = "NOTIFY"
+	DecisionIncompleteFields DecisionCode = "INCOMPLETE_FIELDS"
+	DecisionNoCardholder     DecisionCode = "NO_CARDHOLDER"
+	DecisionAlreadyLinked    DecisionCode = "ALREADY_LINKED"
+	DecisionInvalidTxStatus  DecisionCode = "INVALID_TX_STATUS"
+	DecisionClaimSettled     DecisionCode = "CLAIM_SETTLED"
+	DecisionZeroOrNegative   DecisionCode = "ZERO_OR_NEGATIVE"
+)
+
 // FilterDecision represents the result of applying business rules to a transaction row.
 type FilterDecision struct {
-	ShouldNotify bool   `json:"should_notify"`
-	Reason       string `json:"reason,omitempty"`
+	ShouldNotify bool         `json:"should_notify"`
+	Code         DecisionCode `json:"code"`
+	Reason       string       `json:"reason,omitempty"`
 }
 
 // EvaluateTransactionFilter applies dedicated, hardcoded Go business rules
@@ -45,6 +59,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	if strings.TrimSpace(formatString(bookedAmtRaw, "")) == "" {
 		return FilterDecision{
 			ShouldNotify: false,
+			Code:         DecisionIncompleteFields,
 			Reason:       "缺少结算金额（未出账/在途交易），不予催报",
 		}
 	}
@@ -59,6 +74,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	if strings.TrimSpace(formatString(bookedCurRaw, "")) == "" {
 		return FilterDecision{
 			ShouldNotify: false,
+			Code:         DecisionIncompleteFields,
 			Reason:       "缺少结算金额币种，不予催报",
 		}
 	}
@@ -70,6 +86,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	if strings.TrimSpace(formatString(txIDRaw, "")) == "" {
 		return FilterDecision{
 			ShouldNotify: false,
+			Code:         DecisionIncompleteFields,
 			Reason:       "缺少交易流水号，不予催报",
 		}
 	}
@@ -82,6 +99,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	if openID == "" {
 		return FilterDecision{
 			ShouldNotify: false,
+			Code:         DecisionNoCardholder,
 			Reason:       "未识别到持卡人飞书有效账号，不予催报",
 		}
 	}
@@ -93,6 +111,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	if strings.TrimSpace(formatTime(txTimeRaw)) == "" {
 		return FilterDecision{
 			ShouldNotify: false,
+			Code:         DecisionIncompleteFields,
 			Reason:       "缺少交易时间，不予催报",
 		}
 	}
@@ -105,6 +124,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	if isAlreadyLinked(detailRelRaw) {
 		return FilterDecision{
 			ShouldNotify: false,
+			Code:         DecisionAlreadyLinked,
 			Reason:       "该交易流水已关联个人报销明细，无需重复催报",
 		}
 	}
@@ -118,6 +138,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	if isIgnoredTransactionStatus(txStatusStr) {
 		return FilterDecision{
 			ShouldNotify: false,
+			Code:         DecisionInvalidTxStatus,
 			Reason:       "交易状态为无效/失败/撤销流水（" + txStatusStr + "），无需催报",
 		}
 	}
@@ -131,6 +152,7 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	if isIgnoredClaimStatus(claimStatusStr) {
 		return FilterDecision{
 			ShouldNotify: false,
+			Code:         DecisionClaimSettled,
 			Reason:       "报销状态已完结或无需核销（" + claimStatusStr + "），无需催报",
 		}
 	}
@@ -144,12 +166,14 @@ func EvaluateTransactionFilter(record map[string]any, fieldMap map[string]string
 	if isZeroOrNegativeAmount(bookedAmtRaw) && isZeroOrNegativeAmount(origAmtRaw) {
 		return FilterDecision{
 			ShouldNotify: false,
+			Code:         DecisionZeroOrNegative,
 			Reason:       "交易金额为0或负数（预授权/核卡流水无需报销）",
 		}
 	}
 
 	return FilterDecision{
 		ShouldNotify: true,
+		Code:         DecisionNotify,
 	}
 }
 

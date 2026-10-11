@@ -71,7 +71,7 @@ func (c *Client) Review(ctx context.Context, request core.Request) (core.Submiss
 		Messages: []sdk.MessageParam{sdk.NewUserMessage(sdk.NewTextBlock(string(data)))},
 	})
 	if err != nil {
-		return core.Submission{}, fmt.Errorf("self-hosted review model request failed")
+		return core.Submission{}, fmt.Errorf("self-hosted review model request failed: %w", err)
 	}
 	raw, err := anthropic.JSONMessage(msg)
 	if err != nil {

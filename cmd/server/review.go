@@ -56,7 +56,7 @@ func newReviewService(cfg config.Config) (*appreview.Service, error) {
 		if err != nil {
 			return nil, err
 		}
-		options.ProviderVersion = cfg.Seal.DocumentURL
+		options.ProviderVersion = "v1"
 	case "model":
 		gateway, options.RulesVersion, options.ProviderVersion, err = newModelReview(cfg)
 		if err != nil {

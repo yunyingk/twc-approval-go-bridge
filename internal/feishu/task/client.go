@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/token"
 )
 
 const feishuAPI = "https://open.feishu.cn/open-apis"
@@ -28,60 +30,38 @@ type CreateTaskParam struct {
 
 // Client delivers Task v2 API requests using tenant access tokens.
 type Client struct {
-	appID      string
-	appSecret  string
-	baseURL    string
-	httpClient *http.Client
+	appID         string
+	appSecret     string
+	baseURL       string
+	httpClient    *http.Client
+	tokenProvider *token.Provider
 }
 
 // NewClient creates a task client.
 func NewClient(appID, appSecret string) *Client {
+	c := &http.Client{Timeout: 10 * time.Second}
 	return &Client{
-		appID:      appID,
-		appSecret:  appSecret,
-		baseURL:    feishuAPI,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		appID:         appID,
+		appSecret:     appSecret,
+		baseURL:       feishuAPI,
+		httpClient:    c,
+		tokenProvider: token.New(appID, appSecret, token.WithClient(c), token.WithAPIBase(feishuAPI)),
 	}
 }
 
 // SetBaseURLForTest overrides the API base URL in unit tests.
 func (c *Client) SetBaseURLForTest(u string) {
 	c.baseURL = u
+	c.tokenProvider = token.New(c.appID, c.appSecret, token.WithClient(c.httpClient), token.WithAPIBase(u))
 }
 
 func (c *Client) accessToken(ctx context.Context) (string, error) {
-	reqBody, err := json.Marshal(map[string]string{
-		"app_id":     c.appID,
-		"app_secret": c.appSecret,
-	})
-	if err != nil {
-		return "", err
+	if c.tokenProvider == nil {
+		c.tokenProvider = token.New(c.appID, c.appSecret, token.WithClient(c.httpClient), token.WithAPIBase(c.baseURL))
+	} else if c.tokenProvider.APIBase() != c.baseURL {
+		c.tokenProvider.SetAPIBase(c.baseURL)
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/auth/v3/tenant_access_token/internal", bytes.NewReader(reqBody))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Code              int    `json:"code"`
-		Msg               string `json:"msg"`
-		TenantAccessToken string `json:"tenant_access_token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
-	}
-	if result.Code != 0 || result.TenantAccessToken == "" {
-		return "", fmt.Errorf("fetch access token failed (code %d): %s", result.Code, result.Msg)
-	}
-	return result.TenantAccessToken, nil
+	return c.tokenProvider.TenantAccessToken(ctx)
 }
 
 // CreateTask creates a new Feishu task v2 with optional start, due, and origin link.

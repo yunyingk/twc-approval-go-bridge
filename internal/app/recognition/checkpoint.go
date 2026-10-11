@@ -6,10 +6,16 @@ import (
 	"time"
 )
 
+const DefaultMaxRecognitionAttempts = 3
+
 type Checkpoint struct {
 	Key, Scope            string
 	Result                Result
 	Recognized, Delivered bool
+	Attempts              int       `json:"attempts,omitempty"`
+	LastError             string    `json:"last_error,omitempty"`
+	Failed                bool      `json:"failed,omitempty"`
+	LastAttemptAt         time.Time `json:"last_attempt_at,omitempty"`
 }
 type Checkpoints interface {
 	QueueRecognition(context.Context, Checkpoint) error

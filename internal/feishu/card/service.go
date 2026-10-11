@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -175,7 +176,11 @@ func (s *Service) NotifyTransaction(ctx context.Context, transactionRecordID str
 
 	// Option 1: prefill detail record and task when reimbursement details table is configured
 	if detailsBinding.BaseToken != "" && detailsBinding.TableID != "" {
-		detailRecordID, _ = s.createPrefillDetail(ctx, token, detailsBinding, transactionRecordID, openID, merchant)
+		var prefillErr error
+		detailRecordID, prefillErr = s.createPrefillDetail(ctx, token, detailsBinding, transactionRecordID, openID, merchant)
+		if prefillErr != nil {
+			slog.WarnContext(ctx, "failed to create prefill reimbursement detail", "tx_record_id", transactionRecordID, "open_id", openID, "error", prefillErr)
+		}
 		if detailRecordID != "" {
 			host := strings.TrimRight(s.cfg.Feishu.Host, "/")
 			if host == "" {
@@ -184,9 +189,15 @@ func (s *Service) NotifyTransaction(ctx context.Context, transactionRecordID str
 			targetURL = fmt.Sprintf("%s/base/%s?table=%s&record=%s", host, detailsBinding.BaseToken, detailsBinding.TableID, detailRecordID)
 
 			if s.taskClient != nil {
-				taskGUID, _ = s.createNoticeTask(ctx, targetURL, openID, txID, merchant, bookedAmountStr, origAmountStr, txTime)
+				var taskErr error
+				taskGUID, taskErr = s.createNoticeTask(ctx, targetURL, openID, txID, merchant, bookedAmountStr, origAmountStr, txTime)
+				if taskErr != nil {
+					slog.WarnContext(ctx, "failed to create notice task", "detail_record_id", detailRecordID, "tx_id", txID, "error", taskErr)
+				}
 				if taskGUID != "" && s.taskSvc != nil {
-					_ = s.taskSvc.LinkRecordTask(ctx, detailRecordID, taskGUID)
+					if linkErr := s.taskSvc.LinkRecordTask(ctx, detailRecordID, taskGUID); linkErr != nil {
+						slog.WarnContext(ctx, "failed to link record task", "detail_record_id", detailRecordID, "task_guid", taskGUID, "error", linkErr)
+					}
 					if botName != "" {
 						noteText = fmt.Sprintf("来自 海外易商卡 × %s · 已同步生成飞书待办", botName)
 					} else {
