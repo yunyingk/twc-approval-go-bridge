@@ -672,6 +672,69 @@ trigger_mode = "manual"
 	}
 }
 
+func TestNotificationConfig(t *testing.T) {
+	dir := t.TempDir()
+	tablesPath := filepath.Join(dir, "tables.json")
+	validJSON := `{
+		"version": 1,
+		"name": "enterprise-test",
+		"tables": {
+			"transactions": {"name": "流水", "source": "webhook", "access": "read_only", "base_token": "b1", "table_id": "t1", "fields": {"transaction_id": "f1"}},
+			"reimbursement_details": {
+				"name": "明细", "source": "employee", "access": "read_write", "base_token": "b1", "table_id": "t2", 
+				"fields": {"attachment": "f2"}, "context_fields": {"r": "f3"}, "result_fields": {"decision": "f4"}
+			},
+			"invoice_ledger": {"name": "台账", "source": "bridge", "access": "read_write", "base_token": "b1", "table_id": "t3", "fields": {"source_key": "f5", "raw_json": "f6"}}
+		}
+	}`
+	if err := os.WriteFile(tablesPath, []byte(validJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	tomlContent := `
+tables_file = "tables.json"
+[runtime]
+http_addr = ":8080"
+[feishu]
+app_id = "cli_test"
+app_secret = "secret_test"
+[recognition]
+provider = "disabled"
+trigger_mode = "both"
+[review]
+provider = "seal"
+trigger_mode = "manual"
+[notification]
+enabled = true
+chat_ids = [" oc_123 ", "oc_456", ""]
+open_ids = [" ou_abc "]
+notify_on_dead_letter = true
+`
+	tomlPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(tomlPath, []byte(tomlContent), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadFile(tomlPath)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+
+	if !cfg.Notification.Enabled {
+		t.Fatalf("expected Notification.Enabled to be true")
+	}
+	if !cfg.Notification.NotifyOnDeadLetter {
+		t.Fatalf("expected Notification.NotifyOnDeadLetter to be true")
+	}
+	if len(cfg.Notification.ChatIDs) != 2 || cfg.Notification.ChatIDs[0] != "oc_123" || cfg.Notification.ChatIDs[1] != "oc_456" {
+		t.Fatalf("unexpected ChatIDs: %#v", cfg.Notification.ChatIDs)
+	}
+	if len(cfg.Notification.OpenIDs) != 1 || cfg.Notification.OpenIDs[0] != "ou_abc" {
+		t.Fatalf("unexpected OpenIDs: %#v", cfg.Notification.OpenIDs)
+	}
+}
+
+
 
 
 

@@ -25,9 +25,39 @@ type Checkpoints interface {
 	RecognitionBaseline(context.Context, string, map[string]bool) (map[string]bool, bool, error)
 }
 
+// DeadLetterNotice carries failure details when a task enters dead-letter state.
+type DeadLetterNotice struct {
+	RecordID  string
+	RecordURL string
+	FileName  string
+	FileToken string
+	Attempts  int
+	LastError string
+	FailedAt  time.Time
+}
+
+// DeadLetterNotifier delivers alert notifications for dead-letter tasks.
+type DeadLetterNotifier interface {
+	NotifyDeadLetter(context.Context, DeadLetterNotice) error
+}
+
+// DeadLetterNotifierFunc wraps a function as a DeadLetterNotifier.
+type DeadLetterNotifierFunc func(context.Context, DeadLetterNotice) error
+
+func (f DeadLetterNotifierFunc) NotifyDeadLetter(ctx context.Context, notice DeadLetterNotice) error {
+	return f(ctx, notice)
+}
+
 // WithCheckpoints is called during assembly, before any goroutine is started.
 func (p *Processor) WithCheckpoints(store Checkpoints, scope string) *Processor {
 	p.checkpoints, p.scope = store, scope
+	return p
+}
+
+// WithDeadLetterNotifier attaches an alert notifier for dead-letter tasks.
+func (p *Processor) WithDeadLetterNotifier(notifier DeadLetterNotifier, feishuHost string) *Processor {
+	p.notifier = notifier
+	p.feishuHost = feishuHost
 	return p
 }
 func (p *Processor) checkpointKey(recordID, token string) string {

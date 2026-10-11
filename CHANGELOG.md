@@ -31,10 +31,13 @@
 ## [Unreleased]
 
 ### 新增 (Added)
-- 暂无
+- **飞书机器人通知通道 (`internal/feishu/notify`)**：新建通用飞书机器人通知模块，支持通过企业自建应用机器人（ebot）向指定群聊（`chat_ids`）与个人管理员（`open_ids`）广播交互式富文本卡片消息。
+- **小票识别死信自动告警卡片**：小票附件连续失败 3 次触发死信止血保护时，由后台自动构建警示卡片推送到配置的群聊/管理员，卡片包含单据直达链接跳转按钮、小票文件名、Token、重试次数、错误详情与终端排查引导，并具备 1 小时内相同文件告警防抖去重机制。
+- **配置支持与示例同步 (`configs/config.example.toml` & `internal/config`)**：在统一 TOML 配置文件中增加 `[notification]` 配置区块（`enabled`, `chat_ids`, `open_ids`, `notify_on_dead_letter`），实现全量严格字段解析与合法性校验。
+- **通知连通性诊断命令 (`test-notify`)**：新增 CLI 诊断子命令 `./bin/twc-approval-go-bridge test-notify [-chat <id>] [-open-id <id>]`，便于管理员即时测试飞书机器人的群聊/单聊卡片投递权限。
 
 ### 变更 (Changed)
-- 暂无
+- **识别流程对接死信告警 (`internal/app/recognition`)**：在小票识别流程达到最大尝试次数进入死信状态时触发 `DeadLetterNotifier`，在常驻后台（`server`）中自动联动通知服务。
 
 ### 修复 (Fixed)
 - 暂无

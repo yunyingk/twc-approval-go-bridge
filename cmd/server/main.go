@@ -28,6 +28,7 @@ import (
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/invoiceledger"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/card"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/events"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/notify"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/task"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/httpserver"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/seal"
@@ -158,6 +159,8 @@ func main() {
 		} else {
 			cmdErr = runRetryReceipt(ctx, cfg, os.Args[2], os.Stdout)
 		}
+	case "test-notify":
+		cmdErr = runTestNotify(ctx, cfg, os.Args[2:], os.Stdout)
 	default:
 		fmt.Fprintf(os.Stderr, "未知子命令: %s\n\n", cmd)
 		printUsage(os.Stderr)
@@ -201,6 +204,7 @@ func printUsage(w io.Writer) {
 
 运维与诊断:
   doctor [-json]           全面健康检查与权限探测
+  test-notify [options]    测试飞书机器人通道连通性 (支持 -chat <id> / -open-id <id>)
   init-bitable [options]   一键在飞书创建多维表格储备库并自动配置
   check-business-config    校验当前多维表格拓扑与字段契约
   add-admin <base> <user>  为多维表格添加管理员协作者 (full_access)
@@ -374,6 +378,28 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 			defer lease.Close()
 			scopeHash := sha256.Sum256(scopeData)
 			receiptFlow.WithCheckpoints(checkpoints, hex.EncodeToString(scopeHash[:]))
+			if cfg.Notification.Enabled && cfg.Notification.NotifyOnDeadLetter && cfg.FeishuEnabled() {
+				notifyClient := notify.NewClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret)
+				notifySvc := notify.NewService(notify.Config{
+					Enabled:            cfg.Notification.Enabled,
+					ChatIDs:            cfg.Notification.ChatIDs,
+					OpenIDs:            cfg.Notification.OpenIDs,
+					NotifyOnDeadLetter: cfg.Notification.NotifyOnDeadLetter,
+				}, notifyClient, logger)
+				receiptFlow.WithDeadLetterNotifier(recognition.DeadLetterNotifierFunc(func(ctx context.Context, notice recognition.DeadLetterNotice) error {
+					return notifySvc.NotifyDeadLetter(ctx, notify.DeadLetterNotice{
+						RecordID:  notice.RecordID,
+						RecordURL: notice.RecordURL,
+						FileName:  notice.FileName,
+						FileToken: notice.FileToken,
+						Attempts:  notice.Attempts,
+						LastError: notice.LastError,
+						FailedAt:  notice.FailedAt,
+					})
+				}), cfg.Feishu.Host)
+				logger.Info("dead letter notification channel configured",
+					"chat_count", len(cfg.Notification.ChatIDs), "user_count", len(cfg.Notification.OpenIDs))
+			}
 			if cfg.ReceiptTriggerMode() != "poll" {
 				logEvent := sink
 				attachmentSink := baseevents.NewAttachmentSink(recognition.Config{BaseToken: details.BaseToken, TableID: details.TableID, FieldID: details.AttachmentField()}, receiptFlow).Sink

@@ -29,9 +29,24 @@ type Document struct {
 	Anyreceipt    AnyreceiptSettings  `json:"anyreceipt" toml:"anyreceipt"`
 	Seal          SealSettings        `json:"seal" toml:"seal"`
 	Model         ModelSettings       `json:"model" toml:"model"`
-	Transactions  TransactionSettings `json:"transactions,omitempty" toml:"transactions,omitempty"`
+	Transactions  TransactionSettings  `json:"transactions,omitempty" toml:"transactions,omitempty"`
+	Notification  NotificationSettings `json:"notification,omitempty" toml:"notification,omitempty"`
 
 	BusinessProfile BusinessProfile `json:"-" toml:"-"`
+}
+
+type NotificationSettings struct {
+	Enabled            bool     `json:"enabled" toml:"enabled"`
+	ChatIDs            []string `json:"chat_ids,omitempty" toml:"chat_ids,omitempty"`
+	OpenIDs            []string `json:"open_ids,omitempty" toml:"open_ids,omitempty"`
+	NotifyOnDeadLetter bool     `json:"notify_on_dead_letter,omitempty" toml:"notify_on_dead_letter,omitempty"`
+}
+
+type NotificationConfig struct {
+	Enabled            bool
+	ChatIDs            []string
+	OpenIDs            []string
+	NotifyOnDeadLetter bool
 }
 
 type TransactionSettings struct {
@@ -115,6 +130,7 @@ type Config struct {
 	Seal                SealSettings
 	Model               ModelSettings
 	Transactions        TransactionConfig
+	Notification        NotificationConfig
 	Business            *BusinessProfile
 	ReceiptPollInterval time.Duration
 	ReceiptPollStartup  string
@@ -248,12 +264,21 @@ func LoadFile(path string) (Config, error) {
 			PollInterval: txPoll,
 			Debounce:     txDebounce,
 		},
+		Notification: NotificationConfig{
+			Enabled:            document.Notification.Enabled,
+			ChatIDs:            cleanStringSlice(document.Notification.ChatIDs),
+			OpenIDs:            cleanStringSlice(document.Notification.OpenIDs),
+			NotifyOnDeadLetter: document.Notification.NotifyOnDeadLetter,
+		},
 		Business:            &document.BusinessProfile,
 		ReceiptPollInterval: poll,
 		ReceiptPollStartup:  fallback(document.Recognition.PollStartup, "baseline"),
 	}
 	if (document.Feishu.AppID == "") != (document.Feishu.AppSecret == "") {
 		return Config{}, fmt.Errorf("Feishu app_id and app_secret must be set together")
+	}
+	if document.Notification.Enabled && (document.Feishu.AppID == "" || document.Feishu.AppSecret == "") {
+		return Config{}, fmt.Errorf("feishu app_id and app_secret are required when notification.enabled is true")
 	}
 	contextFields, resultFields := cfg.Business.Review.ContextFields, cfg.Business.Review.ResultFields
 	for semantic := range resultFields {
@@ -413,3 +438,15 @@ func parseLogLevel(input string) (slog.Level, error) {
 		return 0, fmt.Errorf("runtime.log_level must be debug, info, warn or error")
 	}
 }
+
+func cleanStringSlice(items []string) []string {
+	var cleaned []string
+	for _, it := range items {
+		t := strings.TrimSpace(it)
+		if t != "" {
+			cleaned = append(cleaned, t)
+		}
+	}
+	return cleaned
+}
+

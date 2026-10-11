@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -132,6 +133,11 @@ func TestFailedRecognitionStopsAtMaxAttempts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	notified := make(chan app.DeadLetterNotice, 1)
+	p.WithDeadLetterNotifier(app.DeadLetterNotifierFunc(func(_ context.Context, n app.DeadLetterNotice) error {
+		notified <- n
+		return nil
+	}), "https://feishu.cn")
 	p.WithCheckpoints(store, "scope")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -166,6 +172,16 @@ func TestFailedRecognitionStopsAtMaxAttempts(t *testing.T) {
 	}
 	if len(pending) != 0 {
 		t.Fatalf("failed task must not be returned in pending tasks, got %d", len(pending))
+	}
+
+	// Verify DeadLetterNotifier was called
+	select {
+	case notice := <-notified:
+		if notice.RecordID != "rec_fail" || notice.Attempts != 3 || !strings.Contains(notice.RecordURL, "rec_fail") {
+			t.Fatalf("unexpected dead letter notice: %+v", notice)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected dead letter notice was not received")
 	}
 }
 

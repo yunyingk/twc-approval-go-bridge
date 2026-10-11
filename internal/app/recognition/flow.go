@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/audit"
@@ -52,6 +53,8 @@ type Processor struct {
 	checkpoints Checkpoints
 	scope       string
 	jobs        chan job
+	notifier    DeadLetterNotifier
+	feishuHost  string
 }
 
 func New(config Config, reader AttachmentReader, recognizer invoice.Recognizer, handler ResultHandler, logger *slog.Logger) (*Processor, error) {
@@ -245,6 +248,28 @@ func (p *Processor) Run(ctx context.Context) {
 									p.logger.ErrorContext(workCtx, "receipt recognition exceeded max attempts, marked as dead letter to stop retries",
 										"record_id", job.recordID, "file_token", tokens[i], "file_name", attachment.Name,
 										"attempts", checkpoint.Attempts, "error", recognizeErr)
+									if p.notifier != nil {
+										var recordURL string
+										if p.feishuHost != "" && p.config.BaseToken != "" && p.config.TableID != "" {
+											recordURL = fmt.Sprintf("%s/base/%s?table=%s&record=%s", strings.TrimRight(p.feishuHost, "/"), p.config.BaseToken, p.config.TableID, job.recordID)
+										}
+										notice := DeadLetterNotice{
+											RecordID:  job.recordID,
+											RecordURL: recordURL,
+											FileName:  attachment.Name,
+											FileToken: tokens[i],
+											Attempts:  checkpoint.Attempts,
+											LastError: recognizeErr.Error(),
+											FailedAt:  time.Now(),
+										}
+										go func(n DeadLetterNotice) {
+											notifyCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+											defer cancel()
+											if notifyErr := p.notifier.NotifyDeadLetter(notifyCtx, n); notifyErr != nil {
+												p.logger.WarnContext(notifyCtx, "send dead letter notification failed", "record_id", n.RecordID, "error", notifyErr)
+											}
+										}(notice)
+									}
 								}
 								_ = p.checkpoints.SaveRecognition(workCtx, checkpoint)
 							}
