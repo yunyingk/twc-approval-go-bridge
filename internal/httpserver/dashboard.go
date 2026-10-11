@@ -396,6 +396,146 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
     .code-link { color: var(--accent); text-decoration: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .code-link:hover { text-decoration: underline; }
     .sub-row { display: flex; justify-content: space-between; padding: 0.35rem 0; font-size: 0.8125rem; border-top: 1px dashed rgba(255,255,255,0.05); }
+
+    /* 顶部导航 Tab */
+    .nav-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.75rem;
+      overflow-x: auto;
+    }
+    .nav-tab {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px solid transparent;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .nav-tab:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .nav-tab.active {
+      color: #fff;
+      background: rgba(56, 189, 248, 0.15);
+      border-color: rgba(56, 189, 248, 0.4);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
+    }
+    .tab-badge {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-muted);
+    }
+    .nav-tab.active .tab-badge {
+      background: rgba(56, 189, 248, 0.3);
+      color: #38bdf8;
+    }
+    .tab-badge.live {
+      background: rgba(16, 185, 129, 0.2);
+      color: #10b981;
+    }
+    .quick-banner {
+      margin-top: 1.25rem;
+      padding: 1rem 1.25rem;
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px dashed var(--border);
+      border-radius: 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .quick-banner .text { font-size: 0.875rem; color: var(--text-muted); }
+    .quick-banner .actions { display: flex; gap: 0.5rem; }
+    .btn-action {
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 0.35rem 0.75rem;
+      border-radius: 0.375rem;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+    .btn-action:hover {
+      background: var(--accent);
+      color: #0f172a;
+    }
+    .console-box {
+      background: #090d16;
+      border: 1px solid var(--border);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.8125rem;
+      height: 520px;
+      overflow-y: auto;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .console-line {
+      padding: 0.15rem 0;
+      display: flex;
+      gap: 0.6rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    }
+    .console-time { color: #64748b; flex-shrink: 0; font-size: 0.75rem; }
+    .console-level { font-weight: 600; flex-shrink: 0; padding: 0 0.35rem; border-radius: 3px; font-size: 0.7rem; line-height: 1.5; height: fit-content; }
+    .level-info { color: #38bdf8; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); }
+    .level-warn { color: #f59e0b; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); }
+    .level-error { color: #ef4444; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); }
+    .level-debug { color: #94a3b8; background: rgba(148, 163, 184, 0.15); border: 1px solid rgba(148, 163, 184, 0.3); }
+    .console-msg { color: #f1f5f9; flex-grow: 1; }
+    .console-attrs { color: #94a3b8; font-size: 0.75rem; margin-left: 0.25rem; }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .btn-group { display: flex; gap: 0.25rem; }
+    .btn-filter {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 0.3rem 0.65rem;
+      border-radius: 0.375rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-filter:hover { color: #fff; background: rgba(255,255,255,0.1); }
+    .btn-filter.active { background: var(--accent); color: #0f172a; border-color: var(--accent); }
+    .search-input {
+      background: rgba(15,23,42,0.8);
+      border: 1px solid var(--border);
+      color: #f8fafc;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.8125rem;
+      outline: none;
+    }
+    .search-input:focus { border-color: var(--accent); }
+
     footer {
       margin-top: 2rem;
       text-align: center;
@@ -425,8 +565,25 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
       </div>
     </header>
 
-    <div class="grid">
-      <!-- 飞书长连接卡片 -->
+    <!-- 顶部导航 Tab -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" id="tab-btn-overview" onclick="switchTab('overview')">
+        <span>📊</span> 监控概览
+      </button>
+      <button class="nav-tab" id="tab-btn-audit" onclick="switchTab('audit')">
+        <span>📜</span> 业务单据审计流水
+        <span class="tab-badge" id="audit-badge">0 条</span>
+      </button>
+      <button class="nav-tab" id="tab-btn-system-logs" onclick="switchTab('system-logs')">
+        <span>💻</span> 服务运行终端日志
+        <span class="tab-badge live" id="logs-badge">● 实时</span>
+      </button>
+    </nav>
+
+    <!-- Tab 1: 监控概览 -->
+    <div id="view-overview" class="tab-pane">
+      <div class="grid">
+        <!-- 飞书长连接卡片 -->
       <div class="card">
         <div class="card-header">
           <div class="card-title"><span>📡</span> 飞书 WebSocket 长连接</div>
@@ -534,39 +691,103 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
           <span class="val" style="color: var(--success);">已启用 (只读比对)</span>
         </div>
       </div>
+      </div>
+      <!-- 底部快速排查引导 -->
+      <div class="quick-banner">
+        <div class="text">
+          💡 <strong>快速切换：</strong>需要查看单据生命周期演进轨迹或后台终端日志输出？
+        </div>
+        <div class="actions">
+          <button class="btn-action" onclick="switchTab('audit')">📜 查看业务单据审计流水 →</button>
+          <button class="btn-action" onclick="switchTab('system-logs')">💻 打开服务运行实时日志 →</button>
+        </div>
+      </div>
     </div>
 
-    <!-- 业务运行时操作审计流水 -->
-    <div class="card" style="margin-top: 1.5rem;">
-      <div class="card-header">
-        <div class="card-title"><span>📜</span> 业务运行时操作审计与单据生命周期追溯</div>
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
-          <input type="text" id="audit-search-id" placeholder="输入记录ID (如 reczz28...)" style="background: rgba(15,23,42,0.8); border: 1px solid var(--border); color: #f8fafc; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.85rem; outline: none; width: 220px;" onkeypress="if(event.key==='Enter') queryTimeline();">
-          <button onclick="queryTimeline()" style="background: var(--accent); color: #0f172a; border: none; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer;">查时间线</button>
+    <!-- Tab 2: 业务单据审计流水 -->
+    <div id="view-audit" class="tab-pane" style="display: none;">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span>📜</span> 业务运行时操作审计与单据生命周期追溯</div>
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <select id="audit-filter-type" class="search-input" onchange="filterAuditTable()" style="cursor: pointer;">
+              <option value="">全部事件分类</option>
+              <option value="notify_card_sent">📱 推送卡片</option>
+              <option value="file_uploaded">📎 文件上传</option>
+              <option value="ocr_initiated">🔍 发起OCR</option>
+              <option value="ocr_completed">✅ OCR完成</option>
+              <option value="ocr_failed">❌ OCR失败</option>
+              <option value="review_submitted">⚖️ 发起审核</option>
+              <option value="review_completed">🎯 机审完成</option>
+              <option value="review_writeback">📝 结果回写</option>
+              <option value="dead_letter_alert">🔴 死信告警</option>
+            </select>
+            <input type="text" id="audit-search-id" class="search-input" placeholder="输入记录ID (如 reczz28...)" style="width: 220px;" onkeypress="if(event.key==='Enter') queryTimeline();">
+            <button onclick="queryTimeline()" class="btn-action" style="background: var(--accent); color: #0f172a; border-color: var(--accent);">查时间线</button>
+            <button onclick="updateAudits()" class="toolbar-btn">刷新</button>
+          </div>
+        </div>
+        <div id="timeline-box" style="display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(15,23,42,0.8); border-radius: 8px; border: 1px solid rgba(56,189,248,0.3);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <span style="font-weight: 600; color: var(--accent);" id="timeline-title">单据全生命周期时间线</span>
+            <button onclick="closeTimeline()" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer;">✕ 关闭</button>
+          </div>
+          <div id="timeline-content" style="font-family: monospace; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap;"></div>
+        </div>
+        <div style="overflow-x: auto;">
+          <table style="width: 100%%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--border); color: var(--text-muted);">
+                <th style="padding: 0.6rem 0.5rem;">发生时间</th>
+                <th style="padding: 0.6rem 0.5rem;">事件分类</th>
+                <th style="padding: 0.6rem 0.5rem;">单据记录ID</th>
+                <th style="padding: 0.6rem 0.5rem;">人员</th>
+                <th style="padding: 0.6rem 0.5rem;">动作与元数据</th>
+              </tr>
+            </thead>
+            <tbody id="audit-table-body">
+              <tr><td colspan="5" style="padding: 1.5rem; text-align: center; color: var(--text-muted);">加载中...</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
-      <div id="timeline-box" style="display: none; margin-bottom: 1rem; padding: 1rem; background: rgba(15,23,42,0.8); border-radius: 8px; border: 1px solid rgba(56,189,248,0.3);">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-          <span style="font-weight: 600; color: var(--accent);" id="timeline-title">单据全生命周期时间线</span>
-          <button onclick="closeTimeline()" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer;">✕ 关闭</button>
+    </div>
+
+    <!-- Tab 3: 服务运行实时日志 -->
+    <div id="view-system-logs" class="tab-pane" style="display: none;">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span>💻</span> 服务后台实时运行日志 (Terminal Console)</div>
+          <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <span class="tab-badge live" id="log-polling-status">● 实时监听中</span>
+            <span class="val code" id="log-count-display">0 条</span>
+          </div>
         </div>
-        <div id="timeline-content" style="font-family: monospace; font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap;"></div>
-      </div>
-      <div style="overflow-x: auto;">
-        <table style="width: 100%%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
-          <thead>
-            <tr style="border-bottom: 1px solid var(--border); color: var(--text-muted);">
-              <th style="padding: 0.5rem;">发生时间</th>
-              <th style="padding: 0.5rem;">事件分类</th>
-              <th style="padding: 0.5rem;">单据记录ID</th>
-              <th style="padding: 0.5rem;">人员</th>
-              <th style="padding: 0.5rem;">动作与元数据</th>
-            </tr>
-          </thead>
-          <tbody id="audit-table-body">
-            <tr><td colspan="5" style="padding: 1rem; text-align: center; color: var(--text-muted);">加载中...</td></tr>
-          </tbody>
-        </table>
+
+        <div class="toolbar">
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <div class="btn-group">
+              <button class="btn-filter active" id="filter-btn-all" onclick="setLogLevelFilter('ALL')">全部</button>
+              <button class="btn-filter" id="filter-btn-info" onclick="setLogLevelFilter('INFO')">INFO</button>
+              <button class="btn-filter" id="filter-btn-warn" onclick="setLogLevelFilter('WARN')">WARN</button>
+              <button class="btn-filter" id="filter-btn-error" onclick="setLogLevelFilter('ERROR')">ERROR</button>
+              <button class="btn-filter" id="filter-btn-debug" onclick="setLogLevelFilter('DEBUG')">DEBUG</button>
+            </div>
+            <input type="text" id="log-search-input" class="search-input" placeholder="🔍 搜索关键字..." oninput="filterLogs()" style="width: 200px;">
+          </div>
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <label style="display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8125rem; color: var(--text-muted); cursor: pointer; user-select: none;">
+              <input type="checkbox" id="auto-scroll-toggle" checked> 自动滚动
+            </label>
+            <button onclick="toggleLogPause()" id="pause-logs-btn" class="toolbar-btn">暂停</button>
+            <button onclick="clearConsole()" class="toolbar-btn">清屏</button>
+            <button onclick="refreshLogsFull()" class="toolbar-btn">重新载入</button>
+          </div>
+        </div>
+
+        <div class="console-box" id="console-output">
+          <div style="color: #64748b; text-align: center; padding: 2rem;">正在连接日志流...</div>
+        </div>
       </div>
     </div>
 
@@ -658,44 +879,103 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
       }
     }
 
+    let activeTab = 'overview';
+    let cachedAudits = [];
+    let systemLogs = [];
+    let lastLogId = 0;
+    let currentLogLevel = 'ALL';
+    let logSearchText = '';
+    let autoScroll = true;
+    let logsPaused = false;
+
+    function switchTab(tabId) {
+      if (tabId === 'logs') tabId = 'system-logs';
+      activeTab = tabId;
+      document.querySelectorAll('.tab-pane').forEach(el => el.style.display = 'none');
+      document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+
+      const targetPane = document.getElementById('view-' + tabId);
+      const targetBtn = document.getElementById('tab-btn-' + tabId);
+      if (targetPane) targetPane.style.display = 'block';
+      if (targetBtn) targetBtn.classList.add('active');
+
+      try {
+        history.replaceState(null, '', '#' + tabId);
+      } catch (e) {}
+
+      if (tabId === 'system-logs') {
+        renderConsole();
+        pollLogs();
+      } else if (tabId === 'audit') {
+        updateAudits();
+      }
+    }
+
+    function initTabFromHash() {
+      let hash = window.location.hash.replace('#', '').trim();
+      if (hash === 'logs') hash = 'system-logs';
+      if (['overview', 'audit', 'system-logs'].includes(hash)) {
+        switchTab(hash);
+      } else {
+        switchTab('overview');
+      }
+    }
+    window.addEventListener('hashchange', initTabFromHash);
+
     async function updateAudits() {
       try {
-        const res = await fetch('/api/audit?limit=10');
+        const res = await fetch('/api/audit?limit=50');
         if (!res.ok) return;
         const data = await res.json();
-        const tbody = document.getElementById('audit-table-body');
-        if (!data.entries || data.entries.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" style="padding: 1rem; text-align: center; color: var(--text-muted);">暂无业务操作日志</td></tr>';
-          return;
-        }
-        let html = '';
-        for (const e of data.entries) {
-          const t = new Date(e.timestamp).toLocaleString('zh-CN', { hour12: false });
-          let badge = '🔹 ' + e.type;
-          if (e.type === 'notify_card_sent') badge = '<span style="color: #38bdf8;">📱 推送卡片</span>';
-          else if (e.type === 'file_uploaded') badge = '<span style="color: #a855f7;">📎 文件上传</span>';
-          else if (e.type === 'ocr_initiated') badge = '<span style="color: #f59e0b;">🔍 发起OCR</span>';
-          else if (e.type === 'ocr_completed') badge = '<span style="color: #10b981;">✅ OCR完成</span>';
-          else if (e.type === 'ocr_failed') badge = '<span style="color: #ef4444;">❌ OCR失败</span>';
-          else if (e.type === 'review_submitted') badge = '<span style="color: #f97316;">⚖️ 发起审核</span>';
-          else if (e.type === 'review_completed') badge = '<span style="color: #10b981;">🎯 机审完成</span>';
-          else if (e.type === 'review_writeback') badge = '<span style="color: #38bdf8;">📝 结果回写</span>';
-          
-          let actor = e.operator_name || e.operator || '-';
-          let details = '';
-          if (e.details && Object.keys(e.details).length > 0) {
-            details = ' <span style="color: var(--text-muted); font-size: 0.8rem;">(' + Object.entries(e.details).map(([k,v]) => k + ': ' + v).join(', ') + ')</span>';
-          }
-          html += '<tr style="border-bottom: 1px solid rgba(255,255,255,0.04);">' +
-            '<td style="padding: 0.4rem 0.5rem; color: var(--text-muted);">' + t + '</td>' +
-            '<td style="padding: 0.4rem 0.5rem;">' + badge + '</td>' +
-            '<td style="padding: 0.4rem 0.5rem;"><a href="javascript:void(0)" onclick="quickQuery(\'' + e.record_id + '\')" style="color: var(--accent); text-decoration: none;" class="code">' + e.record_id + '</a></td>' +
-            '<td style="padding: 0.4rem 0.5rem;">' + actor + '</td>' +
-            '<td style="padding: 0.4rem 0.5rem;">' + e.action + details + '</td>' +
-            '</tr>';
-        }
-        tbody.innerHTML = html;
+        cachedAudits = data.entries || [];
+        document.getElementById('audit-badge').textContent = (data.total || cachedAudits.length) + ' 条';
+        renderAuditRows();
       } catch (err) {}
+    }
+
+    function filterAuditTable() {
+      renderAuditRows();
+    }
+
+    function renderAuditRows() {
+      const tbody = document.getElementById('audit-table-body');
+      if (!tbody) return;
+      const typeFilter = document.getElementById('audit-filter-type').value;
+      const filtered = cachedAudits.filter(e => !typeFilter || e.type === typeFilter);
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="padding: 1.5rem; text-align: center; color: var(--text-muted);">暂无匹配业务操作日志</td></tr>';
+        return;
+      }
+
+      let html = '';
+      for (const e of filtered) {
+        const t = new Date(e.timestamp).toLocaleString('zh-CN', { hour12: false });
+        let badge = '🔹 ' + e.type;
+        if (e.type === 'notify_card_sent') badge = '<span style="color: #38bdf8;">📱 推送卡片</span>';
+        else if (e.type === 'file_uploaded') badge = '<span style="color: #a855f7;">📎 文件上传</span>';
+        else if (e.type === 'ocr_initiated') badge = '<span style="color: #f59e0b;">🔍 发起OCR</span>';
+        else if (e.type === 'ocr_completed') badge = '<span style="color: #10b981;">✅ OCR完成</span>';
+        else if (e.type === 'ocr_failed') badge = '<span style="color: #ef4444;">❌ OCR失败</span>';
+        else if (e.type === 'review_submitted') badge = '<span style="color: #f97316;">⚖️ 发起审核</span>';
+        else if (e.type === 'review_completed') badge = '<span style="color: #10b981;">🎯 机审完成</span>';
+        else if (e.type === 'review_writeback') badge = '<span style="color: #38bdf8;">📝 结果回写</span>';
+        else if (e.type === 'dead_letter_alert') badge = '<span style="color: #ef4444; font-weight: bold;">🔴 死信告警</span>';
+
+        let actor = e.operator_name || e.operator || '-';
+        let details = '';
+        if (e.details && Object.keys(e.details).length > 0) {
+          details = ' <span style="color: var(--text-muted); font-size: 0.8rem;">(' + Object.entries(e.details).map(([k,v]) => k + ': ' + v).join(', ') + ')</span>';
+        }
+        html += '<tr style="border-bottom: 1px solid rgba(255,255,255,0.04);">' +
+          '<td style="padding: 0.45rem 0.5rem; color: var(--text-muted);">' + t + '</td>' +
+          '<td style="padding: 0.45rem 0.5rem;">' + badge + '</td>' +
+          '<td style="padding: 0.45rem 0.5rem;"><a href="javascript:void(0)" onclick="quickQuery(\'' + e.record_id + '\')" style="color: var(--accent); text-decoration: none;" class="code">' + e.record_id + '</a></td>' +
+          '<td style="padding: 0.45rem 0.5rem;">' + actor + '</td>' +
+          '<td style="padding: 0.45rem 0.5rem;">' + e.action + details + '</td>' +
+          '</tr>';
+      }
+      tbody.innerHTML = html;
     }
 
     async function queryTimeline() {
@@ -736,6 +1016,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
     }
 
     function quickQuery(id) {
+      switchTab('audit');
       document.getElementById('audit-search-id').value = id;
       queryTimeline();
     }
@@ -744,9 +1025,150 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
       document.getElementById('timeline-box').style.display = 'none';
     }
 
+    // ================= System Terminal Logs =================
+    async function pollLogs() {
+      if (logsPaused) return;
+      try {
+        const url = lastLogId > 0 
+          ? '/api/system-logs?since_id=' + lastLogId 
+          : '/api/system-logs?limit=200';
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.logs && data.logs.length > 0) {
+          if (lastLogId === 0) {
+            systemLogs = data.logs;
+          } else {
+            systemLogs = systemLogs.concat(data.logs);
+            if (systemLogs.length > 1000) {
+              systemLogs = systemLogs.slice(systemLogs.length - 1000);
+            }
+          }
+          lastLogId = data.last_id || (systemLogs[systemLogs.length - 1] ? systemLogs[systemLogs.length - 1].id : 0);
+          renderConsole();
+        }
+      } catch (e) {}
+    }
+
+    function renderConsole() {
+      const box = document.getElementById('console-output');
+      if (!box) return;
+
+      const filtered = systemLogs.filter(e => {
+        if (currentLogLevel !== 'ALL' && e.level !== currentLogLevel) {
+          return false;
+        }
+        if (logSearchText) {
+          const raw = (e.message + ' ' + JSON.stringify(e.attrs || {})).toLowerCase();
+          if (!raw.includes(logSearchText.toLowerCase())) return false;
+        }
+        return true;
+      });
+
+      document.getElementById('log-count-display').textContent = filtered.length + ' / ' + systemLogs.length + ' 条';
+
+      if (filtered.length === 0) {
+        box.innerHTML = '<div style="color: #64748b; text-align: center; padding: 2rem;">' + (systemLogs.length === 0 ? '暂无实时运行日志' : '未匹配到符合条件的日志行') + '</div>';
+        return;
+      }
+
+      let html = '';
+      for (const e of filtered) {
+        const t = new Date(e.time).toLocaleTimeString('zh-CN', { hour12: false }) + '.' + String(new Date(e.time).getMilliseconds()).padStart(3, '0');
+        let lvlClass = 'level-info';
+        if (e.level === 'WARN') lvlClass = 'level-warn';
+        else if (e.level === 'ERROR') lvlClass = 'level-error';
+        else if (e.level === 'DEBUG') lvlClass = 'level-debug';
+
+        let attrsStr = '';
+        if (e.attrs && Object.keys(e.attrs).length > 0) {
+          attrsStr = '<span class="console-attrs">' + Object.entries(e.attrs).map(([k, v]) => k + '=' + (typeof v === 'string' ? '"' + v + '"' : JSON.stringify(v))).join(' ') + '</span>';
+        }
+
+        html += '<div class="console-line">' +
+          '<span class="console-time">' + t + '</span>' +
+          '<span class="console-level ' + lvlClass + '">' + e.level + '</span>' +
+          '<span class="console-msg">' + escapeHtml(e.message) + ' ' + attrsStr + '</span>' +
+          '</div>';
+      }
+      box.innerHTML = html;
+
+      if (autoScroll) {
+        box.scrollTop = box.scrollHeight;
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function setLogLevelFilter(lvl) {
+      currentLogLevel = lvl;
+      document.querySelectorAll('.btn-group .btn-filter').forEach(b => b.classList.remove('active'));
+      const activeBtn = document.getElementById('filter-btn-' + lvl.toLowerCase());
+      if (activeBtn) activeBtn.classList.add('active');
+      renderConsole();
+    }
+
+    function filterLogs() {
+      logSearchText = document.getElementById('log-search-input').value.trim();
+      renderConsole();
+    }
+
+    function toggleLogPause() {
+      logsPaused = !logsPaused;
+      const btn = document.getElementById('pause-logs-btn');
+      const status = document.getElementById('log-polling-status');
+      if (logsPaused) {
+        btn.textContent = '继续';
+        btn.style.color = '#38bdf8';
+        status.textContent = '⏸ 已暂停';
+        status.style.color = '#f59e0b';
+      } else {
+        btn.textContent = '暂停';
+        btn.style.color = '#f1f5f9';
+        status.textContent = '● 实时监听中';
+        status.style.color = '#10b981';
+        pollLogs();
+      }
+    }
+
+    function clearConsole() {
+      systemLogs = [];
+      renderConsole();
+    }
+
+    function refreshLogsFull() {
+      lastLogId = 0;
+      systemLogs = [];
+      pollLogs();
+    }
+
+    document.getElementById('auto-scroll-toggle').addEventListener('change', (e) => {
+      autoScroll = e.target.checked;
+      if (autoScroll) {
+        const box = document.getElementById('console-output');
+        if (box) box.scrollTop = box.scrollHeight;
+      }
+    });
+
+    initTabFromHash();
+    updateStatus();
     updateAudits();
+    pollLogs();
+
     setInterval(updateStatus, 3000);
-    setInterval(updateAudits, 3000);
+    setInterval(updateAudits, 5000);
+    setInterval(() => {
+      if (activeTab === 'system-logs') {
+        pollLogs();
+      }
+    }, 2000);
   </script>
 </body>
 </html>`,

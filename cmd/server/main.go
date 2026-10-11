@@ -60,7 +60,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.Runtime.LogLevel}))
+	logBuffer := httpserver.NewLogBuffer(1000)
+	baseHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.Runtime.LogLevel})
+	logger := slog.New(httpserver.NewBufferedHandler(baseHandler, logBuffer))
 
 	if _, err := audit.InitFileStore(cfg.Runtime.StateDir); err != nil {
 		logger.Warn("initialize audit store failed, audit logging disabled", "error", err)
@@ -74,7 +76,7 @@ func main() {
 	var cmdErr error
 	switch cmd {
 	case "server", "start", "run":
-		cmdErr = runServer(ctx, cfg, logger, stop)
+		cmdErr = runServer(ctx, cfg, logger, logBuffer, stop)
 	case "doctor":
 		jsonOutput := len(os.Args) > 2 && os.Args[2] == "-json"
 		cmdErr = runDoctor(ctx, cfg, jsonOutput, os.Stdout)
@@ -225,7 +227,7 @@ func printUsage(w io.Writer) {
 `)
 }
 
-func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop context.CancelFunc) error {
+func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, logBuffer *httpserver.LogBuffer, stop context.CancelFunc) error {
 	var err error
 	if cfg.Business != nil {
 		details := cfg.Business.Tables.ReimbursementDetails
@@ -239,6 +241,9 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, stop
 			"change_debounce", cfg.Business.Review.ChangeDebounce)
 	}
 	server := httpserver.New(cfg.Runtime.HTTPAddr, logger, version.Version)
+	if logBuffer != nil {
+		server.SetLogBuffer(logBuffer)
+	}
 	if cfg.Runtime.DashboardPassword != "" {
 		server.SetPassword(cfg.Runtime.DashboardPassword)
 	}

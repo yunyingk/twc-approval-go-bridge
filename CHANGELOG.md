@@ -31,12 +31,15 @@
 ## [Unreleased]
 
 ### 新增 (Added)
+- **控制台顶栏选项卡与多视图路由 (`internal/httpserver/dashboard.go`)**：Web 控制台新增直观易用的顶级导航栏，支持无缝切换「📊 监控概览 (`#overview`)」、「📜 业务审计流水 (`#audit`)」与「💻 系统运行日志 (`#system-logs`)」；深度支持浏览器 URL Hash 锚点，刷新或直达链接均可精准定位对应页面。
+- **实时系统运行日志控制台与接口 (`internal/httpserver/logbuffer.go`, `internal/httpserver/server.go`)**：后端实现线程安全的环形内存日志缓冲器（`LogBuffer` & `BufferedHandler`，保留最新 1,000 条 `slog` 记录），并暴露鉴权接口 `GET /api/system-logs`；前端提供极客风全黑终端界面，支持全级别过滤（ALL/DEBUG/INFO/WARN/ERROR）、关键词搜索、自动滚动、暂停与清空，并支持一键展开结构化属性。
 - **飞书机器人通知通道 (`internal/feishu/notify`)**：新建通用飞书机器人通知模块，支持通过企业自建应用机器人（ebot）向指定群聊（`chat_ids`）与个人管理员（`open_ids`）广播交互式富文本卡片消息。
 - **小票识别死信自动告警卡片**：小票附件连续失败 3 次触发死信止血保护时，由后台自动构建警示卡片推送到配置的群聊/管理员，卡片包含单据直达链接跳转按钮、小票文件名、Token、重试次数、错误详情与终端排查引导，并具备 1 小时内相同文件告警防抖去重机制。
 - **配置支持与示例同步 (`configs/config.example.toml` & `internal/config`)**：在统一 TOML 配置文件中增加 `[notification]` 配置区块（`enabled`, `chat_ids`, `open_ids`, `notify_on_dead_letter`），实现全量严格字段解析与合法性校验。
 - **通知连通性诊断命令 (`test-notify`)**：新增 CLI 诊断子命令 `./bin/twc-approval-go-bridge test-notify [-chat <id>] [-open-id <id>]`，便于管理员即时测试飞书机器人的群聊/单聊卡片投递权限。
 
 ### 变更 (Changed)
+- **全局日志接入缓冲管道 (`cmd/server/main.go`)**：服务启动时通过 `BufferedHandler` 透明复制标准输出日志到内存环形缓冲区，供 Web 端随时拉取，零性能损耗且不污染外部日志管道。
 - **识别流程对接死信告警 (`internal/app/recognition`)**：在小票识别流程达到最大尝试次数进入死信状态时触发 `DeadLetterNotifier`，在常驻后台（`server`）中自动联动通知服务。
 
 ### 修复 (Fixed)

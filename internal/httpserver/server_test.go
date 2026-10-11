@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"bytes"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -189,4 +190,50 @@ func TestAuditEndpoints(t *testing.T) {
 		t.Fatalf("timeline status = %d, want 200", res3.Code)
 	}
 }
+
+func TestSystemLogsAPI(t *testing.T) {
+	buf := NewLogBuffer(100)
+	base := slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: slog.LevelDebug})
+	logger := slog.New(NewBufferedHandler(base, buf))
+
+	logger.Info("server starting", "port", 8080)
+	logger.Warn("disk space warning", "free_mb", 500)
+	logger.Error("connection timeout", "target", "db")
+
+	s := New(":0", slog.Default(), "0.3.2")
+	s.SetLogBuffer(buf)
+
+	// 1. Unauthenticated request when password is set -> 401
+	s.SetPassword("supersecret")
+	reqAuth := httptest.NewRequest(http.MethodGet, "/api/system-logs", nil)
+	resAuth := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(resAuth, reqAuth)
+	if resAuth.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status = %d, want 401", resAuth.Code)
+	}
+
+	// 2. Clear password, query all logs -> 200 with 3 entries
+	s.SetPassword("")
+	req := httptest.NewRequest(http.MethodGet, "/api/system-logs", nil)
+	res := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("system-logs status = %d, want 200", res.Code)
+	}
+	body := res.Body.String()
+	if !strings.Contains(body, "server starting") || !strings.Contains(body, "connection timeout") {
+		t.Fatalf("expected log messages in response, got: %s", body)
+	}
+
+	// 3. Filter by level=ERROR -> only connection timeout
+	reqErr := httptest.NewRequest(http.MethodGet, "/api/system-logs?level=ERROR", nil)
+	resErr := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(resErr, reqErr)
+	bodyErr := resErr.Body.String()
+	if !strings.Contains(bodyErr, "connection timeout") || strings.Contains(bodyErr, "server starting") {
+		t.Fatalf("expected only ERROR logs, got: %s", bodyErr)
+	}
+}
+
 

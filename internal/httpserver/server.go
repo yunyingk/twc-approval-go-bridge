@@ -27,6 +27,7 @@ type Server struct {
 	startTime      time.Time
 	statusProvider StatusProvider
 	password       string
+	logBuffer      *LogBuffer
 }
 
 // New builds an HTTP server with health and version endpoints.
@@ -44,6 +45,7 @@ func New(addr string, logger *slog.Logger, version string) *Server {
 	mux.HandleFunc("GET /api/status", s.statusAPI)
 	mux.HandleFunc("GET /api/audit", s.auditAPI)
 	mux.HandleFunc("GET /api/audit/timeline", s.auditTimelineAPI)
+	mux.HandleFunc("GET /api/system-logs", s.systemLogsAPI)
 	mux.HandleFunc("POST /login", s.handleLogin)
 	mux.HandleFunc("GET /logout", s.handleLogout)
 	mux.HandleFunc("/", s.renderDashboard)
@@ -59,6 +61,11 @@ func New(addr string, logger *slog.Logger, version string) *Server {
 // SetPassword configures password protection for the dashboard and status API.
 func (s *Server) SetPassword(pwd string) {
 	s.password = pwd
+}
+
+// SetLogBuffer attaches a circular log buffer for live system logs inspection.
+func (s *Server) SetLogBuffer(b *LogBuffer) {
+	s.logBuffer = b
 }
 
 func (s *Server) tokenValue() string {
@@ -241,6 +248,30 @@ func (s *Server) auditTimelineAPI(w http.ResponseWriter, r *http.Request) {
 		"record_id": recordID,
 		"count":     len(timeline),
 		"timeline":  timeline,
+	})
+}
+
+func (s *Server) systemLogsAPI(w http.ResponseWriter, r *http.Request) {
+	if !s.isAuthenticated(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	sinceID, _ := strconv.ParseInt(r.URL.Query().Get("since_id"), 10, 64)
+	level := r.URL.Query().Get("level")
+
+	var entries []SystemLogEntry
+	if s.logBuffer != nil {
+		entries = s.logBuffer.Query(limit, level, sinceID)
+	}
+	var lastID int64
+	if len(entries) > 0 {
+		lastID = entries[len(entries)-1].ID
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"count":   len(entries),
+		"last_id": lastID,
+		"logs":    entries,
 	})
 }
 
