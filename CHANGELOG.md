@@ -33,12 +33,12 @@
 ### 新增 (Added)
 - **SealAI 单据原始链接直达**：向 SealAI Webhook 发起机审时注入单据原始直达链接（`DocumentRequest.DocumentURL` 与单据/明细字段 `source_record_url`，Label 为 `"单据原始链接"`），针对单行个人报销明细自动精准拼接飞书多维表格行记录展开链接（`${host}/base/${baseToken}?table=${tableID}&record=${recordID}`），支持企业专属域名配置与通用域名安全兜底。
 
-
 ### 变更 (Changed)
-- 暂无
+- **配置纯粹性治理**：彻底移除早期草稿遗留的冗余别名配置字段 `enterprise_host`，全系统统一严格收敛至单一主配置项 `[feishu] host`，杜绝二义性。
 
 ### 修复 (Fixed)
 - 暂无
+
 
 ---
 

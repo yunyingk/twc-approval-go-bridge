@@ -55,19 +55,15 @@ type AppCredentials struct {
 
 type FeishuSettings struct {
 	AppCredentials
-	Host           string `json:"host,omitempty" toml:"host,omitempty"`
-	EnterpriseHost string `json:"enterprise_host,omitempty" toml:"enterprise_host,omitempty"`
-	EventType      string `json:"event_type" toml:"event_type"`
-	LogRawEvents   bool   `json:"log_raw_events" toml:"log_raw_events"`
+	Host         string `json:"host,omitempty" toml:"host,omitempty"`
+	EventType    string `json:"event_type" toml:"event_type"`
+	LogRawEvents bool   `json:"log_raw_events" toml:"log_raw_events"`
 }
 
 // NormalizedHost returns the normalized base URL of the Feishu tenant host,
 // ensuring https:// scheme and stripping trailing slashes (e.g. "https://zyt-test.feishu.cn").
 func (s FeishuSettings) NormalizedHost() string {
 	raw := strings.TrimSpace(s.Host)
-	if raw == "" {
-		raw = strings.TrimSpace(s.EnterpriseHost)
-	}
 	if raw == "" {
 		return ""
 	}
