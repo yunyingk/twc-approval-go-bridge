@@ -28,6 +28,8 @@ type Server struct {
 	statusProvider StatusProvider
 	password       string
 	logBuffer      *LogBuffer
+	tokenManager   *TokenManager
+	publicBaseURL  string
 }
 
 // New builds an HTTP server with health and version endpoints.
@@ -68,6 +70,16 @@ func (s *Server) SetLogBuffer(b *LogBuffer) {
 	s.logBuffer = b
 }
 
+// SetTokenManager configures the short-lived magic token manager.
+func (s *Server) SetTokenManager(tm *TokenManager) {
+	s.tokenManager = tm
+}
+
+// SetPublicBaseURL sets the external public ingress base URL.
+func (s *Server) SetPublicBaseURL(url string) {
+	s.publicBaseURL = strings.TrimRight(strings.TrimSpace(url), "/")
+}
+
 func (s *Server) tokenValue() string {
 	if s.password == "" {
 		return ""
@@ -77,29 +89,47 @@ func (s *Server) tokenValue() string {
 }
 
 func (s *Server) isAuthenticated(r *http.Request) bool {
-	if s.password == "" {
+	if s.password == "" && (s.tokenManager == nil || len(s.tokenManager.ActiveTokens()) == 0) {
 		return true
 	}
 	// 1. Check Cookie
 	if cookie, err := r.Cookie("twc_dash_token"); err == nil && cookie != nil {
-		if cookie.Value == s.tokenValue() {
+		if s.password != "" && cookie.Value == s.tokenValue() {
+			return true
+		}
+		if s.tokenManager != nil && s.tokenManager.IsValid(cookie.Value) {
 			return true
 		}
 	}
-	// 2. Check X-Dashboard-Token header
+	// 2. Check query param ?token=
+	if token := r.URL.Query().Get("token"); token != "" {
+		if s.password != "" && (token == s.tokenValue() || token == s.password) {
+			return true
+		}
+		if s.tokenManager != nil && s.tokenManager.IsValid(token) {
+			return true
+		}
+	}
+	// 3. Check X-Dashboard-Token header
 	if token := r.Header.Get("X-Dashboard-Token"); token != "" {
-		if token == s.tokenValue() || token == s.password {
+		if s.password != "" && (token == s.tokenValue() || token == s.password) {
+			return true
+		}
+		if s.tokenManager != nil && s.tokenManager.IsValid(token) {
 			return true
 		}
 	}
-	// 3. Check Basic Auth (兼容工具/脚本)
-	if _, pass, ok := r.BasicAuth(); ok && pass == s.password {
+	// 4. Check Basic Auth (兼容工具/脚本)
+	if _, pass, ok := r.BasicAuth(); ok && s.password != "" && pass == s.password {
 		return true
 	}
-	// 4. Check Bearer token
+	// 5. Check Bearer token
 	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
 		token := strings.TrimPrefix(auth, "Bearer ")
-		if token == s.tokenValue() || token == s.password {
+		if s.password != "" && (token == s.tokenValue() || token == s.password) {
+			return true
+		}
+		if s.tokenManager != nil && s.tokenManager.IsValid(token) {
 			return true
 		}
 	}
@@ -128,6 +158,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie("twc_dash_token"); err == nil && cookie != nil && s.tokenManager != nil {
+		s.tokenManager.Revoke(cookie.Value)
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     "twc_dash_token",
 		Value:    "",

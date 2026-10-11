@@ -26,6 +26,7 @@ import (
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base"
 	baseevents "github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/events"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/base/invoiceledger"
+	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/bot"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/card"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/events"
 	"github.com/yunyingk/twc-approval-go-bridge/internal/feishu/notify"
@@ -163,6 +164,8 @@ func main() {
 		}
 	case "test-notify":
 		cmdErr = runTestNotify(ctx, cfg, os.Args[2:], os.Stdout)
+	case "test-bot-reply":
+		cmdErr = runTestBotReply(ctx, cfg, os.Args[2:], os.Stdout)
 	default:
 		fmt.Fprintf(os.Stderr, "未知子命令: %s\n\n", cmd)
 		printUsage(os.Stderr)
@@ -207,6 +210,7 @@ func printUsage(w io.Writer) {
 运维与诊断:
   doctor [-json]           全面健康检查与权限探测
   test-notify [options]    测试飞书机器人通道连通性 (支持 -chat <id> / -open-id <id>)
+  test-bot-reply [options] 测试飞书机器人响应式对话交互 (支持 -text <msg> / -open-id <id>)
   init-bitable [options]   一键在飞书创建多维表格储备库并自动配置
   check-business-config    校验当前多维表格拓扑与字段契约
   add-admin <base> <user>  为多维表格添加管理员协作者 (full_access)
@@ -247,6 +251,9 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, logB
 	if cfg.Runtime.DashboardPassword != "" {
 		server.SetPassword(cfg.Runtime.DashboardPassword)
 	}
+	tokenManager := httpserver.NewTokenManager(cfg.Runtime.MagicTokenTTL)
+	server.SetTokenManager(tokenManager)
+	server.SetPublicBaseURL(cfg.Runtime.PublicBaseURL)
 	server.Register("POST /seal/callback/mock", seal.MockCallback(logger))
 
 	var reviewService *appreview.Service
@@ -479,20 +486,6 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, logB
 	} else {
 		logger.Info("Feishu long connection disabled", "reason", "credentials not configured")
 	}
-	var listeners []*events.Listener
-	if baseEventSink != nil {
-		eventType := strings.TrimSpace(cfg.Feishu.EventType)
-		if eventType == "" {
-			eventType = events.DefaultEventType
-		}
-		listener, err := events.New(cfg.Feishu.AppID, cfg.Feishu.AppSecret, eventType, baseEventSink, logger)
-		if err != nil {
-			logger.Error("create Feishu listener", "error", err)
-			os.Exit(1)
-		}
-		listeners = append(listeners, listener)
-	}
-
 	startTime := time.Now()
 
 	var (
@@ -560,7 +553,9 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, logB
 		return res
 	}
 
-	server.SetStatusProvider(func() httpserver.Status {
+	var listeners []*events.Listener
+
+	getStatus := func() httpserver.Status {
 		feishuState := "disabled"
 		var feishuConnected, feishuLastEvent string
 		var feishuEvents int64
@@ -609,7 +604,45 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, logB
 			Tables:          tables,
 			Anyreceipt:      getAnyreceiptStatus(),
 		}
-	})
+	}
+	server.SetStatusProvider(getStatus)
+
+	var botHandler *bot.Handler
+	if cfg.FeishuEnabled() {
+		botNotifyClient := notify.NewClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret)
+		botHandler = bot.NewHandler(bot.Config{
+			PublicBaseURL: cfg.Runtime.PublicBaseURL,
+			AdminOpenIDs:  cfg.Notification.AdminOpenIDs,
+			TokenTTL:      cfg.Runtime.MagicTokenTTL,
+		}, botNotifyClient, tokenManager, getStatus, logger)
+		logger.Info("Feishu bot interactive responder enabled",
+			"admin_count", len(cfg.Notification.AdminOpenIDs),
+			"public_url", cfg.Runtime.PublicBaseURL,
+			"token_ttl", cfg.Runtime.MagicTokenTTL.String(),
+		)
+	}
+
+	if cfg.FeishuEnabled() {
+		sinks := make(map[string]events.Sink)
+		if baseEventSink != nil {
+			eventType := strings.TrimSpace(cfg.Feishu.EventType)
+			if eventType == "" {
+				eventType = events.DefaultEventType
+			}
+			sinks[eventType] = baseEventSink
+		}
+		if botHandler != nil {
+			sinks["im.message.receive_v1"] = botHandler.Sink
+		}
+		if len(sinks) > 0 {
+			listener, err := events.NewForEvents(cfg.Feishu.AppID, cfg.Feishu.AppSecret, sinks, logger)
+			if err != nil {
+				logger.Error("create Feishu listener", "error", err)
+				os.Exit(1)
+			}
+			listeners = append(listeners, listener)
+		}
+	}
 
 	if automaticReview != nil {
 		go automaticReview.Run(ctx)

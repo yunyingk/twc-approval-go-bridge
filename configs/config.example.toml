@@ -38,6 +38,7 @@ debounce = "3s"             # 飞书长连接实时变更防抖时间（防范�
 enabled = false             # 是否启用通知通道（需配置 feishu 凭据）
 chat_ids = []               # 告警接收群聊列表（需将机器人拉入群，填入群的 chat_id，如 "oc_xxx"）
 open_ids = []               # 告警接收个人 OpenID 列表（可选，直接私信管理员，如 "ou_xxx"）
+admin_open_ids = []         # 允许通过飞书私信获取管理看板免密授权链接的管理员 OpenID（留空自动复用上方 open_ids）
 notify_on_dead_letter = true # 小票识别连续失败 3 次触发死信时发送卡片告警
 
 # ==========================================
@@ -82,6 +83,8 @@ callback_token = ""
 # ==========================================
 [runtime]
 http_addr = ":8080"
+public_base_url = "https://twc-approval.ying-qing.cn" # 服务公网访问基础地址（用于在飞书中生成管理看板免密跳转链接）
+magic_token_ttl = "2h"                                # 管理看板短授权 Token 默认有效时长（例如 "2h"、"1h"，缺省为 2 小时）
 log_level = "info"
 shutdown_timeout = "10s"
 # 持久化状态目录（存储发票防重 Checkpoint、待办任务与记录绑定关系）

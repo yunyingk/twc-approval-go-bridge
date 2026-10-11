@@ -171,6 +171,32 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
+
+	// 1. Process Magic Token from URL parameter ?token=...
+	if magicToken := strings.TrimSpace(r.URL.Query().Get("token")); magicToken != "" {
+		if s.tokenManager != nil {
+			if entry, remaining, ok := s.tokenManager.Validate(magicToken); ok {
+				maxAge := int(remaining.Seconds())
+				if maxAge <= 0 {
+					maxAge = 7200
+				}
+				http.SetCookie(w, &http.Cookie{
+					Name:     "twc_dash_token",
+					Value:    entry.Token,
+					Path:     "/",
+					HttpOnly: true,
+					SameSite: http.SameSiteLaxMode,
+					MaxAge:   maxAge,
+				})
+				// Redirect to clean root "/" (removes sensitive token from address bar and referrer)
+				http.Redirect(w, r, "/", http.StatusSeeOther)
+				return
+			}
+			s.renderLockScreen(w, r, "授权访问链接已失效或已过期（有效时长 2 小时），请在飞书中私信发送【管理页面】获取新链接")
+			return
+		}
+	}
+
 	if !s.isAuthenticated(r) {
 		s.renderLockScreen(w, r, "")
 		return

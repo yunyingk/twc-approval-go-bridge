@@ -125,3 +125,61 @@ func (c *Client) SendCard(ctx context.Context, receiveIDType, receiveID, cardJSO
 
 	return res.Data.MessageID, nil
 }
+
+// ReplyCard replies to an existing message using an interactive card.
+func (c *Client) ReplyCard(ctx context.Context, messageID, cardJSON string) (string, error) {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return "", fmt.Errorf("messageID is required")
+	}
+
+	tok, err := c.tokenProvider.TenantAccessToken(ctx)
+	if err != nil {
+		return "", fmt.Errorf("fetch access token: %w", err)
+	}
+
+	payload := map[string]any{
+		"msg_type": "interactive",
+		"content":  cardJSON,
+	}
+
+	reqBody, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("marshal reply message payload: %w", err)
+	}
+
+	endpoint := fmt.Sprintf("%s/im/v1/messages/%s/reply", c.baseURL, messageID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
+	if err != nil {
+		return "", fmt.Errorf("create reply message request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+tok)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("dispatch reply message request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read reply message response: %w", err)
+	}
+
+	var res struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			MessageID string `json:"message_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(bodyBytes, &res); err != nil {
+		return "", fmt.Errorf("decode reply message response (%d): %s", resp.StatusCode, string(bodyBytes))
+	}
+	if res.Code != 0 {
+		return "", fmt.Errorf("feishu reply message failed (code %d): %s", res.Code, res.Msg)
+	}
+
+	return res.Data.MessageID, nil
+}

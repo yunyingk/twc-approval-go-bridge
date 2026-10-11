@@ -89,13 +89,14 @@ func NewForEvents(appID, appSecret string, sinks map[string]Sink, logger *slog.L
 	status := &ConnectionStatus{State: "connecting"}
 	wrappedSinks := make(map[string]Sink, len(sinks))
 	for eventType, sink := range sinks {
+		s := sink
 		wrappedSinks[eventType] = func(ctx context.Context, ev Event) error {
 			status.mu.Lock()
 			status.LastEventAt = time.Now()
 			status.EventCount++
 			status.mu.Unlock()
-			if sink != nil {
-				return sink(ctx, ev)
+			if s != nil {
+				return s(ctx, ev)
 			}
 			return nil
 		}

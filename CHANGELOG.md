@@ -31,6 +31,10 @@
 ## [Unreleased]
 
 ### 新增 (Added)
+- **飞书对话响应式交互系统与机器人应答 (`internal/feishu/bot`)**：实现基于飞书长连接（`im.message.receive_v1`）的企业机器人智能响应系统。支持私信单聊免@直接交互与群聊@机器人交互，内置意图分类器，精准识别「管理页面 / 看板」、「系统状态」、「帮助指引」等指令，具备严格的群聊防剧透安全策略与 5 分钟去重防抖防护。
+- **两小时短授权 Token 与免密直达 Magic Link (`internal/httpserver/token.go`, `internal/httpserver/server.go`, `internal/httpserver/dashboard.go`)**：构建安全可控的临时鉴权令牌管理体系（`TokenManager`，默认 2 小时 TTL）。管理员在飞书发送“管理页面”即可获取专属带参跳转 URL；访问时服务端安全校验并自动换取 2 小时有效会话 Cookie，通过 303 重定向抹除地址栏令牌敏感参数，超时自动失效并友好引导重新获取。
+- **飞书机器人交互诊断子命令 (`test-bot-reply`)**：新增 CLI 命令 `./bin/twc-approval-go-bridge test-bot-reply [-text <msg>] [-open-id <id>]`，便于管理员在终端快速验证机器人私信意图识别、卡片组装与实际飞书消息投递全链路。
+- **多事件共享长连接与配置拓展 (`internal/feishu/events/listener.go`, `internal/config`)**：单一 WebSocket 长连接透明合并监听多维表格数据变更与机器人消息事件；配置新增 `admin_open_ids` 管理员鉴权白名单、`public_base_url` 公网基地址与 `magic_token_ttl` 时长控制。
 - **控制台顶栏选项卡与多视图路由 (`internal/httpserver/dashboard.go`)**：Web 控制台新增直观易用的顶级导航栏，支持无缝切换「📊 监控概览 (`#overview`)」、「📜 业务审计流水 (`#audit`)」与「💻 系统运行日志 (`#system-logs`)」；深度支持浏览器 URL Hash 锚点，刷新或直达链接均可精准定位对应页面。
 - **实时系统运行日志控制台与接口 (`internal/httpserver/logbuffer.go`, `internal/httpserver/server.go`)**：后端实现线程安全的环形内存日志缓冲器（`LogBuffer` & `BufferedHandler`，保留最新 1,000 条 `slog` 记录），并暴露鉴权接口 `GET /api/system-logs`；前端提供极客风全黑终端界面，支持全级别过滤（ALL/DEBUG/INFO/WARN/ERROR）、关键词搜索、自动滚动、暂停与清空，并支持一键展开结构化属性。
 - **飞书机器人通知通道 (`internal/feishu/notify`)**：新建通用飞书机器人通知模块，支持通过企业自建应用机器人（ebot）向指定群聊（`chat_ids`）与个人管理员（`open_ids`）广播交互式富文本卡片消息。
@@ -39,6 +43,7 @@
 - **通知连通性诊断命令 (`test-notify`)**：新增 CLI 诊断子命令 `./bin/twc-approval-go-bridge test-notify [-chat <id>] [-open-id <id>]`，便于管理员即时测试飞书机器人的群聊/单聊卡片投递权限。
 
 ### 变更 (Changed)
+- **飞书长连接统一共享 (`cmd/server/main.go`)**：服务启动时通过单一长连接同时监听多维表格记录变更与单聊消息接收，保持极低的网络与系统开销。
 - **全局日志接入缓冲管道 (`cmd/server/main.go`)**：服务启动时通过 `BufferedHandler` 透明复制标准输出日志到内存环形缓冲区，供 Web 端随时拉取，零性能损耗且不污染外部日志管道。
 - **识别流程对接死信告警 (`internal/app/recognition`)**：在小票识别流程达到最大尝试次数进入死信状态时触发 `DeadLetterNotifier`，在常驻后台（`server`）中自动联动通知服务。
 

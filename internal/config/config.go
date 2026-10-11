@@ -39,6 +39,7 @@ type NotificationSettings struct {
 	Enabled            bool     `json:"enabled" toml:"enabled"`
 	ChatIDs            []string `json:"chat_ids,omitempty" toml:"chat_ids,omitempty"`
 	OpenIDs            []string `json:"open_ids,omitempty" toml:"open_ids,omitempty"`
+	AdminOpenIDs       []string `json:"admin_open_ids,omitempty" toml:"admin_open_ids,omitempty"`
 	NotifyOnDeadLetter bool     `json:"notify_on_dead_letter,omitempty" toml:"notify_on_dead_letter,omitempty"`
 }
 
@@ -46,6 +47,7 @@ type NotificationConfig struct {
 	Enabled            bool
 	ChatIDs            []string
 	OpenIDs            []string
+	AdminOpenIDs       []string
 	NotifyOnDeadLetter bool
 }
 
@@ -56,9 +58,11 @@ type TransactionSettings struct {
 }
 
 type RuntimeSettings struct {
-	HTTPAddr        string `json:"http_addr" toml:"http_addr"`
-	LogLevel        string `json:"log_level" toml:"log_level"`
-	ShutdownTimeout string `json:"shutdown_timeout" toml:"shutdown_timeout"`
+	HTTPAddr          string `json:"http_addr" toml:"http_addr"`
+	PublicBaseURL     string `json:"public_base_url,omitempty" toml:"public_base_url,omitempty"`
+	MagicTokenTTL     string `json:"magic_token_ttl,omitempty" toml:"magic_token_ttl,omitempty"`
+	LogLevel          string `json:"log_level" toml:"log_level"`
+	ShutdownTimeout   string `json:"shutdown_timeout" toml:"shutdown_timeout"`
 	StateDir          string `json:"state_dir" toml:"state_dir"`
 	DashboardPassword string `json:"dashboard_password,omitempty" toml:"dashboard_password,omitempty"`
 }
@@ -107,8 +111,10 @@ type ModelSettings struct {
 }
 
 type RuntimeConfig struct {
-	HTTPAddr        string
-	LogLevel        slog.Level
+	HTTPAddr          string
+	PublicBaseURL     string
+	MagicTokenTTL     time.Duration
+	LogLevel          slog.Level
 	ShutdownTimeout   time.Duration
 	StateDir          string
 	DashboardPassword string
@@ -226,6 +232,14 @@ func LoadFile(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	magicTTL, err := parseDuration("runtime.magic_token_ttl", document.Runtime.MagicTokenTTL, 2*time.Hour)
+	if err != nil {
+		return Config{}, err
+	}
+	publicBaseURL := strings.TrimRight(strings.TrimSpace(document.Runtime.PublicBaseURL), "/")
+	if publicBaseURL == "" {
+		publicBaseURL = "https://twc-approval.ying-qing.cn"
+	}
 	poll, err := parseDuration("recognition.poll_interval", document.Recognition.PollInterval, 5*time.Minute)
 	if err != nil {
 		return Config{}, err
@@ -242,6 +256,10 @@ func LoadFile(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	adminOpenIDs := cleanStringSlice(document.Notification.AdminOpenIDs)
+	if len(adminOpenIDs) == 0 {
+		adminOpenIDs = cleanStringSlice(document.Notification.OpenIDs)
+	}
 	feishu := document.Feishu
 	feishu.Host = feishu.NormalizedHost()
 	feishu.EventType = fallback(feishu.EventType, "drive.file.bitable_record_changed_v1")
@@ -249,8 +267,10 @@ func LoadFile(path string) (Config, error) {
 		ConfigFile: path,
 		TablesFile: tablesPath,
 		Runtime: RuntimeConfig{
-			HTTPAddr:        fallback(document.Runtime.HTTPAddr, ":8080"),
-			LogLevel:        level,
+			HTTPAddr:          fallback(document.Runtime.HTTPAddr, ":8080"),
+			PublicBaseURL:     publicBaseURL,
+			MagicTokenTTL:     magicTTL,
+			LogLevel:          level,
 			ShutdownTimeout:   shutdown,
 			StateDir:          fallback(document.Runtime.StateDir, "data"),
 			DashboardPassword: strings.TrimSpace(document.Runtime.DashboardPassword),
@@ -268,6 +288,7 @@ func LoadFile(path string) (Config, error) {
 			Enabled:            document.Notification.Enabled,
 			ChatIDs:            cleanStringSlice(document.Notification.ChatIDs),
 			OpenIDs:            cleanStringSlice(document.Notification.OpenIDs),
+			AdminOpenIDs:       adminOpenIDs,
 			NotifyOnDeadLetter: document.Notification.NotifyOnDeadLetter,
 		},
 		Business:            &document.BusinessProfile,
