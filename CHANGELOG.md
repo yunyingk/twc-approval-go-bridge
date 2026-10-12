@@ -31,6 +31,9 @@
 ## [Unreleased]
 
 ### 新增 (Added)
+- **Kubernetes 生产部署清单模板 (`deploy/k8s/twc-approval.yaml`)**：
+  - 提供开箱即用的标准 K8S 部署描述文件（Deployment + Service + Ingress），内建 RollingUpdate 滚动发布策略与资源限制（requests/limits）；
+  - 完整配置 `/healthz`（存活探针）与 `/readyz`（就绪探针），支持 ConfigMap 挂载配置及 8080 端口网关路由映射，便于与数科云原生容器平台平滑交接。
 - **飞书原生审批单向推送模块恢复 (`internal/feishu/approval`)**：
   - 重新恢复接入飞书原生审批提单能力，严格遵循“只推送、不回调、无反向监听”的单向轻量 Dispatcher 边界；
   - 完整适配当前企业已生效的「海外易商卡消费确认单」模板（`7B19DB2B-1495-4CD8-A723-881F3859EBCE`），覆盖 3 个顶层表单控件与 20 个明细子控件，映射流水、发票事实及 AI 机审结果；
