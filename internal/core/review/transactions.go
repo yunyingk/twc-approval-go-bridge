@@ -13,16 +13,25 @@ type TransactionEvidence struct {
 }
 
 type Transaction struct {
-	RecordID         string `json:"record_id"`
-	TransactionID    string `json:"transaction_id"`
-	Merchant         string `json:"merchant"`
-	OccurredAt       string `json:"occurred_at"`
-	OriginalAmount   string `json:"original_amount"`
-	OriginalCurrency string `json:"original_currency"`
-	BookedAmountCNY  string `json:"booked_amount_cny,omitempty"`
-	Country          string `json:"country,omitempty"`
-	TransactionType  string `json:"transaction_type,omitempty"`
-	Status           string `json:"status,omitempty"`
+	RecordID             string `json:"record_id"`
+	TransactionID        string `json:"transaction_id"`
+	Merchant             string `json:"merchant"`
+	OccurredAt           string `json:"occurred_at"`
+	OriginalAmount       string `json:"original_amount"`
+	OriginalCurrency     string `json:"original_currency"`
+	BookedAmountCNY      string `json:"booked_amount_cny,omitempty"`
+	Country              string `json:"country,omitempty"`
+	TransactionType      string `json:"transaction_type,omitempty"`
+	Status               string `json:"status,omitempty"`
+	CardholderName       string `json:"cardholder_name,omitempty"`
+	CardholderSourceID   string `json:"cardholder_source_id,omitempty"`
+	CardLastFour         string `json:"card_last_four,omitempty"`
+	SettlementAmount     string `json:"settlement_amount,omitempty"`
+	SettlementCurrency   string `json:"settlement_currency,omitempty"`
+	MerchantRegion       string `json:"merchant_region,omitempty"`
+	PaymentChannel       string `json:"payment_channel,omitempty"`
+	ReconciliationStatus string `json:"reconciliation_status,omitempty"`
+	ExchangeRate         string `json:"exchange_rate,omitempty"`
 }
 
 // EvidenceIssue describes missing or malformed input, not an approval rule.

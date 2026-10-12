@@ -39,10 +39,12 @@
   - 配置层支持 `[feishu.approval]` 集中管理模板 Code 与默认审批人。
 
 ### 变更 (Changed)
-- **SealAI 机审单据体结构与溯源注释增强 (`internal/seal`)**：
-  - 在提交至 SealAI 的单据顶层字段集（`Fields`）前置注入汇总单据头（`detail_id`、`expense_category`、`expense_reason`、`expense_amount`、`expense_date`、`transaction_id`、`merchant_name`、`settled_amount_cny`），直接映射报销明细核心事实；
-  - 为所有发票台账字段、流水字段与汇总单据头注入精确的 `Comments` 溯源标注（如 `来源：发票台账.xxx`、`来源：交易流水表.xxx`），对齐 SealAI 前端友好展示规范；
-  - 维持真实原件上传（有效 `evidenceAttachmentId`）与真实发票号传递，保持真实闭环证据链。
+- **SealAI 提审字段映射全面对齐《飞书表单推送Sealai字段映射方案》规范 (`internal/seal`)**：
+  - 将多发票明细由单层前缀平铺全面重构为标准二维嵌套明细表（`key: "expense_details"`, `type: "LIST"`, `semanticType: "EXPENSE_DETAIL_LIST"`），每行包含发票台账 24 列业务事实及必需的 `detailId`；
+  - 金额字段（`item_amount`、`transaction_amount`、`settlement_amount`）从标量文本升级为强类型金额结构体 `{"amount": ..., "currency": ...}`（`type: "AMOUNT"`）；
+  - 顶层单据主体字段完整对齐 24 列单值项（覆盖易商卡推送 15 列、报销明细 6 列、项目关联等），严格遵守“空单元格保留字段项传空字符串”规范；
+  - 结构化发票数组 `invoices` 补全 `claimedAmount` 与 `expenseRefs`（包含 `sourceExpenseId` 关联发票台账记录 ID），`sourceInvoiceId` 统一对齐 `feishu-invoice-<record_id>` 规范；
+  - 购买方补全规则：当 OCR 未识别购买方时，支持安全回退至唯一报销人姓名。
 
 ### 修复 (Fixed)
 - 暂无

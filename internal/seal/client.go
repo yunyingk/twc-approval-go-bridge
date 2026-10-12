@@ -167,6 +167,7 @@ type DocumentRequest struct {
 	DocumentID             string            `json:"documentId"`
 	DocumentSN             string            `json:"documentSN"`
 	DocumentURL            string            `json:"documentURL,omitempty"`
+	SourceDocumentURL      string            `json:"sourceDocumentURL,omitempty"`
 	StartTime              int64             `json:"startTime"`
 	Fields                 []DocumentField   `json:"fields"`
 	Invoices               []ExternalInvoice `json:"invoices,omitempty"`
@@ -187,10 +188,22 @@ type InvoiceParty struct {
 	Name string `json:"name"`
 }
 
+type AmountValue struct {
+	Amount   any    `json:"amount"`
+	Currency string `json:"currency"`
+}
+
+type ExpenseRef struct {
+	SourceExpenseID string      `json:"sourceExpenseId"`
+	AllocatedAmount json.Number `json:"allocatedAmount"`
+	CurrencyCode    string      `json:"currencyCode"`
+}
+
 type ExternalInvoice struct {
 	Kind                 string       `json:"kind"`
 	SourceInvoiceID      string       `json:"sourceInvoiceId"`
 	InvoiceType          string       `json:"invoiceType"`
+	InvoiceCode          string       `json:"invoiceCode,omitempty"`
 	InvoiceNumber        string       `json:"invoiceNumber,omitempty"`
 	CurrencyCode         string       `json:"currencyCode"`
 	TotalAmount          json.Number  `json:"totalAmount"`
@@ -201,6 +214,7 @@ type ExternalInvoice struct {
 	TaxAmount            json.Number  `json:"taxAmount,omitempty"`
 	AmountWithoutTax     json.Number  `json:"amountWithoutTax,omitempty"`
 	ClaimedAmount        json.Number  `json:"claimedAmount,omitempty"`
+	ExpenseRefs          []ExpenseRef `json:"expenseRefs,omitempty"`
 }
 
 type AcceptedInvoice struct {

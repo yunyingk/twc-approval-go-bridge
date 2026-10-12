@@ -124,34 +124,43 @@ func TestGatewayPreservesSharedPaymentEvidenceWithoutInventingClaims(t *testing.
 		t.Fatal("Seal request omitted common payment snapshot")
 	}
 	for _, invoice := range gateway.submits[0].Invoices {
-		raw, _ := json.Marshal(invoice)
-		var fields map[string]any
-		_ = json.Unmarshal(raw, &fields)
-		if _, ok := fields["claimedAmount"]; ok {
-			t.Fatal("payment facts invented an invoice claim")
+		if invoice.ClaimedAmount.String() == "" {
+			t.Fatal("structured invoice must have claimedAmount")
 		}
-		if _, ok := fields["expenseRefs"]; ok {
-			t.Fatal("payment facts invented allocation")
+		if len(invoice.ExpenseRefs) == 0 {
+			t.Fatal("structured invoice must have expenseRefs")
+		}
+		for _, ref := range invoice.ExpenseRefs {
+			if ref.SourceExpenseID == "" || ref.AllocatedAmount.String() == "" || ref.CurrencyCode == "" {
+				t.Fatalf("incomplete expenseRef: %#v", ref)
+			}
 		}
 	}
 
-	// Verify header fields and traceability comments
+	// Verify fields align with proposal
 	sub := gateway.submits[0]
-	if len(sub.Fields) == 0 || sub.Fields[0].Key != "detail_id" || sub.Fields[0].Label != "报销明细ID" {
-		t.Fatalf("expected first field to be detail_id header, got %#v", sub.Fields[0])
+	if len(sub.Fields) == 0 || sub.Fields[0].Key != "expense_details" || sub.Fields[0].SemanticType != "EXPENSE_DETAIL_LIST" {
+		t.Fatalf("expected first field to be expense_details LIST, got %#v", sub.Fields[0])
 	}
-	if sub.Fields[0].Comments != "来源：个人报销明细.明细ID" {
-		t.Fatalf("expected Comments on detail_id, got %q", sub.Fields[0].Comments)
-	}
-	hasExpAmt := false
+	hasReimbID := false
+	hasTxAmt := false
 	for _, f := range sub.Fields {
-		if f.Key == "expense_amount" && f.Value == "USD 9007199254740993.01" && f.Comments == "来源：交易流水表.交易金额(原币)" {
-			hasExpAmt = true
-			break
+		if f.Key == "reimbursement_id" && f.Value == "SN-1" {
+			hasReimbID = true
+		}
+		if f.Key == "transaction_amount" {
+			if av, ok := f.Value.(seal.AmountValue); ok {
+				if av.Currency == "USD" && av.Amount.(json.Number).String() == "9007199254740993.01" {
+					hasTxAmt = true
+				}
+			}
 		}
 	}
-	if !hasExpAmt {
-		t.Fatal("expected expense_amount header field with traceability comments")
+	if !hasReimbID {
+		t.Fatal("expected reimbursement_id field in sub.Fields")
+	}
+	if !hasTxAmt {
+		t.Fatal("expected transaction_amount field with 9007199254740993.01 USD in sub.Fields")
 	}
 }
 

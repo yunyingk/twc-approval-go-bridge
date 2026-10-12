@@ -79,7 +79,10 @@ func (s *ReviewSource) ReadTransactions(ctx context.Context, recordID string) (*
 		return nil, err
 	}
 	names := make(map[string]string)
-	for _, semantic := range []string{"transaction_id", "original_amount", "original_currency", "merchant", "transaction_time", "booked_amount_cny", "country", "transaction_type", "transaction_status"} {
+	for _, semantic := range []string{
+		"transaction_id", "original_amount", "original_currency", "merchant", "transaction_time", "booked_amount_cny", "country", "transaction_type", "transaction_status",
+		"cardholder", "card_last_four", "booked_currency", "payment_channel", "reconciliation_status", "exchange_rate", "merchant_region",
+	} {
 		if id := binding.Fields[semantic]; id != "" {
 			field, ok := schema[id]
 			if !ok {
@@ -217,9 +220,31 @@ func transactionFacts(recordID string, fields map[string]json.RawMessage, names 
 		}
 		return number.String()
 	}
-	transaction := core.Transaction{RecordID: recordID, TransactionID: required("transaction_id"), Merchant: required("merchant"),
-		OriginalAmount: amount("original_amount", true), OriginalCurrency: strings.ToUpper(required("original_currency")),
-		BookedAmountCNY: amount("booked_amount_cny", false), Country: text("country"), TransactionType: text("transaction_type"), Status: text("transaction_status")}
+	transaction := core.Transaction{
+		RecordID:             recordID,
+		TransactionID:        required("transaction_id"),
+		Merchant:             required("merchant"),
+		OriginalAmount:       amount("original_amount", true),
+		OriginalCurrency:     strings.ToUpper(required("original_currency")),
+		BookedAmountCNY:      amount("booked_amount_cny", false),
+		Country:              text("country"),
+		TransactionType:      text("transaction_type"),
+		Status:               text("transaction_status"),
+		CardholderName:       text("cardholder"),
+		CardLastFour:         text("card_last_four"),
+		SettlementAmount:     amount("booked_amount_cny", false),
+		SettlementCurrency:   text("booked_currency"),
+		PaymentChannel:       text("payment_channel"),
+		ReconciliationStatus: text("reconciliation_status"),
+		ExchangeRate:         text("exchange_rate"),
+		MerchantRegion:       text("merchant_region"),
+	}
+	if transaction.SettlementCurrency == "" && transaction.BookedAmountCNY != "" {
+		transaction.SettlementCurrency = "CNY"
+	}
+	if transaction.MerchantRegion == "" && transaction.Country != "" {
+		transaction.MerchantRegion = transaction.Country
+	}
 	if currency := transaction.OriginalCurrency; currency != "" {
 		valid := len(currency) == 3
 		for _, char := range currency {
@@ -252,6 +277,10 @@ func ValidateTransactionFieldType(semantic string, fieldType int) error {
 		allowed = []int{1, 2}
 	case "original_currency", "country", "transaction_type", "transaction_status":
 		allowed = []int{1, 3}
+	case "cardholder", "card_last_four", "booked_currency", "payment_channel", "reconciliation_status", "merchant_region":
+		allowed = []int{1, 3, 11, 19, 20}
+	case "exchange_rate":
+		allowed = []int{1, 2}
 	case "transaction_time":
 		allowed = []int{5}
 	default:
