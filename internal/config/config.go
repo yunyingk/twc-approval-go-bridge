@@ -245,9 +245,6 @@ func LoadFile(path string) (Config, error) {
 		return Config{}, err
 	}
 	publicBaseURL := strings.TrimRight(strings.TrimSpace(document.Runtime.PublicBaseURL), "/")
-	if publicBaseURL == "" {
-		publicBaseURL = "https://twc-approval.ying-qing.cn"
-	}
 	poll, err := parseDuration("recognition.poll_interval", document.Recognition.PollInterval, 5*time.Minute)
 	if err != nil {
 		return Config{}, err

@@ -1,12 +1,36 @@
 # ==============================================================================
-# TWC Approval Go Bridge - Kubernetes 标准部署清单 (Production Template)
+# TWC Approval Go Bridge - Kubernetes 生产级标准部署清单 (Production Template)
 # ==============================================================================
-# 说明：
-# 1. 镜像地址替换：将 <IMAGE_REGISTRY_URL> 替换为数科私有仓库实际路径与版本 tag。
-# 2. 二级域名替换：将 <YOUR_SECONDARY_DOMAIN> 替换为数科分配的实际二级域名。
-# 3. 配置文件注入：通过同名 ConfigMap/Secret 挂载到容器内的 /configs/ 目录。
+# 关键约束与说明：
+# 1. 单活 Pod 架构约束（强制锁定 replicas: 1）：
+#    - 桥接服务依赖主机级排他锁（syscall.Flock）保证小票识别去重与 Checkpoint 的确定性；
+#    - 飞书长连接（WebSocket）要求单一活跃客户端消费，避免多客户端导致事件去重状态割裂；
+#    - 【严禁】将 replicas 修改为大于 1，【严禁】对此服务启用 HPA 自动水平扩缩容。
+# 2. 存储持久化（PVC）：
+#    - /data 目录承载发票去重 Checkpoint、任务绑定及运行时审计文件；
+#    - 生产环境建议通过下方声明的 PersistentVolumeClaim（twc-approval-data-pvc）挂载。
+# 3. 域名与配置替换：
+#    - 镜像地址：将 <IMAGE_REGISTRY_URL> 替换为数科私有仓库实际路径与版本 tag。
+#    - 二级域名：将 <YOUR_SECONDARY_DOMAIN> 替换为数科分配的公网二级域名（SealAI 回调依赖公网解析）。
 # ==============================================================================
 
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: twc-approval-data-pvc
+  namespace: default
+  labels:
+    app: twc-approval-bridge
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # 可根据数科集群 StorageClass 实际名称指定（留空则使用默认存储类）：
+  # storageClassName: "standard"
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,12 +39,10 @@ metadata:
   labels:
     app: twc-approval-bridge
 spec:
+  # 【强制锁定单副本】：单活 Pod，禁止水平扩容
   replicas: 1
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+    type: Recreate # 保证新 Pod 启动前旧 Pod 完全释放文件锁与飞书长连接
   selector:
     matchLabels:
       app: twc-approval-bridge
@@ -49,7 +71,7 @@ spec:
             periodSeconds: 15
             timeoutSeconds: 3
             failureThreshold: 3
-          # 就绪探针：K8S 确认通过后才接入网关与域名流量
+          # 就绪探针：K8S 动态检测业务依赖（飞书长连接/配置等），通过后才接入网关与域名流量
           readinessProbe:
             httpGet:
               path: /readyz
@@ -76,9 +98,13 @@ spec:
         - name: config-volume
           configMap:
             name: twc-approval-config
-        # 本地状态缓存持久化（可根据需要升级为 PVC）
+        # 生产持久化存储（绑定上方声明的 PVC）
         - name: data-volume
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: twc-approval-data-pvc
+        # 若在临时测试环境中无需 PVC，可替换为 emptyDir：
+        # - name: data-volume
+        #   emptyDir: {}
 
 ---
 apiVersion: v1

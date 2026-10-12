@@ -8,7 +8,7 @@ LDFLAGS := -s -w \
 	-X $(VERSION_PKG).GitCommit=$(GIT_COMMIT) \
 	-X $(VERSION_PKG).BuildDate=$(BUILD_DATE)
 
-.PHONY: fmt test vet build run clean docker-build compose-up version
+.PHONY: fmt test vet build run clean docker-build compose-up version check-version bump
 
 fmt:
 	gofmt -w cmd internal
@@ -38,3 +38,9 @@ compose-up:
 
 version:
 	@echo $(VERSION)
+
+check-version:
+	go test -v ./internal/version -run TestVersionConsistency
+
+bump:
+	@./scripts/bump-version.sh $(VERSION)

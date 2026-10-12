@@ -2,6 +2,8 @@ package httpserver
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -278,5 +280,41 @@ func TestFormatCSTAndDashboardEventTypes(t *testing.T) {
 		t.Fatalf("dashboard missing multiple event types: %s", body)
 	}
 }
+
+func TestReadyEndpointWithChecker(t *testing.T) {
+	s := New(":0", slog.Default(), "test")
+
+	// 1. Without checker, defaults to ready
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	res := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.Code)
+	}
+
+	// 2. With failing checker, returns 503
+	s.SetReadyChecker(func(ctx context.Context) error {
+		return errors.New("feishu disconnected")
+	})
+	res = httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", res.Code)
+	}
+	if !strings.Contains(res.Body.String(), "feishu disconnected") {
+		t.Fatalf("expected error reason in body, got %s", res.Body.String())
+	}
+
+	// 3. With passing checker, returns 200
+	s.SetReadyChecker(func(ctx context.Context) error {
+		return nil
+	})
+	res = httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.Code)
+	}
+}
+
 
 

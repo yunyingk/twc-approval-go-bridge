@@ -31,9 +31,14 @@
 ## [Unreleased]
 
 ### 新增 (Added)
-- **Kubernetes 生产部署清单模板 (`deploy/k8s/twc-approval.yaml`)**：
-  - 提供开箱即用的标准 K8S 部署描述文件（Deployment + Service + Ingress），内建 RollingUpdate 滚动发布策略与资源限制（requests/limits）；
-  - 完整配置 `/healthz`（存活探针）与 `/readyz`（就绪探针），支持 ConfigMap 挂载配置及 8080 端口网关路由映射，便于与数科云原生容器平台平滑交接。
+- **全局版本同步与跨文件一致性守卫体系 (`scripts/bump-version.sh`, `internal/version/consistency_test.go`)**：
+  - 新增一键同步脚本 `scripts/bump-version.sh` 与 Makefile 命令（`make bump VERSION=x.y.z`、`make check-version`），实现 `version.go`、`Makefile`、`Dockerfile`、K8s 清单与准上线基线的原子联动更新；
+  - 新增自动化一致性单元测试 `TestVersionConsistency`，彻底杜绝多端构建与部署配置中的版本漂移与人工遗漏。
+- **服务动态就绪探针 (`internal/httpserver/server.go`, `cmd/server/main.go`)**：
+  - 扩展 HTTP Server `SetReadyChecker` 机制与单元测试，将 K8s 就绪探针 `/readyz` 深度接入飞书长连接监听器运行状态；若依赖未就绪或陷入错误，返回 HTTP 503 拒绝流量接入。
+- **Kubernetes 生产部署清单加固 (`deploy/k8s/twc-approval.yaml`)**：
+  - 提供开箱即用的标准 K8S 部署描述文件（Deployment + Service + Ingress + PVC），针对单机文件锁（Flock）与 WebSocket 特性强制锁定 `replicas: 1`（单活 Pod）与 `Recreate` 重建更新策略；
+  - 引入 10Gi `PersistentVolumeClaim`（`twc-approval-data-pvc`）挂载到 `/data`，保障发票 Checkpoint 与审计历史跨 Pod 重启不丢失。
 - **飞书原生审批单向推送模块恢复 (`internal/feishu/approval`)**：
   - 重新恢复接入飞书原生审批提单能力，严格遵循“只推送、不回调、无反向监听”的单向轻量 Dispatcher 边界；
   - 完整适配当前企业已生效的「海外易商卡消费确认单」模板（`7B19DB2B-1495-4CD8-A723-881F3859EBCE`），覆盖 3 个顶层表单控件与 20 个明细子控件，映射流水、发票事实及 AI 机审结果；
@@ -42,6 +47,8 @@
   - 配置层支持 `[feishu.approval]` 集中管理模板 Code 与默认审批人。
 
 ### 变更 (Changed)
+- **彻底剥离个人测试域名硬编码 (`internal/config`, `internal/feishu/bot`)**：
+  - 移除代码中对个人域名 `ying-qing.cn` 的隐式兜底赋值，管理看板与回调公网基准域名完全由配置文件 `runtime.public_base_url` 驱动；若未配置，飞书 Bot 提供清晰的配置指引卡片，避免线上跳转错误。
 - **SealAI 提审字段映射全面对齐《飞书表单推送Sealai字段映射方案》规范 (`internal/seal`)**：
   - 将多发票明细由单层前缀平铺全面重构为标准二维嵌套明细表（`key: "expense_details"`, `type: "LIST"`, `semanticType: "EXPENSE_DETAIL_LIST"`），每行包含发票台账 24 列业务事实及必需的 `detailId`；
   - 金额字段（`item_amount`、`transaction_amount`、`settlement_amount`）从标量文本升级为强类型金额结构体 `{"amount": ..., "currency": ...}`（`type: "AMOUNT"`）；

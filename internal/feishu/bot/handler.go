@@ -70,11 +70,7 @@ func NewHandler(
 	if logger == nil {
 		logger = slog.Default()
 	}
-	baseURL := strings.TrimRight(strings.TrimSpace(cfg.PublicBaseURL), "/")
-	if baseURL == "" {
-		baseURL = "https://twc-approval.ying-qing.cn"
-	}
-	cfg.PublicBaseURL = baseURL
+	cfg.PublicBaseURL = strings.TrimRight(strings.TrimSpace(cfg.PublicBaseURL), "/")
 
 	if cfg.TokenTTL <= 0 {
 		cfg.TokenTTL = 2 * time.Hour
@@ -182,6 +178,13 @@ func (h *Handler) handleDashboardCommand(
 		if err != nil {
 			return err
 		}
+		return h.replyOrSend(ctx, msgID, chatID, chatType, senderOpenID, cardJSON)
+	}
+
+	if strings.TrimSpace(h.config.PublicBaseURL) == "" {
+		h.logger.WarnContext(ctx, "dashboard requested but public_base_url is not configured", "open_id", senderOpenID)
+		text := "系统未配置公网访问地址（runtime.public_base_url），请先在配置文件中指定后再使用管理看板功能。"
+		cardJSON := `{"elements":[{"tag":"div","text":{"tag":"lark_md","content":"⚠️ ` + text + `"}}],"header":{"title":{"tag":"plain_text","content":"看板地址未配置"},"template":"orange"}}`
 		return h.replyOrSend(ctx, msgID, chatID, chatType, senderOpenID, cardJSON)
 	}
 

@@ -17,6 +17,9 @@ import (
 	"github.com/yunyingk/twc-approval-go-bridge/internal/version"
 )
 
+// ReadyChecker reports whether the application's runtime dependencies are operational.
+type ReadyChecker func(context.Context) error
+
 // Server starts with infrastructure endpoints. Domain routes can be registered
 // by the application layer without coupling this package to a business system.
 type Server struct {
@@ -26,6 +29,7 @@ type Server struct {
 	version        string
 	startTime      time.Time
 	statusProvider StatusProvider
+	readyChecker   ReadyChecker
 	password       string
 	logBuffer      *LogBuffer
 	tokenManager   *TokenManager
@@ -176,6 +180,11 @@ func (s *Server) SetStatusProvider(p StatusProvider) {
 	s.statusProvider = p
 }
 
+// SetReadyChecker attaches a dynamic readiness probe to the server.
+func (s *Server) SetReadyChecker(c ReadyChecker) {
+	s.readyChecker = c
+}
+
 // Register mounts an optional domain adapter before ListenAndServe.
 func (s *Server) Register(pattern string, handler http.Handler) {
 	s.mux.Handle(pattern, handler)
@@ -199,7 +208,16 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *Server) ready(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
+	if s.readyChecker != nil {
+		if err := s.readyChecker(r.Context()); err != nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+				"status": "not_ready",
+				"reason": err.Error(),
+			})
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 

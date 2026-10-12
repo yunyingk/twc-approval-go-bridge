@@ -623,6 +623,15 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, logB
 		}
 	}
 	server.SetStatusProvider(getStatus)
+	server.SetReadyChecker(func(ctx context.Context) error {
+		if len(listeners) > 0 {
+			state, _, _, _ := listeners[0].Status()
+			if state == "error" {
+				return fmt.Errorf("feishu listener in error state")
+			}
+		}
+		return nil
+	})
 
 	var botHandler *bot.Handler
 	if cfg.FeishuEnabled() {

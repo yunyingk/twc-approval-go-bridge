@@ -90,7 +90,7 @@ callback_token = ""
 # ==========================================
 [runtime]
 http_addr = ":8080"
-public_base_url = "https://twc-approval.ying-qing.cn" # 服务公网访问基础地址（用于在飞书中生成管理看板免密跳转链接）
+public_base_url = "https://approval-bridge.your-company.com" # 服务公网访问基础地址（填写数科分配的公网二级域名，用于在飞书中生成管理看板免密跳转链接）
 magic_token_ttl = "2h"                                # 管理看板短授权 Token 默认有效时长（例如 "2h"、"1h"，缺省为 2 小时）
 log_level = "info"
 shutdown_timeout = "10s"
