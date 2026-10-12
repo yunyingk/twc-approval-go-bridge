@@ -67,6 +67,15 @@ func TestChecker_FullPass(t *testing.T) {
 			return
 		}
 
+		// 5.1 IM messages probe (send & receive)
+		if strings.Contains(r.URL.Path, "/im/v1/messages") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"msg":  "ok",
+			})
+			return
+		}
+
 		// 6. Drive permission members (collaborator)
 		if strings.Contains(r.URL.Path, "/drive/v1/permissions/") && strings.HasSuffix(r.URL.Path, "/members") {
 			_ = json.NewEncoder(w).Encode(map[string]any{

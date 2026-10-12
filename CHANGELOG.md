@@ -31,6 +31,7 @@
 ## [Unreleased]
 
 ### 新增 (Added)
+- **健康探测补充 IM 权限全量核验 (`internal/health/checker.go`)**：在 `doctor` 诊断工具中补充对「机器人发消息权限」(im:message:send_as_bot)、「私信单聊读取权限」(im:message.p2p_msg:readonly) 以及「长连接事件订阅配置」的真实探测项，杜绝权限遗漏导致诊断虚假 100% HEALTHY。
 - **飞书对话响应式交互系统与机器人应答 (`internal/feishu/bot`)**：实现基于飞书长连接（`im.message.receive_v1`）的企业机器人智能响应系统。支持私信单聊免@直接交互与群聊@机器人交互，内置意图分类器，精准识别「管理页面 / 看板」、「系统状态」、「帮助指引」等指令，具备严格的群聊防剧透安全策略与 5 分钟去重防抖防护。
 - **两小时短授权 Token 与免密直达 Magic Link (`internal/httpserver/token.go`, `internal/httpserver/server.go`, `internal/httpserver/dashboard.go`)**：构建安全可控的临时鉴权令牌管理体系（`TokenManager`，默认 2 小时 TTL）。管理员在飞书发送“管理页面”即可获取专属带参跳转 URL；访问时服务端安全校验并自动换取 2 小时有效会话 Cookie，通过 303 重定向抹除地址栏令牌敏感参数，超时自动失效并友好引导重新获取。
 - **飞书机器人交互诊断子命令 (`test-bot-reply`)**：新增 CLI 命令 `./bin/twc-approval-go-bridge test-bot-reply [-text <msg>] [-open-id <id>]`，便于管理员在终端快速验证机器人私信意图识别、卡片组装与实际飞书消息投递全链路。

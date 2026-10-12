@@ -269,6 +269,60 @@ func (c *Checker) checkFeishuPermissions(ctx context.Context, token string) []Ch
 		})
 	}
 
+	// 4. Probe im:message:send_as_bot (机器人发消息权限)
+	imSendStart := time.Now()
+	imSendErr := c.probeSendMessagePermission(ctx, token)
+	imSendLatency := time.Since(imSendStart)
+	if imSendErr != nil {
+		items = append(items, CheckItem{
+			Category: cat,
+			Name:     "机器人发消息权限 (im:message:send_as_bot)",
+			Status:   StatusFail,
+			Latency:  imSendLatency,
+			Message:  fmt.Sprintf("缺失发消息权限: %v", imSendErr),
+			Remedy:   "请在飞书开放平台 -> 权限管理 -> 搜索勾选「以应用的身份发消息」(im:message:send_as_bot) 并发布新版本",
+		})
+	} else {
+		items = append(items, CheckItem{
+			Category: cat,
+			Name:     "机器人发消息权限 (im:message:send_as_bot)",
+			Status:   StatusPass,
+			Latency:  imSendLatency,
+			Message:  "已授权 (可发送催报与死信卡片、回复私信)",
+		})
+	}
+
+	// 5. Probe im:message.p2p_msg:readonly (接收私信权限)
+	imRecvStart := time.Now()
+	imRecvErr := c.probeReceiveMessagePermission(ctx, token)
+	imRecvLatency := time.Since(imRecvStart)
+	if imRecvErr != nil {
+		items = append(items, CheckItem{
+			Category: cat,
+			Name:     "私信单聊读取权限 (im:message.p2p_msg:readonly)",
+			Status:   StatusFail,
+			Latency:  imRecvLatency,
+			Message:  fmt.Sprintf("缺失私信读取权限: %v", imRecvErr),
+			Remedy:   "请在飞书开放平台 -> 权限管理 -> 搜索勾选「获取用户发给机器人的单聊消息」(im:message.p2p_msg:readonly) 并发布新版本",
+		})
+	} else {
+		items = append(items, CheckItem{
+			Category: cat,
+			Name:     "私信单聊读取权限 (im:message.p2p_msg:readonly)",
+			Status:   StatusPass,
+			Latency:  imRecvLatency,
+			Message:  "已授权 (具备接收用户单聊私信对话权限)",
+		})
+	}
+
+	// 6. Check Event Subscription Guideline
+	items = append(items, CheckItem{
+		Category: cat,
+		Name:     "长连接事件订阅配置 (im.message.receive_v1)",
+		Status:   StatusPass,
+		Message:  "已在本地长连接注册监听 (若私信未回复，请确认开放平台「事件与回调」已添加「接收消息」事件)",
+	})
+
 	return items
 }
 
@@ -760,6 +814,60 @@ func (c *Checker) probeContactScopes(ctx context.Context, token string) error {
 	}
 	_ = json.NewDecoder(resp.Body).Decode(&result)
 	if result.Code != 0 {
+		return fmt.Errorf("code %d: %s", result.Code, result.Msg)
+	}
+	return nil
+}
+
+func (c *Checker) probeSendMessagePermission(ctx context.Context, token string) error {
+	dummyPayload, _ := json.Marshal(map[string]any{
+		"receive_id": "ou_probe_probe",
+		"msg_type":   "text",
+		"content":    `{"text":"ping"}`,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/im/v1/messages?receive_id_type=open_id", bytes.NewReader(dummyPayload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&result)
+	if result.Code == 99991672 || result.Code == 99991663 || result.Code == 1470403 {
+		return fmt.Errorf("code %d: %s", result.Code, result.Msg)
+	}
+	return nil
+}
+
+func (c *Checker) probeReceiveMessagePermission(ctx context.Context, token string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/im/v1/messages/om_probe_probe", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&result)
+	if result.Code == 99991672 || result.Code == 99991663 || result.Code == 1470403 {
 		return fmt.Errorf("code %d: %s", result.Code, result.Msg)
 	}
 	return nil
