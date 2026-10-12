@@ -55,42 +55,57 @@ func Map(input Input) (seal.DocumentRequest, error) {
 		DocumentURL: input.RecordURL,
 		StartTime:   input.StartTime.Unix(),
 		Fields: []seal.DocumentField{
-			{Key: "source_record_id", Label: "报销明细记录 ID", Type: "TEXT", Value: input.RecordID},
-			{Key: "source_attachment_token", Label: "飞书附件 Token", Type: "TEXT", Value: input.FileToken},
+			{Key: "source_record_id", Label: "关联明细ID", Type: "TEXT", Value: input.RecordID, Comments: "来源：发票台账.关联明细ID"},
+			{Key: "source_attachment_token", Label: "飞书附件 Token", Type: "TEXT", Value: input.FileToken, Comments: "来源：发票台账.附件标识"},
 		},
 	}
 	if input.RecordURL != "" {
 		document.Fields = append(document.Fields, seal.DocumentField{
-			Key:   "source_record_url",
-			Label: "单据原始链接",
-			Type:  "TEXT",
-			Value: input.RecordURL,
+			Key:      "source_record_url",
+			Label:    "单据原始链接",
+			Type:     "TEXT",
+			Value:    input.RecordURL,
+			Comments: "来源：飞书多维表格单据详情页",
 		})
 	}
-	addText := func(key, label, value string) {
+	addText := func(key, label, value, comments string) {
 		if value = strings.TrimSpace(value); value != "" {
-			document.Fields = append(document.Fields, seal.DocumentField{Key: key, Label: label, Type: "TEXT", Value: value})
+			document.Fields = append(document.Fields, seal.DocumentField{
+				Key:      key,
+				Label:    label,
+				Type:     "TEXT",
+				Value:    value,
+				Comments: comments,
+			})
 		}
 	}
-	addText("attachment_name", "附件文件名", input.FileName)
+	addText("attachment_name", "发票原件", input.FileName, "来源：发票台账.发票原件")
 	if !input.Upload.Valid() {
 		return seal.DocumentRequest{}, fmt.Errorf("Seal attachment upload has not completed successfully")
 	}
 	document.Fields = append(document.Fields, seal.DocumentField{
-		Key: "receipt_attachment", Label: "发票附件", Type: "ATTACHMENT", Value: []seal.AttachmentInfo{input.Upload.Attachment},
+		Key:      "receipt_attachment",
+		Label:    "发票附件",
+		Type:     "ATTACHMENT",
+		Value:    []seal.AttachmentInfo{input.Upload.Attachment},
+		Comments: "来源：发票原件上传",
 	})
-	addText("receipt_title", "发票摘要", facts.Title)
-	addText("receipt_number", "发票号", facts.Number)
-	addText("receipt_type", "票据类型", facts.ReceiptType)
-	addText("receipt_business_category", "业务分类", facts.BusinessCategory)
-	addText("receipt_seller", "开票方", facts.Seller)
-	addText("receipt_buyer", "购买方", facts.Buyer)
-	addText("receipt_currency", "币种", facts.Currency)
-	addText("receipt_total", "含税金额", facts.Total)
-	addText("receipt_tax", "税额", facts.Tax)
-	addText("receipt_date", "开票日期", facts.IssueDate)
-	addText("receipt_country", "国家", facts.Country)
-	addText("receipt_summary", "AI 消费概要", input.Recognition.Summary)
+	addText("receipt_title", "发票摘要", facts.Title, "来源：发票台账.发票摘要")
+	addText("receipt_number", "发票号", facts.Number, "来源：发票台账.发票号")
+	addText("receipt_type", "票据类型", facts.ReceiptType, "来源：发票台账.票据类型")
+	addText("receipt_business_category", "业务分类", facts.BusinessCategory, "来源：发票台账.业务分类")
+	addText("receipt_seller", "开票方名称", facts.Seller, "来源：发票台账.开票方名称")
+	addText("receipt_buyer", "购买方名称", facts.Buyer, "来源：发票台账.购买方名称")
+	addText("receipt_currency", "币种", facts.Currency, "来源：发票台账.币种")
+	addText("receipt_total", "含税总额", facts.Total, "来源：发票台账.含税总额")
+	addText("receipt_pretax", "不含税金额", facts.Pretax, "来源：发票台账.不含税金额")
+	addText("receipt_tax", "税额", facts.Tax, "来源：发票台账.税额")
+	addText("receipt_tax_rate", "税率", facts.TaxRate, "来源：发票台账.税率")
+	addText("receipt_date", "开票日期", facts.IssueDate, "来源：发票台账.开票日期")
+	addText("receipt_country", "国家", facts.Country, "来源：发票台账.国家")
+	addText("receipt_summary", "AI消费概要", input.Recognition.Summary, "来源：发票台账.AI消费概要")
+	addText("receipt_trace_id", "发票识别流水号", input.Recognition.Origin.TraceID, "来源：发票台账.发票识别流水号")
+	addText("attachment_key", "附件标识", sourceID, "来源：发票台账.附件标识")
 
 	if invoice, ok := mapInvoice(input, sourceID); ok {
 		document.Invoices = []seal.ExternalInvoice{invoice}
@@ -133,11 +148,11 @@ func MapBatch(batch aggregate.Document, uploads map[string]seal.UploadResponse) 
 			result.Fields = append(result.Fields, field)
 		}
 		if len(item.Recognition.Raw) > 0 {
-			result.Fields = append(result.Fields, seal.DocumentField{Key: prefix + "ocr_raw_json", Label: "完整 OCR 结果", Type: "TEXT", Value: string(item.Recognition.Raw)})
+			result.Fields = append(result.Fields, seal.DocumentField{Key: prefix + "ocr_raw_json", Label: "完整 OCR 结果", Type: "TEXT", Value: string(item.Recognition.Raw), Comments: "来源：发票台账.识别原始JSON"})
 		}
 		if len(part.Invoices) == 0 {
 			result.Fields = append(result.Fields, seal.DocumentField{Key: prefix + "data_quality", Label: "票据数据完整性", Type: "TEXT",
-				Value: "结构化发票必填事实不足，请结合完整 OCR 结果和原件人工核对"})
+				Value: "结构化发票必填事实不足，请结合完整 OCR 结果和原件人工核对", Comments: "来源：单据质检提示"})
 		}
 		result.Invoices = append(result.Invoices, part.Invoices...)
 	}
@@ -173,7 +188,7 @@ func MapBatch(batch aggregate.Document, uploads map[string]seal.UploadResponse) 
 		}
 		result.Fields = append(result.Fields, seal.DocumentField{
 			Key: fmt.Sprintf("duplicate_candidate_%02d", index+1), Label: "台账查重候选", Type: "TEXT",
-			Value: string(evidence),
+			Value: string(evidence), Comments: "来源：发票台账历史票号检索",
 		})
 	}
 	result.Fields = append(result.Fields, seal.DocumentField{Key: "duplicate_evidence_scope", Label: "查重证据范围", Type: "TEXT",

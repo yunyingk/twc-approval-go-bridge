@@ -134,6 +134,25 @@ func TestGatewayPreservesSharedPaymentEvidenceWithoutInventingClaims(t *testing.
 			t.Fatal("payment facts invented allocation")
 		}
 	}
+
+	// Verify header fields and traceability comments
+	sub := gateway.submits[0]
+	if len(sub.Fields) == 0 || sub.Fields[0].Key != "detail_id" || sub.Fields[0].Label != "报销明细ID" {
+		t.Fatalf("expected first field to be detail_id header, got %#v", sub.Fields[0])
+	}
+	if sub.Fields[0].Comments != "来源：个人报销明细.明细ID" {
+		t.Fatalf("expected Comments on detail_id, got %q", sub.Fields[0].Comments)
+	}
+	hasExpAmt := false
+	for _, f := range sub.Fields {
+		if f.Key == "expense_amount" && f.Value == "USD 9007199254740993.01" && f.Comments == "来源：交易流水表.交易金额(原币)" {
+			hasExpAmt = true
+			break
+		}
+	}
+	if !hasExpAmt {
+		t.Fatal("expected expense_amount header field with traceability comments")
+	}
 }
 
 func testService(t *testing.T, source app.Source, client SealGateway) *app.Service {

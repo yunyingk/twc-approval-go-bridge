@@ -34,7 +34,10 @@
 - 暂无
 
 ### 变更 (Changed)
-- 暂无
+- **SealAI 机审单据体结构与溯源注释增强 (`internal/seal`)**：
+  - 在提交至 SealAI 的单据顶层字段集（`Fields`）前置注入汇总单据头（`detail_id`、`expense_category`、`expense_reason`、`expense_amount`、`expense_date`、`transaction_id`、`merchant_name`、`settled_amount_cny`），直接映射报销明细核心事实；
+  - 为所有发票台账字段、流水字段与汇总单据头注入精确的 `Comments` 溯源标注（如 `来源：发票台账.xxx`、`来源：交易流水表.xxx`），对齐 SealAI 前端友好展示规范；
+  - 维持真实原件上传（有效 `evidenceAttachmentId`）与真实发票号传递，保持真实闭环证据链。
 
 ### 修复 (Fixed)
 - 暂无
