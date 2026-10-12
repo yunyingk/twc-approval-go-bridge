@@ -44,6 +44,8 @@
 - **通知连通性诊断命令 (`test-notify`)**：新增 CLI 诊断子命令 `./bin/twc-approval-go-bridge test-notify [-chat <id>] [-open-id <id>]`，便于管理员即时测试飞书机器人的群聊/单聊卡片投递权限。
 
 ### 变更 (Changed)
+- **监控看板时间显示统一转为 UTC+8 北京时间 (`internal/httpserver/dashboard.go`, `cmd/server/main.go`)**：服务端与前端所有时间（服务启动时间、飞书长连接建立时间、最新事件接收时间、业务审计流水时间及系统终端日志时间）统一定位并格式化为 `(UTC+8)` 北京时间（Asia/Shanghai），杜绝宿主机或容器默认 UTC 时区引起的偏差。
+- **飞书长连接卡片动态展示全部订阅事件 (`internal/httpserver/dashboard.go`, `internal/feishu/events/listener.go`, `cmd/server/main.go`)**：解决长连接监听事件仅静态展示单一条目的问题，支持从底层 Listener 动态获取并展示已注册的全部事件类型（如多维表格变更 `drive.file.bitable_record_changed_v1` 与机器人私信 `im.message.receive_v1`），并在前端页面中右对齐标签堆叠呈现与动态刷新。
 - **飞书长连接统一共享 (`cmd/server/main.go`)**：服务启动时通过单一长连接同时监听多维表格记录变更与单聊消息接收，保持极低的网络与系统开销。
 - **全局日志接入缓冲管道 (`cmd/server/main.go`)**：服务启动时通过 `BufferedHandler` 透明复制标准输出日志到内存环形缓冲区，供 Web 端随时拉取，零性能损耗且不污染外部日志管道。
 - **识别流程对接死信告警 (`internal/app/recognition`)**：在小票识别流程达到最大尝试次数进入死信状态时触发 `DeadLetterNotifier`，在常驻后台（`server`）中自动联动通知服务。

@@ -559,15 +559,17 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, logB
 		feishuState := "disabled"
 		var feishuConnected, feishuLastEvent string
 		var feishuEvents int64
+		var feishuEventTypes []string
 		if len(listeners) > 0 {
 			state, connAt, lastEv, count := listeners[0].Status()
 			feishuState = state
 			feishuEvents = count
+			feishuEventTypes = listeners[0].EventTypes()
 			if !connAt.IsZero() {
-				feishuConnected = connAt.Format("2006-01-02 15:04:05")
+				feishuConnected = httpserver.FormatCST(connAt)
 			}
 			if !lastEv.IsZero() {
-				feishuLastEvent = lastEv.Format("2006-01-02 15:04:05")
+				feishuLastEvent = httpserver.FormatCST(lastEv)
 			}
 		}
 
@@ -585,17 +587,18 @@ func runServer(ctx context.Context, cfg config.Config, logger *slog.Logger, logB
 		}
 
 		return httpserver.Status{
-			Version:         version.Version,
-			GitCommit:       version.GitCommit,
-			BuildDate:       version.BuildDate,
-			HTTPAddr:        cfg.Runtime.HTTPAddr,
-			StartTime:       startTime,
-			Uptime:          uptime.String(),
-			UptimeSeconds:   int64(uptime.Seconds()),
-			FeishuState:     feishuState,
-			FeishuEvents:    feishuEvents,
-			FeishuConnected: feishuConnected,
-			FeishuLastEvent: feishuLastEvent,
+			Version:          version.Version,
+			GitCommit:        version.GitCommit,
+			BuildDate:        version.BuildDate,
+			HTTPAddr:         cfg.Runtime.HTTPAddr,
+			StartTime:        startTime,
+			Uptime:           uptime.String(),
+			UptimeSeconds:    int64(uptime.Seconds()),
+			FeishuState:      feishuState,
+			FeishuEvents:     feishuEvents,
+			FeishuConnected:  feishuConnected,
+			FeishuLastEvent:  feishuLastEvent,
+			FeishuEventTypes: feishuEventTypes,
 			ReceiptProvider: cfg.ReceiptProvider(),
 			ReviewProvider:  cfg.ReviewProvider(),
 			ReviewTrigger:   cfg.ReviewTriggerMode(),

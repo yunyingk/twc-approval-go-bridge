@@ -53,8 +53,9 @@ func (s *ConnectionStatus) Snapshot() (state string, connectedAt, lastEventAt ti
 
 // Listener wraps the SDK WebSocket client and keeps SDK details out of main.
 type Listener struct {
-	client *larkws.Client
-	status *ConnectionStatus
+	client     *larkws.Client
+	status     *ConnectionStatus
+	eventTypes []string
 }
 
 // Status returns current connection metrics for diagnostics and health dashboards.
@@ -63,6 +64,16 @@ func (l *Listener) Status() (state string, connectedAt, lastEventAt time.Time, c
 		return "disabled", time.Time{}, time.Time{}, 0
 	}
 	return l.status.Snapshot()
+}
+
+// EventTypes returns a copy of registered event types handled by this listener.
+func (l *Listener) EventTypes() []string {
+	if l == nil {
+		return nil
+	}
+	out := make([]string, len(l.eventTypes))
+	copy(out, l.eventTypes)
+	return out
 }
 
 // New creates a persistent-connection listener without opening a network connection.
@@ -146,7 +157,7 @@ func NewForEvents(appID, appSecret string, sinks map[string]Sink, logger *slog.L
 		}),
 	)
 
-	return &Listener{client: client, status: status}, nil
+	return &Listener{client: client, status: status, eventTypes: types}, nil
 }
 
 func newEventDispatcher(sinks map[string]Sink) (*dispatcher.EventDispatcher, []string, error) {

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHealthEndpoint(t *testing.T) {
@@ -233,6 +234,48 @@ func TestSystemLogsAPI(t *testing.T) {
 	bodyErr := resErr.Body.String()
 	if !strings.Contains(bodyErr, "connection timeout") || strings.Contains(bodyErr, "server starting") {
 		t.Fatalf("expected only ERROR logs, got: %s", bodyErr)
+	}
+}
+
+func TestFormatCSTAndDashboardEventTypes(t *testing.T) {
+	// 1. FormatCST
+	fixedUTC := time.Date(2026, 10, 12, 2, 7, 44, 0, time.UTC)
+	gotCST := FormatCST(fixedUTC)
+	wantCST := "2026-10-12 10:07:44 (UTC+8)"
+	if gotCST != wantCST {
+		t.Fatalf("FormatCST = %q, want %q", gotCST, wantCST)
+	}
+
+	zeroTime := time.Time{}
+	if gotZero := FormatCST(zeroTime); gotZero != "未记录" {
+		t.Fatalf("FormatCST(zero) = %q, want %q", gotZero, "未记录")
+	}
+
+	// 2. Dashboard rendering with multiple event types
+	s := New(":0", slog.Default(), "0.3.2")
+	s.SetStatusProvider(func() Status {
+		return Status{
+			Version:          "0.3.2",
+			StartTime:        fixedUTC,
+			FeishuState:      "ready",
+			FeishuConnected:  gotCST,
+			FeishuEventTypes: []string{"drive.file.bitable_record_changed_v1", "im.message.receive_v1"},
+		}
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	res := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("dashboard status = %d, want 200", res.Code)
+	}
+	body := res.Body.String()
+	if !strings.Contains(body, "2026-10-12 10:07:44 (UTC+8)") {
+		t.Fatalf("dashboard missing CST start time: %s", body)
+	}
+	if !strings.Contains(body, "drive.file.bitable_record_changed_v1") || !strings.Contains(body, "im.message.receive_v1") {
+		t.Fatalf("dashboard missing multiple event types: %s", body)
 	}
 }
 

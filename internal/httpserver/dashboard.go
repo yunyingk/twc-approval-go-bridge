@@ -16,26 +16,38 @@ type AnyreceiptStatus struct {
 	Error              string `json:"error,omitempty"`
 }
 
+// CSTZone is the UTC+8 Beijing timezone used across monitoring dashboards.
+var CSTZone = time.FixedZone("Asia/Shanghai", 8*3600)
+
+// FormatCST formats a timestamp into human-readable UTC+8 Beijing time string.
+func FormatCST(t time.Time) string {
+	if t.IsZero() {
+		return "未记录"
+	}
+	return t.In(CSTZone).Format("2006-01-02 15:04:05 (UTC+8)")
+}
+
 // Status contains live runtime and diagnostics information for health dashboards.
 type Status struct {
-	Version         string            `json:"version"`
-	GitCommit       string            `json:"git_commit,omitempty"`
-	BuildDate       string            `json:"build_date,omitempty"`
-	HTTPAddr        string            `json:"http_addr"`
-	StartTime       time.Time         `json:"start_time"`
-	Uptime          string            `json:"uptime"`
-	UptimeSeconds   int64             `json:"uptime_seconds"`
-	FeishuState     string            `json:"feishu_state"` // "ready", "reconnecting", "disconnected", "disabled"
-	FeishuEvents    int64             `json:"feishu_events"`
-	FeishuConnected string            `json:"feishu_connected,omitempty"`
-	FeishuLastEvent string            `json:"feishu_last_event,omitempty"`
-	ReceiptProvider string            `json:"receipt_provider"`
-	ReviewProvider  string            `json:"review_provider"`
-	ReviewTrigger   string            `json:"review_trigger"`
-	BaseToken       string            `json:"base_token,omitempty"`
-	BaseURL         string            `json:"base_url,omitempty"`
-	Tables          map[string]string `json:"tables,omitempty"`
-	Anyreceipt      *AnyreceiptStatus `json:"anyreceipt,omitempty"`
+	Version          string            `json:"version"`
+	GitCommit        string            `json:"git_commit,omitempty"`
+	BuildDate        string            `json:"build_date,omitempty"`
+	HTTPAddr         string            `json:"http_addr"`
+	StartTime        time.Time         `json:"start_time"`
+	Uptime           string            `json:"uptime"`
+	UptimeSeconds    int64             `json:"uptime_seconds"`
+	FeishuState      string            `json:"feishu_state"` // "ready", "reconnecting", "disconnected", "disabled"
+	FeishuEvents     int64             `json:"feishu_events"`
+	FeishuConnected  string            `json:"feishu_connected,omitempty"`
+	FeishuLastEvent  string            `json:"feishu_last_event,omitempty"`
+	FeishuEventTypes []string          `json:"feishu_event_types,omitempty"`
+	ReceiptProvider  string            `json:"receipt_provider"`
+	ReviewProvider   string            `json:"review_provider"`
+	ReviewTrigger    string            `json:"review_trigger"`
+	BaseToken        string            `json:"base_token,omitempty"`
+	BaseURL          string            `json:"base_url,omitempty"`
+	Tables           map[string]string `json:"tables,omitempty"`
+	Anyreceipt       *AnyreceiptStatus `json:"anyreceipt,omitempty"`
 }
 
 // StatusProvider produces a current status snapshot.
@@ -255,6 +267,15 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 	connectedTimeText := "未记录"
 	if status.FeishuConnected != "" {
 		connectedTimeText = status.FeishuConnected
+	}
+
+	eventTypesHTML := `<span class="val code">drive.file.bitable_record_changed_v1</span>`
+	if len(status.FeishuEventTypes) > 0 {
+		var b strings.Builder
+		for _, et := range status.FeishuEventTypes {
+			b.WriteString(fmt.Sprintf(`<span class="val code">%s</span>`, et))
+		}
+		eventTypesHTML = b.String()
 	}
 
 	baseDisplay := "未绑定 Base"
@@ -627,9 +648,11 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
           <span class="label">最近一次事件</span>
           <span class="val" id="feishu-last-event">%s</span>
         </div>
-        <div class="row">
+        <div class="row" style="align-items: flex-start;">
           <span class="label">监听事件类型</span>
-          <span class="val code">drive.file.bitable_record_changed_v1</span>
+          <div id="feishu-event-types" style="display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem;">
+            %s
+          </div>
         </div>
       </div>
 
@@ -865,8 +888,18 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
         if (data.feishu_events !== undefined) {
           document.getElementById('feishu-event-count').textContent = data.feishu_events;
         }
+        if (data.feishu_connected) {
+          const connEl = document.getElementById('feishu-connected-at');
+          if (connEl) connEl.textContent = data.feishu_connected;
+        }
         if (data.feishu_last_event) {
           document.getElementById('feishu-last-event').textContent = data.feishu_last_event;
+        }
+        if (data.feishu_event_types && data.feishu_event_types.length > 0) {
+          const typesContainer = document.getElementById('feishu-event-types');
+          if (typesContainer) {
+            typesContainer.innerHTML = data.feishu_event_types.map(t => '<span class="val code">' + escapeHtml(t) + '</span>').join('');
+          }
         }
         if (data.uptime) {
           document.getElementById('system-uptime').textContent = data.uptime;
@@ -976,7 +1009,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 
       let html = '';
       for (const e of filtered) {
-        const t = new Date(e.timestamp).toLocaleString('zh-CN', { hour12: false });
+        const t = new Date(e.timestamp).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) + ' (UTC+8)';
         let badge = '🔹 ' + e.type;
         if (e.type === 'notify_card_sent') badge = '<span style="color: #38bdf8;">📱 推送卡片</span>';
         else if (e.type === 'file_uploaded') badge = '<span style="color: #a855f7;">📎 文件上传</span>';
@@ -1100,7 +1133,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 
       let html = '';
       for (const e of filtered) {
-        const t = new Date(e.time).toLocaleTimeString('zh-CN', { hour12: false }) + '.' + String(new Date(e.time).getMilliseconds()).padStart(3, '0');
+        const t = new Date(e.time).toLocaleTimeString('zh-CN', { hour12: false, timeZone: 'Asia/Shanghai' }) + '.' + String(new Date(e.time).getMilliseconds()).padStart(3, '0');
         let lvlClass = 'level-info';
         if (e.level === 'WARN') lvlClass = 'level-warn';
         else if (e.level === 'ERROR') lvlClass = 'level-error';
@@ -1202,6 +1235,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		connectedTimeText,
 		status.FeishuEvents,
 		lastEventText,
+		eventTypesHTML,
 		anyreceiptTagStyle, anyreceiptTagText,
 		anyreceiptBalanceText,
 		anyreceiptCallsText,
@@ -1210,7 +1244,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request) {
 		status.HTTPAddr,
 		versionDisplay,
 		status.Uptime,
-		status.StartTime.Format("2006-01-02 15:04:05"),
+		FormatCST(status.StartTime),
 		baseDisplay,
 		tablesHTML,
 		status.ReceiptProvider,
