@@ -31,7 +31,12 @@
 ## [Unreleased]
 
 ### 新增 (Added)
-- 暂无
+- **飞书原生审批单向推送模块恢复 (`internal/feishu/approval`)**：
+  - 重新恢复接入飞书原生审批提单能力，严格遵循“只推送、不回调、无反向监听”的单向轻量 Dispatcher 边界；
+  - 完整适配当前企业已生效的「海外易商卡消费确认单」模板（`7B19DB2B-1495-4CD8-A723-881F3859EBCE`），覆盖 3 个顶层表单控件与 20 个明细子控件，映射流水、发票事实及 AI 机审结果；
+  - 引入 `CreateInstanceRequest` 构造器与确定性 UUID 幂等防重机制，支持指定节点自选审批人；
+  - 扩展 CLI 运维子命令 `preview-approval <id>`（只读预览 Dry-Run）与 `push-approval <id>`（单向推单）；
+  - 配置层支持 `[feishu.approval]` 集中管理模板 Code 与默认审批人。
 
 ### 变更 (Changed)
 - **SealAI 机审单据体结构与溯源注释增强 (`internal/seal`)**：

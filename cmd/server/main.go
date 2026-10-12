@@ -143,6 +143,18 @@ func main() {
 		}
 	case "export-skill":
 		cmdErr = runExportSkill(os.Args[2:], os.Stdout)
+	case "preview-approval":
+		if len(os.Args) < 3 {
+			cmdErr = errors.New("usage: preview-approval <record-id>")
+		} else {
+			cmdErr = runApprovalPreview(ctx, cfg, os.Args[2], os.Stdout)
+		}
+	case "push-approval":
+		if len(os.Args) < 3 {
+			cmdErr = errors.New("usage: push-approval <record-id>")
+		} else {
+			cmdErr = runApprovalPush(ctx, cfg, os.Args[2], os.Stdout)
+		}
 	case "version":
 		printVersion(os.Args[2:], os.Stdout)
 	case "audit":
@@ -221,6 +233,8 @@ func printUsage(w io.Writer) {
   scan-transactions        全量扫描流水表并按独立规则批量自动催报
   preview-review <id>      预览单据 AI 审核请求载荷
   submit-review <id>       手动送审单据并触发机审
+  preview-approval <id>    预览飞书审批实例表单与节点载荷 (Dry-Run 无副作用)
+  push-approval <id>       向飞书发起审批实例 (单向推送，不接收审批回调)
   review-status <id>       查看单据机审状态与留痕
   check-review <id>        校验单据机审结果与一致性
   retry-writeback <id>     手动重试机审结果回写

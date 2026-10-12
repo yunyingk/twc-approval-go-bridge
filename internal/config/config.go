@@ -72,11 +72,19 @@ type AppCredentials struct {
 	AppSecret string `json:"app_secret" toml:"app_secret"`
 }
 
+type ApprovalSettings struct {
+	PushEnabled            bool   `json:"push_enabled,omitempty" toml:"push_enabled,omitempty"`
+	ApprovalCode           string `json:"approval_code,omitempty" toml:"approval_code,omitempty"`
+	DefaultApproverOpenID  string `json:"default_approver_open_id,omitempty" toml:"default_approver_open_id,omitempty"`
+	DefaultInitiatorOpenID string `json:"default_initiator_open_id,omitempty" toml:"default_initiator_open_id,omitempty"`
+}
+
 type FeishuSettings struct {
 	AppCredentials
-	Host         string `json:"host,omitempty" toml:"host,omitempty"`
-	EventType    string `json:"event_type" toml:"event_type"`
-	LogRawEvents bool   `json:"log_raw_events" toml:"log_raw_events"`
+	Host         string           `json:"host,omitempty" toml:"host,omitempty"`
+	EventType    string           `json:"event_type" toml:"event_type"`
+	LogRawEvents bool             `json:"log_raw_events" toml:"log_raw_events"`
+	Approval     ApprovalSettings `json:"approval,omitempty" toml:"approval,omitempty"`
 }
 
 // NormalizedHost returns the normalized base URL of the Feishu tenant host,
@@ -263,6 +271,9 @@ func LoadFile(path string) (Config, error) {
 	feishu := document.Feishu
 	feishu.Host = feishu.NormalizedHost()
 	feishu.EventType = fallback(feishu.EventType, "drive.file.bitable_record_changed_v1")
+	if feishu.Approval.ApprovalCode == "" {
+		feishu.Approval.ApprovalCode = "7B19DB2B-1495-4CD8-A723-881F3859EBCE"
+	}
 	cfg := Config{
 		ConfigFile: path,
 		TablesFile: tablesPath,

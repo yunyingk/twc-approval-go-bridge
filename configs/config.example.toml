@@ -52,6 +52,13 @@ host = ""
 event_type = "drive.file.bitable_record_changed_v1"
 log_raw_events = false
 
+# 飞书原生审批单推送设置（海外易商卡消费确认单，单向提单，不接收审批回调）
+[feishu.approval]
+push_enabled = false
+approval_code = "7B19DB2B-1495-4CD8-A723-881F3859EBCE"
+default_approver_open_id = "" # 审批人 OpenID (如 "ou_xxx")
+default_initiator_open_id = "" # 提单人 OpenID (如 "ou_xxx")
+
 # ==========================================
 # 4. Anyreceipt 海外小票识别凭证
 # ==========================================
