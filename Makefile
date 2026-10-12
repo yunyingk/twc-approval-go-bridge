@@ -1,5 +1,5 @@
 APP_NAME := twc-approval-go-bridge
-VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null || echo 0.3.1)
+VERSION ?= $(shell git describe --tags --exact-match 2>/dev/null || echo 0.3.2)
 GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
 BUILD_DATE ?= $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
 VERSION_PKG := github.com/yunyingk/twc-approval-go-bridge/internal/version

@@ -49,7 +49,7 @@
 - **识别流程对接死信告警 (`internal/app/recognition`)**：在小票识别流程达到最大尝试次数进入死信状态时触发 `DeadLetterNotifier`，在常驻后台（`server`）中自动联动通知服务。
 
 ### 修复 (Fixed)
-- 暂无
+- **Makefile 版本回退风险修正 (`Makefile`)**：将无 Git Tag 时的回退默认版本由 `0.3.1` 修正为与当前基线一致的 `0.3.2`，避免 `make build` 编译时通过 ldflags 意外覆写低版本号。
 
 ---
 
