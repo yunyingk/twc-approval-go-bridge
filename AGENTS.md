@@ -38,7 +38,7 @@
 
 ## 4. 版本机制与变更日志规范（有迹可循）
 
-- **语义化版本基线**：本项目版本遵循 [SemVer 2.0.0](https://semver.org/lang/zh-CN/) 规范，当前准上线基线版本定义为 `0.3.2`。核心版本信息收敛于 `internal/version/version.go`，并在编译构建时通过 ldflags 注入 `GitCommit` 与 `BuildDate`。
+- **语义化版本基线**：本项目版本遵循 [SemVer 2.0.0](https://semver.org/lang/zh-CN/) 规范，当前准上线基线版本定义为 `0.3.3`。核心版本信息收敛于 `internal/version/version.go`，并在编译构建时通过 ldflags 注入 `GitCommit` 与 `BuildDate`。
 - **变更日志强制追踪（修改有迹可循）**：
   - 维护根目录 `CHANGELOG.md`（遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 规范）。
   - **任何**代码、接口、配置、依赖或运维逻辑的变更，必须在 `CHANGELOG.md` 的 `[Unreleased]` 中同步登记变更类别（`Added` / `Changed` / `Fixed` / `Security` 等）与说明，杜绝未经记录的隐式变更。

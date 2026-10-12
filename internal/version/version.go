@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	// Version is the semantic release version. Defaults to the current release base 0.3.2.
-	Version = "0.3.2"
+	// Version is the semantic release version. Defaults to the current release base 0.3.3.
+	Version = "0.3.3"
 
 	// GitCommit is the commit SHA, usually injected via -ldflags at build time.
 	GitCommit = ""
