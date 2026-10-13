@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yunyingk/twc-approval-go-bridge/internal/config"
 )
@@ -156,7 +157,11 @@ func TestFormatHelpers(t *testing.T) {
 		t.Errorf("formatString fallback = %s", got)
 	}
 
-	// formatTime
+	// formatTime formats with the process timezone; pin UTC+8 so the
+	// expected calendar date holds on UTC build hosts too.
+	previousLocal := time.Local
+	time.Local = time.FixedZone("UTC+8", 8*3600)
+	defer func() { time.Local = previousLocal }()
 	if got := formatTime(float64(1790524800000)); got != "2026/09/28" {
 		t.Errorf("formatTime millis = %s", got)
 	}
