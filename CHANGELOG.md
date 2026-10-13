@@ -31,6 +31,7 @@
 ## [Unreleased]
 
 ### 新增 (Added)
+- **Mac 后台服务图标与快捷更新 (`deploy/macos`, `scripts/local-service.py`, `Makefile`)**：新增 ChatGPT 内置 imagegen 生成的原创极简飓风图标及后台 `.app` 包装；通过同 PID 启动适配保留现有 Go 业务服务，提供 `make local-update`、`make local-status` 和 `make local-rollback`。更新执行完整检查、独立候选构建、本机签名验证、版本备份、单实例优雅切换以及健康／飞书连接／构建元数据／图标验收，失败时尝试恢复已保存版本；配置与业务状态不参与程序回滚。
 - **全局版本同步与跨文件一致性守卫体系 (`scripts/bump-version.sh`, `internal/version/consistency_test.go`)**：
   - 新增一键同步脚本 `scripts/bump-version.sh` 与 Makefile 命令（`make bump VERSION=x.y.z`、`make check-version`），实现 `version.go`、`Makefile`、`Dockerfile`、K8s 清单与准上线基线的原子联动更新；
   - 新增自动化一致性单元测试 `TestVersionConsistency`，彻底杜绝多端构建与部署配置中的版本漂移与人工遗漏。

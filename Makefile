@@ -8,7 +8,7 @@ LDFLAGS := -s -w \
 	-X $(VERSION_PKG).GitCommit=$(GIT_COMMIT) \
 	-X $(VERSION_PKG).BuildDate=$(BUILD_DATE)
 
-.PHONY: fmt test vet build run clean docker-build compose-up version check-version bump
+.PHONY: fmt test vet build run clean docker-build compose-up version check-version bump local-update local-status local-rollback
 
 fmt:
 	gofmt -w cmd internal
@@ -44,3 +44,13 @@ check-version:
 
 bump:
 	@./scripts/bump-version.sh $(VERSION)
+
+# Update only this checkout's macOS LaunchAgent; retain its config and state.
+local-update:
+	python3 scripts/local-service.py update
+
+local-status:
+	python3 scripts/local-service.py status
+
+local-rollback:
+	python3 scripts/local-service.py rollback

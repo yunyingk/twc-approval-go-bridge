@@ -28,7 +28,27 @@ make build
 
 `check-business-config` 以应用身份只读核对配置的表结构；读取通过不等于写入或事件链路已验收。`deploy/run-local-debug.py` 将 `CONFIG_FILE` 默认设为仓库内 `configs/config.toml` 并执行 `bin/twc-approval-go-bridge`；已设置该环境变量时保留调用者选择。包装器定位正确不证明监督进程已经重启或使用了最新二进制。
 
-当前 Docker/K8s 约定为 `CONFIG_FILE=/configs/config.toml`，配置目录在 `/configs`，持久状态卷在 `/data`；应同步选择 `runtime.state_dir` 并保证运行 UID 可读取配置。文件状态库使用单活实例，K8s 清单固定 `replicas: 1` 和 `Recreate`。本轮没有部署或重启服务。
+当前 Docker/K8s 约定为 `CONFIG_FILE=/configs/config.toml`，配置目录在 `/configs`，持久状态卷在 `/data`；应同步选择 `runtime.state_dir` 并保证运行 UID 可读取配置。文件状态库使用单活实例，K8s 清单固定 `replicas: 1` 和 `Recreate`。本轮仅更新 Mac 常驻服务，未部署 Docker/K8s。
+
+### Mac 本机快捷更新
+
+当前仓库的 Mac LaunchAgent 使用 `com.yingqing.twc-approval-debug`。在本仓库根目录执行：
+
+```bash
+make local-status    # 只读查看源代码、磁盘二进制、运行进程和应用图标身份
+make local-update    # 完整检查、构建、备份、切换及验收
+make local-rollback  # 恢复上一份成功切换前保存的程序与 LaunchAgent
+```
+
+`local-update` 先执行更新工具的隔离测试、两种 Go 构建的全量测试及 `go vet ./...`；原服务在检查和构建期间继续运行。候选应用通过严格本机签名检查后，保存现有可恢复版本，卸载本服务的 LaunchAgent，向仍由 Launch Services 持有的本项目应用发送 SIGTERM，确认旧实例退出后再替换、启动。工具拒绝其他项目的 LaunchAgent、无关端口占用和并发更新，不使用 SIGKILL 强行切换。
+
+新服务以 `TWC Approval Bridge.app` 后台运行，在活动监视器中显示应用名称及极简飓风图标。LaunchAgent 等待应用退出，启用既有保活；工具将退出等待时间设置为配置的 `shutdown_timeout` 加 10 秒、且不少于 20 秒。实际服务 PID 与 LaunchAgent 的 `open` 等待进程 PID 会分别展示。
+
+切换完成需验证 `/healthz`、`/readyz`、完整构建元数据、配置所需的飞书连接状态、唯一后端 PID 和对应应用包图标。失败则恢复保存的程序与 LaunchAgent，再核对恢复结果；恢复自身失败时明确报错并保留备份位置。第一次切换前若磁盘二进制与运行进程不同，回滚目标是已经保存并能重新启动的磁盘二进制，而不是无法从已替换文件重建的内存镜像。
+
+应用产物在 `bin/local-service/releases/`；活动版本引用在 `bin/local-service/active.json`；更新锁、程序备份、上一版本引用与最新验收结果 `last-operation.json` 在权限为 0700 的 `data/local-service/`，私有文件为 0600。更新和回滚不复制或回退 `configs/config.toml`、表拓扑和业务状态，仍使用既有配置、日志、公网入口及持久化目录；服务恢复时会继续正常处理已有后台任务。回滚成功后保留切换前版本供再次恢复。未提交源码会在构建提交号后标记 `-dirty`；构建期间源码发生变化则中止切换。
+
+`make build` 仍只构建 CLI 二进制；更新正在运行的应用请使用 `make local-update`。只需构建候选应用、暂不切换时可用 `python3 scripts/local-service.py build`。包装器的非服务命令继续执行 CLI；Linux/Docker 不使用本机应用包。图标及原生启动适配见[资源说明](../deploy/macos/README.md)。
 
 ## 当前业务与命令边界
 
