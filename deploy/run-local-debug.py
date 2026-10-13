@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the supervised debug process with one explicitly selected JSON document."""
+"""Run the debug binary with one explicitly selected TOML configuration."""
 
 import os
 from pathlib import Path

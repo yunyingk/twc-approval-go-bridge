@@ -1,5 +1,53 @@
 # 当前业务实现与交接
 
+核对日期：2026-10-13；代码基线 `9000713`。本节描述当前源码与命令契约，不声称本机监督进程或线上环境已部署相同版本。历史联调与验收在文末保留。
+
+## 当前配置
+
+默认只读取 `configs/config.toml`，`CONFIG_FILE` 只用于指定另一份 TOML 的路径。没有根目录配置自动回退，不读取 `.env`、旧凭证环境变量或 `BUSINESS_CONFIG_FILE`，也不支持字段环境变量覆盖。主配置和私有表拓扑受 Git 忽略保护，主配置按项目约定使用 `0600` 权限。
+
+- `[feishu] app_id/app_secret`：应用身份凭证，不发起用户 OAuth。
+- `tables_file`：引用 `configs/tables/*.json` 的 Base/Table/Field 映射；相对路径优先找工作目录，未命中时相对主配置目录解析。
+- `[recognition]`：Anyreceipt／自有模型／关闭，事件、轮询或两者，以及首次扫描策略。
+- `[review]`：Seal／自有模型，`manual` 或 `after_recognition`，关联流水和修改重审设置。
+- `[model]`：识别与自有审核共享的连接；`review.rules_file` 只供模型审核使用，采用与表拓扑相同的相对路径查找顺序。
+- `[feishu.approval]`：当前单条表单预览和显式单向提单的模板及默认人员，不使用旧 `approval` JSON。
+
+完整字段见[脱敏 TOML 示例](../configs/config.example.toml)及[业务配置说明](business-configuration.md)。
+
+## 当前运行与核验
+
+从仓库根目录构建后，可先查看帮助、版本与业务配置：
+
+```bash
+make build
+./bin/twc-approval-go-bridge help
+./bin/twc-approval-go-bridge version -json
+./bin/twc-approval-go-bridge check-business-config
+```
+
+`check-business-config` 以应用身份只读核对配置的表结构；读取通过不等于写入或事件链路已验收。`deploy/run-local-debug.py` 将 `CONFIG_FILE` 默认设为仓库内 `configs/config.toml` 并执行 `bin/twc-approval-go-bridge`；已设置该环境变量时保留调用者选择。包装器定位正确不证明监督进程已经重启或使用了最新二进制。
+
+当前 Docker/K8s 约定为 `CONFIG_FILE=/configs/config.toml`，配置目录在 `/configs`，持久状态卷在 `/data`；应同步选择 `runtime.state_dir` 并保证运行 UID 可读取配置。文件状态库使用单活实例，K8s 清单固定 `replicas: 1` 和 `Recreate`。本轮没有部署或重启服务。
+
+## 当前业务与命令边界
+
+附件从配置的报销明细进入识别编排，结果交付发票台账并关联来源。识别与审核独立选择提供方；`after_recognition` 等待同一明细的附件完整识别和交付，再准备审核。Seal 结果在配置密钥 URL 的回调中按已保存尝试和版本处理，AI 列只表示审核建议。
+
+- `preview-review <id>`：读取当前事实并预览，不调用付费审核器。
+- `review-status <id|all>`：查看本地状态；`check-review <id|all>`：按当前事实核对历史审核版本。
+- `submit-review <id>`：显式调用所选审核器；`retry-writeback <document-id>`：恢复已保存结果的交付；二者有不同的业务副作用。
+- `preview-approval <id>`：读取当前事实、构造表单，不调用审批创建接口；`push-approval <id>`：显式向飞书创建实例。具体配置、已知开关边界及旧归档实现见[审批说明](approval-configuration.md)。
+- 通知、待办、表格初始化和授权管理等写入命令以 CLI 帮助为入口，按项目规则使用明确数量、人员及 Dry-Run 范围。
+
+只读／预览描述的是业务接口副作用；除帮助和版本等早返回命令外，CLI 会初始化本地审计存储，部分命令也会打开状态库，不应宣称所有预览都完全没有本地文件写入或网络访问。`preview-approval` 不等于旧复杂审批的版本门禁或整批预检。
+
+旧完整审批扩展保存在 `archive/feishu-native-approval`（标签 `archive/native-approval-20261008`），主线没有旧批次准备／恢复／结果监听。AI 审核完成和单向创建审批都不等于人工审批完成或财务结算。已有代码不授权自动继续实现历史“下一步”。
+
+## 历史交接记录（不作为当前操作说明）
+
+以下原文保留 2026-10-03 至 2026-10-08 的实现与部署过程。旧 JSON／环境变量示例、复杂审批命令、当时的本机版本和开关均为历史快照，不能直接用于当前主线；历史内容不因本次文档核对而被重新验收。
+
 2026-10-08 后续配置调整：主配置现为 TOML，模板及自有规则独立；监督服务尚未切换。以下保留前阶段记录，当前结构与 Gemini 交接见[最新记录](progress/2026-10-08-config-toml.md)。
 
 2026-10-08 更新：配置已收敛到唯一私有 `config.json`，旧环境变量和分文件示例不再生效；下文保留历史阶段说明。当前入口、迁移和验证以[单文件配置记录](progress/2026-10-08-single-config.md)为准。
@@ -14,7 +62,7 @@ Seal 真实页面与项目应用身份核验见 [Seal 测试租户实地核验](
 
 同日已完成企业副本的显式 Seal 送审、真实公网回调与七个专用 AI 结果字段回写；重复回调及同版本重跑复用已有结果。字段 ID、业务边界、修复原因与证据见[阶段过程记录](progress/2026-10-04-seal-review.md)。
 
-## 已落地的业务边界
+### 已落地的业务边界
 
 - `app/recognition` 共用附件任务、事件/轮询入队、识别结果交付和重启恢复。飞书事件 JSON 由 `feishu/base/events` 解码，台账映射在 `feishu/base/invoiceledger`。
 - `core/invoice.Facts` 统一票据事实；Anyreceipt、自有模型及历史台账在适配边界归一化。`Outputs` 与旧字段仍保留，`receiptcompat` 读取历史 `outputs` / `data.outputs` 及新 `facts`。
@@ -25,9 +73,9 @@ Seal 真实页面与项目应用身份核验见 [Seal 测试租户实地核验](
 - `seal/review.Gateway` 只负责 Seal 上传、映射和提交。**Seal 主线不加载本地规则；规则仍在 SealAI 内维护。** `anthropic/review` 才读取本地规则，并调用独立 Messages 客户端。
 - 旧 `anyreceipt/flow`、`anyreceipt/ledger` 和 Seal 编排入口保留兼容门面。当前服务直接装配新应用层，未删除原有目录。
 
-## 运行入口
+### 运行入口
 
-### 识别
+#### 识别
 
 原有 `RECEIPT_PROVIDER=anyreceipt|model` 和事件/轮询配置继续使用。`STATE_DIR` 默认 `data`，保存待处理任务、已识别结果、交付状态和首次扫描基线。重启后恢复未完成交付；基线已建立后，停机期间新增的附件会在后续轮询中处理。
 
@@ -35,7 +83,7 @@ Seal 真实页面与项目应用身份核验见 [Seal 测试租户实地核验](
 
 同一状态目录内，通过 OS 锁限制一个来源表/字段只能运行一个识别 worker。状态实现支持本项目的 Linux/macOS 目标，适用于单主机持久卷，不支持多机器共享目录下的分布式运行。Docker 使用 `/data`，Compose 已挂持久卷。
 
-### 版本化审核
+#### 版本化审核
 
 `REVIEW_TRIGGER_MODE=manual|after_recognition` 控制送审时机，独立于 `REVIEW_PROVIDER=seal|model`。默认配置为 `manual`；本机采用用户选择的 `after_recognition`，每次成功写入台账后保存送审意图，后台等待同一明细全部附件齐备，再执行共用的版本化提交。配置切换需重启；显式命令仍可用。实现与恢复边界见[自动送审过程记录](progress/2026-10-04-automatic-review.md)。
 
@@ -82,7 +130,7 @@ go run ./cmd/server retry-writeback <document-id>
 
 旧 `submit-seal` 继续固定使用 Seal，保留原 DocumentID 和未启用持久化的联调行为。正式接入版本和回调应使用 `submit-review`；不能把旧测试记录的回调当作新状态库中的已知任务。
 
-### 业务上下文及结果回写
+#### 业务上下文及结果回写
 
 选择业务文件并设置 `review.include_transactions=true` 后，来源适配器会按报销明细的原生关联读取第三方交易流水，把精确金额/币种、商户、时间及资料质量问题加入共用审核快照和版本。流水保持只读；Seal 与自有审核共享证据。配置、失败处理及 `preview-review` 只读预览见[业务来源与配置](business-configuration.md)。读取事实不等于代替 Seal 维护审核规则，不推导汇率、占用或分摊。
 
@@ -103,7 +151,7 @@ REVIEW_RESULT_FIELD_IDS={"decision":"<字段ID>","document_id":"<字段ID>","rev
 
 飞书读取和写入之间仍有并发修改窗口；当前没有平台条件更新或业务冻结锁。版本核对不是严格的事务锁，识别完成自动送审也不提供金额冻结或人工审批锁定。
 
-### Seal 结果接收
+#### Seal 结果接收
 
 配置至少 32 个随机 URL 安全字符的 `SEAL_CALLBACK_TOKEN` 后，服务启用：
 
@@ -123,7 +171,7 @@ go run ./cmd/server apply-seal-result /absolute/path/to/verified-callback.json
 
 原本机 `/seal/callback/mock` 保留，不进行业务回写。
 
-### 自有审核
+#### 自有审核
 
 `REVIEW_MODEL_API_KEY`、`REVIEW_MODEL_BASE_URL`、`REVIEW_MODEL_NAME` 与识别模型配置独立；`REVIEW_RULES_FILE` 只供此路径使用。示例见 [完整配置示例（现已统一）](../configs/config.example.toml)。缺少要求的上下文直接输出待复核，默认将模型批准/驳回建议转换为人工复核；只有经确认的本地规则显式允许自动决定时才保留模型决定。
 
@@ -131,7 +179,7 @@ go run ./cmd/server apply-seal-result /absolute/path/to/verified-callback.json
 
 `no_anthropic` 构建可运行外部主线，调用自有识别或自有审核时明确返回编译排除错误。供应商真实效果与费用尚未重新评估。
 
-## 仍需明确的业务工作
+### 仍需明确的业务工作
 
 人工审批共用编排已实现 `Prepare/Submit/Reconcile`，但尚无服务命令或真实来源装配。`core/approval` 按显式轴分组，要求每行当前事实版本等于已完成 AI 审核版本及显式允许的建议；冻结计划同时保存来源/目标身份、模板、配置、发起人、成员和精确业务值。`state.Files` 按来源单文件原子保存尝试和所有成员预约；不同实例映射不得替换，未知状态不得改成释放预约的失败状态。
 

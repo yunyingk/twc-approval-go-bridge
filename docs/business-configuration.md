@@ -1,6 +1,6 @@
 # 业务来源与配置
 
-更新：2026-10-08。项目运行只读取一份私有 `configs/config.toml`（0600、Git 忽略），不合并 `.env`、调试参数或旧业务配置。模板及自有审核规则独立保存，主配置仅按需引用规则。仓库仅保留[完整脱敏示例](../configs/config.example.toml)。配置迁移不更换业务资源或状态目录。
+更新：2026-10-13（按当前源码核对）。项目运行只读取一份私有 `configs/config.toml`（0600、Git 忽略），不合并 `.env`、调试参数或旧业务配置。模板及自有审核规则独立保存，主配置仅按需引用规则。仓库仅保留[完整脱敏示例](../configs/config.example.toml)。配置迁移不更换业务资源或状态目录。
 
 ## Base、Table 与 View
 
@@ -44,7 +44,7 @@ Table 类似普通表格的 Sheet；View 是同一张 Table 的另一种展示�
 1. **主运行配置**：私有 `config.toml`（0600、Git 忽略），仅包含服务运行参数、系统凭据（Feishu、Seal、Anyreceipt、自建模型）及通过 `tables_file` 对业务数据表拓扑的显式路径引用。
 2. **数据表拓扑配置**：独立 JSON 文件（如 `configs/tables/enterprise-test.json`，脱敏模板为 `configs/tables/enterprise.example.json`），纯净描述交易流水、报销明细、发票台账三张表的 Base/Table ID、常规字段映射，以及报销明细表的机审上下文列（`context_fields`）与 AI 回写结果列（`result_fields`）。
 
-默认读取 `configs/config.toml`（亦兼容根目录 `config.toml`）；只有 `CONFIG_FILE` 可以指定该文件的其他路径。文件不存在、TOML/JSON 无效、未知属性或绑定不成立时直接报错；没有环境变量后备或隐式合并。
+默认只读取 `configs/config.toml`，没有根目录 `config.toml` 的自动回退；只有 `CONFIG_FILE` 可以显式指定其他路径。主 TOML 或其引用的表拓扑 JSON 缺失、无效、存在未知属性或绑定不成立时直接报错；没有环境变量凭证后备或隐式合并。
 
 | 配置入口 | 文件格式 | 内容职责 |
 | --- | --- | --- |
@@ -109,11 +109,11 @@ change_debounce = "10s"
 
 ## 换企业或文档副本
 
-人工审批另有可选 `approval` 配置，字段绑定、目标身份、日期分组与 AI 结果门禁说明见[人工审批配置与预检](approval-configuration.md)。不配置时原识别/Seal 链路继续运行；它不替 Seal 维护规则，也不自动发起人工审批。
+当前轻量原生审批设置在主 TOML 的 `[feishu.approval]`，用于单条 `preview-approval` 与显式 `push-approval`，见[当前审批配置](approval-configuration.md)。旧的 `approval` JSON、分组、日期绑定与批次版本门禁属于归档实现，不适用于主线；配置变更本身不自动创建审批，也不替 Seal 维护规则。
 
 1. 在这份 `config.toml` 中更新企业应用凭证及三组 Base/Table/Field ID。配置含密钥，不进入 Git；先保留私有备份。
 2. 授予应用访问新 Base 的资源权限，核对应用权限及目标 Base 的事件订阅；服务继续使用应用身份。
 3. 执行 `go run ./cmd/server check-business-config`，或在所选 CONFIG_FILE 下执行 `go run ./cmd/server check-business-config`。命令只获取字段结构，核对字段类型和关联目标，不读取业务记录、不调用 OCR/Seal、不修改表。读取通过不代表写入或事件验收通过。
-4. 核验通过后重启服务，实际验证事件与回写。容器只读挂载同一份 TOML 至 `/config.toml`，`runtime.state_dir` 使用 `/data`；配置文件须可被容器运行 UID 读取，私有配置不进入镜像。
+4. 核验通过后重启服务，实际验证事件与回写。当前 Docker 与 K8s 配置使用 `CONFIG_FILE=/configs/config.toml`，配置目录挂载至 `/configs`（K8s 挂载为只读），`runtime.state_dir` 应按部署环境使用 `/data`；配置文件须可被容器运行 UID 读取，私有配置不进入镜像。
 
 配置名称和路径不参与识别去重或审核版本；迁移配置格式不会重建基线或任务。更换实际 Base/Table/Field 会进入新的业务范围，首次扫描按 recognition.poll_startup 执行；保留 runtime.state_dir 及已有状态，不为切换配置删除历史证据。

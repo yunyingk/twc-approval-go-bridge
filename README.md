@@ -1,5 +1,7 @@
 # twc-approval-go-bridge
 
+当前入口核对：2026-10-13，代码基线 `9000713`。运行配置只读取 `configs/config.toml`（或 `CONFIG_FILE` 指定的 TOML），版本基线为 `0.3.3`；主线已具备轻量 `preview-approval` / `push-approval` 单向提单。当前操作方法见[运行与交接](docs/runtime-and-handoff.md)和[审批配置](docs/approval-configuration.md)。下文带日期的联调与复杂审批说明保留为历史证据，不表示本机部署、配置开关或完整财务流程仍处于当时状态。
+
 2026-10-05 本轮按用户要求收尾：企业测试的自动识别、SealAI 审核、回调与 AI 字段回写主线已真实验收。后续人工审批扩展保留供 review，尚未启用或真实验收；本轮停止继续扩展。交付范围、验证证据与未完成项统一见[本轮交付与收尾范围](docs/delivery-scope.md)，下文保留各历史阶段说明。
 
 面向海外易商卡与海外票据的飞书、Seal 与 OCR 识别桥接服务。基础服务、飞书事件长连接、票据识别回写和独立的 SealAI 审核提交路径已有可运行代码。
@@ -47,7 +49,7 @@ make build
 
 服务默认读取工作目录中的 `configs/config.toml`。所有提供方、触发方式、凭证、服务端点和运行参数都在主配置文件中，业务多维表格拓扑与字段映射通过 `tables_file` 独立挂载（支持相对路径双通道查找：优先当前工作目录，未命中时相对主配置所在目录解析）；不加载 `.env`，不合并调试文件或旧环境变量。`CONFIG_FILE=/absolute/path/config.toml` 只用于显式指定主配置文件，不支持字段覆盖；文件缺失或无效直接报错。
 
-监听地址、日志和停止等待时间分别修改 `runtime.http_addr`、`runtime.log_level`、`runtime.shutdown_timeout`。复制示例后默认关闭识别及人工审批，可先启动健康检查；启用 `recognition.provider=anyreceipt` 前填写 `feishu.app_id/app_secret` 和 `anyreceipt.api_key`。
+监听地址、日志和停止等待时间分别修改 `runtime.http_addr`、`runtime.log_level`、`runtime.shutdown_timeout`。复制示例后识别默认关闭，常驻服务不自动创建原生审批，可先启动健康检查；显式 `push-approval` 是远端写操作，不能把 `push_enabled=false` 当作命令拦截。启用 `recognition.provider=anyreceipt` 前填写 `feishu.app_id/app_secret` 和 `anyreceipt.api_key`。
 
 业务多维表格拓扑独立存放于 `configs/tables/*.json`（模板见 `configs/tables/enterprise.example.json`），主配置通过 `tables_file` 引用。海外小票识别提供方和触发方式在 `recognition`，单据机审在 `review`。Seal 凭证和通道配置在 `seal`（由 `base_url` 与 `webhook_id` 组装接入点）；自有识别与审核共享全局 `model` 段连接配置，自有审核通过 `review.rules_file` 引用独立规则 JSON（仅 model 路径读取）。Base/Table/View 概念、更换文档和只读核验见[配置说明](docs/business-configuration.md)。当前本机采用识别完成自动送审，明细与台账须同 Base。
 
@@ -98,7 +100,7 @@ python3 deploy/run-local-debug.py check-business-config
 
 `recognition.trigger_mode` 可选 `event`、`poll` 或 `both`（默认）；两条路径共用附件读取、识别队列和持久化交付状态。`poll` 每隔 `recognition.poll_interval`（默认 `5m`）只扫描配置的 Base 中指定的「个人报销明细」Table，并按附件字段 ID 定位字段。`recognition.poll_startup=baseline`（默认）表示首次扫描仅记录已有附件，后续只处理新增 token；设为 `process` 则首次扫描也处理已有附件。轮询不依赖事件投递，但仍需应用对目标 Base 的读取权限。当前基线、任务及识别结果保存到 `runtime.state_dir`（默认 `data`）；重启保留原基线并恢复未交付任务，避免因回写失败重复 OCR。同一来源只允许一个识别 worker，当前文件状态库适用于单主机持久卷。识别失败的附件会由恢复任务或后续扫描重试。
 
-2026-10-04 已在新的企业测试应用和 Base 中验证真实 WebSocket 事件投递，以及附件事件触发 Anyreceipt、21 个识别输出、台账回写与双向关联。需同时开通后台应用身份和用户身份的 `bitable:app` 权限；服务仍只使用应用身份，不需要用户 OAuth。配置及验收见[飞书事件联调](docs/feishu-event-verification.md)和[企业 OCR 验收](docs/anyreceipt-enterprise-verification.md)。运行时也可设 `recognition.trigger_mode=poll` 只使用轮询。主线路径使用 `recognition.provider=anyreceipt`，自有多模态模型是可选切换项。所有凭证与业务设置统一放入私有 `config.toml`；本机[运行包装器](deploy/run-local-debug.py)目前仍服务于上一阶段的 JSON 二进制；本次没有更新监督服务，切换时须同步更新二进制与包装器。
+2026-10-04 已在新的企业测试应用和 Base 中验证真实 WebSocket 事件投递，以及附件事件触发 Anyreceipt、21 个识别输出、台账回写与双向关联。需同时开通后台应用身份和用户身份的 `bitable:app` 权限；服务仍只使用应用身份，不需要用户 OAuth。配置及验收见[飞书事件联调](docs/feishu-event-verification.md)和[企业 OCR 验收](docs/anyreceipt-enterprise-verification.md)。运行时也可设 `recognition.trigger_mode=poll` 只使用轮询。主线路径使用 `recognition.provider=anyreceipt`，自有多模态模型是可选切换项。所有凭证与业务设置统一放入私有 `config.toml`；本机[运行包装器](deploy/run-local-debug.py)当前源码默认选择 `configs/config.toml` 并执行仓库内二进制；实际监督进程是否使用最新版本需要另行核验，不能从历史部署记录推断。
 
 订阅范围是整个 Base 的记录变更，并非单个字段：任意数据表的行新增、修改、删除都可能推送 `drive.file.bitable_record_changed_v1`。服务收到后才过滤 Base ID、数据表 ID 和附件字段 ID；修改「消费事由」或第三方「交易流水表」不会触发识别，只有「个人报销明细」的「发票附件」新增文件才进入识别队列。字段本身改名属于另一类字段变更事件。长连接方式无需配置事件加密策略；向开发者服务器推送的 Webhook 方式才涉及该配置。
 
@@ -125,28 +127,25 @@ go run ./cmd/server submit-review <个人报销明细记录ID>
 
 聚合位于独立的 `internal/core/invoice/aggregate/aggregate.go`，结构不依赖 Anyreceipt 或 SealAI；`internal/seal/mapper/` 负责 Seal 协议转换。自有模型可复用 `internal/core/invoice` 的识别接口与聚合结构。历史测试通道的回调地址曾指向本地 mock；SealAI 服务器不能连接到开发者电脑的 `127.0.0.1`。新入口 `submit-review` 及识别完成自动触发共用版本化送审、密钥 URL 结果接收和 AI 结果回写；企业测试专用列已通过真实验收，业务冻结仍待完善。旧 `submit-seal` 已移除，显式和自动送审都使用同一版本化流程。
 
-Anyreceipt 始终编入，启用识别时使用 `recognition.provider=anyreceipt` 和 `anyreceipt.api_key`，可识别图片和 PDF。自有模型是可选能力：默认构建包含 Anthropic Go SDK；`go build -tags no_anthropic ./cmd/server` 可在编译时排除模型适配器及 SDK。模型模式配置 `recognition.provider=model`、`recognition.model.api_key`、`recognition.model.base_url`、`recognition.model.name`；当前只接受图片，PDF/DOCX 转换留给后续独立模块。DeepSeek 测试模型实际返回过 Markdown 围栏 JSON，当前适配器已兼容纯 JSON 与单个 JSON 围栏，并拒绝被 token 上限截断的响应。附件下载还要求飞书应用身份具备 `docs:document.media:download` 或等价权限，并有目标 Base 的资源授权。当前任务按来源、配置范围、记录 ID 和附件 token 持久化；已识别结果可用于跨重启补交付。进程在外部成功与本地保存之间崩溃仍可能重复识别。
+Anyreceipt 始终编入，启用识别时使用 `recognition.provider=anyreceipt` 和 `anyreceipt.api_key`，可识别图片和 PDF。自有模型是可选能力：默认构建包含 Anthropic Go SDK；`go build -tags no_anthropic ./cmd/server` 可在编译时排除模型适配器及 SDK。模型模式配置 `recognition.provider=model`、`model.api_key`、`model.base_url`、`model.name`；当前只接受图片，PDF/DOCX 转换留给后续独立模块。DeepSeek 测试模型实际返回过 Markdown 围栏 JSON，当前适配器已兼容纯 JSON 与单个 JSON 围栏，并拒绝被 token 上限截断的响应。附件下载还要求飞书应用身份具备 `docs:document.media:download` 或等价权限，并有目标 Base 的资源授权。当前任务按来源、配置范围、记录 ID 和附件 token 持久化；已识别结果可用于跨重启补交付。进程在外部成功与本地保存之间崩溃仍可能重复识别。
 
 以下保留 2026-09-29 的旧环境排查记录；当前企业测试环境的成功投递证据见[飞书事件联调](docs/feishu-event-verification.md)。旧测试 Base 已用项目应用身份订阅云文档事件；开放平台已添加「多维表格记录变更」事件并选用长连接。2026-09-29 在独立测试行 `reczz28HJVvAm8NM`（`明细ID=OCR-TEST-20260929-175848`）修改记录后，开发者后台事件日志暂无投递记录；应用发布新版本后再次通过 API 修改并恢复测试行，长连接已就绪但监听器仍未收到事件，仍需排查投递链路。该测试行保留了一张样本 JPEG 附件；同日已用真实 Anyreceipt 识别 21 个输出字段，并通过正式服务的轮询入口完成台账回写与双向关联验证。Anyreceipt 的完整输出键及接口见[供应商 OpenAPI 备份](external-api/anyreceipt/anyreceipt-openapi-v1.0.7.yaml)。
 
-## 飞书原生审批状态（已归档）
+## 飞书原生审批状态
 
-飞书原生审批扩展（含审批模板初始化、`preview-approval`、`submit-approval`、实例监听等 13,300+ 行实现）已整体归档封存于独立分支 `archive/feishu-native-approval`（版本标签 `archive/native-approval-20261008`）。主线服务保持轻量纯粹的海外小票 OCR 识别与 AI 审核回写，详见 [归档记录](docs/progress/2026-10-08-archive-native-approval.md)。
+旧的完整原生审批扩展（分组、附件准备、批次建单、恢复和实例监听等 13,300+ 行实现）已归档到 `archive/feishu-native-approval`（标签 `archive/native-approval-20261008`），详见[归档记录](docs/progress/2026-10-08-archive-native-approval.md)。主线后来恢复了轻量 `internal/feishu/approval`：`preview-approval <明细记录ID>` 读取当前事实并预览表单，不创建审批；`push-approval <明细记录ID>` 显式调用创建接口。它没有结果监听、批次恢复或财务结算闭环；配置及副作用边界见[当前审批说明](docs/approval-configuration.md)。
 
 ## 业务边界
 
 | 目录 | 职责 | 当前状态 |
 | --- | --- | --- |
-| `internal/core/dedupe/` | 判断变化是否重复；由持久化实现提供原子领取 | 接口已定义，键规则和存储待定 |
 | `internal/feishu/base/events/` | 接收多维表格变更事件 | 已在企业测试 Base 验证真实附件事件触发识别和台账回写 |
 | `internal/feishu/events/` | 共用 SDK 长连接与事件格式适配 | 支持同应用多个事件注册 |
-| `internal/feishu/base/records.go`、`ledger.go` | 多维表格记录边界与发票台账新增/更新 | 台账写入已实现，其他记录操作仍待业务映射 |
-| `internal/feishu/approval/` | 飞书原生审批模板与单据 | 已归档至分支 `archive/feishu-native-approval` |
-| `internal/feishu/base/permissions.go` | 多维表格记录权限分类与锁定 | 接口已定义，飞书能力待验证 |
+| `internal/feishu/base/review.go`、`transactions.go`、`ledger.go` | 明细、关联流水及发票台账读取边界 | 与共用审核及台账回写流程对接 |
+| `internal/feishu/approval/` | 当前模板表单映射与实例创建客户端 | 主线保留单条预览和显式单向提单，无结果监听 |
 | `internal/seal/` | Seal Webhook 附件上传、单据提交和可选结果接收 | 已通过测试通道提交和公网真实回调验收 |
 | `internal/core/dupcheck/` | 从发票台账事实产生查重候选证据 | 首版按票号、开票方、票据类型比对 |
 | `internal/core/invoice/` | 识别接口、结果结构和多票聚合 | 已实现，不依赖外部服务 |
-| `internal/core/approval/`、`internal/app/approval/` | 人工审批分组、当前 AI 版本门禁、预约及恢复 | 已归档至分支 `archive/feishu-native-approval` |
 | `internal/anyreceipt/` | 必编的 Anyreceipt OCR 客户端及标准识别流程 | 已通过真实附件联调 |
 | `internal/app/recognition/` | 共用识别任务、轮询及持久化交付 | 已实现；旧包装已移除 |
 | `internal/feishu/base/invoiceledger/` | 标准票据事实映射与发票台账写入 | 已实现；台账代码仅由此目录负责 |
@@ -173,13 +172,11 @@ app/review ──> core/invoice/aggregate, core/dupcheck, core/review
 审核装配 ──> feishu/base/review, {seal/review,anthropic/review}, state
 seal/review ──> seal/mapper ──> seal (上传原件、提交单据)
 seal/callback ──> app/review.Complete ──> 状态保存、版本核对、feishu/base 结果回写
-cmd/approval-template ──> feishu/approval ──> Feishu Approval v4 SDK（独立初始化工具）
-app/approval ──> core/approval, state, 来源/创建/查询接口（尚未装配服务入口）
-feishu/approval.InstanceGateway ──> 实时模板、原生表单、同 UUID 创建/查询
-core/dedupe, feishu/base/{records,permissions} ──> 待后续业务编排接入
+cmd/server preview-approval ──> feishu/approval ──> 当前事实与表单映射
+cmd/server push-approval ──> feishu/approval ──> 飞书实例创建接口（单向）
 ```
 
-上述示意保留前期装配范围。当前共用 SDK 连接由 `feishu/events` 持有，Base 筛选消费其 Event/Sink；`app/approval` 已通过显式命令接请求准备/建单/原 UUID 恢复，并通过可选观察 worker 保存真实人工状态。监听只依赖已存计划、查询端口与状态库，Base/Seal 人工结果交付尚未装配。
+当前共用 SDK 连接由 `feishu/events` 持有，Base 与机器人消费各自的 Event/Sink。原生审批只通过显式命令预览或创建；旧 `app/approval`、`core/approval` 及观察 worker 在归档分支中，不参与主线装配。
 
 Go 固定为 `1.24.13`；直接依赖固定为 Feishu SDK `v3.12.0` 和 Anthropic SDK `v1.46.0`。传递依赖由 `go.mod` 和 `go.sum` 锁定，构建工具及容器镜像也使用明确版本。
 
@@ -191,18 +188,16 @@ cmd/server/                      服务入口和编译开关
 ├── anyreceipt.go               始终编入的标准识别器
 ├── model_enabled.go            默认编入 Anthropic 模型
 ├── model_disabled.go           no_anthropic 构建时排除模型
-└── submit_seal.go              显式提交一条报销明细
-cmd/approval-template/main.go    独立的一次性审批模板初始化工具
+├── review.go                   显式送审与结果回写入口
+└── approval_cmd.go             原生审批预览与单向提单入口
 internal/
-├── app/                       共用识别、审核和人工审批业务编排
+├── app/                       共用识别和 AI 审核业务编排
 ├── state/                     单主机持久化状态
 ├── receiptcompat/             供应商结果标准化与台账读取
 ├── core/                      不调用外部服务的业务核心
 │   ├── invoice/                标准票据事实、识别接口及多票聚合
 │   ├── review/                 中立审核请求、结果和版本
-│   ├── approval/               人工审批分组、冻结计划及实例映射
-│   ├── dupcheck/               台账查重证据
-│   └── dedupe/                 变化去重边界
+│   └── dupcheck/               台账查重证据
 ├── anyreceipt/                必编的 Anyreceipt 客户端
 ├── anthropic/                 可选的 Messages SDK 适配层
 │   ├── model/                  自有多模态识别器
@@ -211,11 +206,11 @@ internal/
 │   ├── base/                   多维表格记录、附件、台账映射及审核结果写入
 │   │   └── events/             多维表格事件过滤与附件变更解码
 │   ├── events/                共用长连接传输
-│   └── approval/               原生审批模板、实例、明细映射和 gateway
-├── seal/                      SealAI HTTP 客户端与 mock 回调
+│   └── approval/               当前模板表单映射与单向实例创建
+├── seal/                      SealAI HTTP 客户端与结果回调处理器
 │   ├── mapper/                 聚合结果转 SealAI 单据格式
 │   └── review/                 Seal 上传、映射与提交适配
-├── config/                    单份 JSON 读取与校验
+├── config/                    主 TOML 与表拓扑 JSON 的读取、校验
 ├── httpserver/                基础 HTTP 服务
 └── version/                   构建版本变量
 configs/                       配置示例
@@ -223,7 +218,9 @@ deploy/                        Docker 和 Compose 文件
 .github/workflows/             CI 与发布流程
 ```
 
-## 后续扩展边界
+## 历史复杂审批扩展记录（已归档）
+
+以下段落记录 2026-10-05 的复杂审批实现过程，对应 `archive/feishu-native-approval`；其中 `approval` JSON、批次预检、附件准备及恢复命令不适用于当前主线，不作为继续开发的授权。当前轻量提单使用上文的单条命令。
 
 人工审批已补共用分组与恢复用例：显式配置分组轴和允许的 AI 建议，逐条要求当前事实与已完成审核版本一致；建单前在同一原子状态写入中保存计划 UUID 及全部成员预约。响应未知只对账原 UUID，已批准、撤销或删除的实例仍保留预约，等待明确的财务释放策略。尚未接入服务配置、真实 Base 来源、审批附件上传或人工结果回写，详见[共用审批阶段记录](docs/progress/2026-10-05-approval-workflow.md)。
 

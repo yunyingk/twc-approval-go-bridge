@@ -10,7 +10,7 @@
 
 ## 2. 飞书身份与配置规范
 
-- **应用身份（Tenant Access Token）**：本服务统一凭 `FEISHU_APP_ID` 与 `FEISHU_APP_SECRET` 以应用身份访问授权资源。**严禁发起用户 OAuth、要求用户扫码，或将 `lark-cli --as user` 当作服务权限验证**。
+- **应用身份（Tenant Access Token）**：本服务统一凭私有 `configs/config.toml` 中的 `feishu.app_id` 与 `feishu.app_secret` 以应用身份访问授权资源，不读取旧凭证环境变量。**严禁发起用户 OAuth、要求用户扫码，或将 `lark-cli --as user` 当作服务权限验证**。
 - **多维表格只读先行**：读取线上 Base/Table 时，以应用身份被授予的资源权限为准。先只读核验 Base、Table、字段及少量样本记录，不擅自切换为用户身份。变更事件需同时核对应用身份与用户身份 `bitable:app` 权限及 Base 云文档订阅。
 - **单一主配置架构**：
   - 运行配置统一收敛于 `configs/config.toml`（0600 权限，受 `.gitignore` 保护，不入库；模板为 `configs/config.example.toml`）；
@@ -32,7 +32,7 @@
   - **副作用安全红线**：涉及消息推送、待办派发或批量写表功能，必须默认只读分析（Dry-Run）并支持数量与用户过滤，严禁在无约束下盲测群发；
   - **多维表格核验**：涉及多维表格配置变更时，先运行 `./bin/twc-approval-go-bridge check-business-config` 进行线上只读核验。
 - **原生审批代码归档状态**：
-  - 飞书原生审批扩展功能（13,300+ 行）已整体封存至分支 `archive/feishu-native-approval`（标签 `archive/native-approval-20261008`），并从主线干净剥离。主线不包含原生审批客户端、表单与建单命令。
+  - 旧的完整原生审批扩展（13,300+ 行，含分组、附件准备、恢复与结果监听）已封存至分支 `archive/feishu-native-approval`（标签 `archive/native-approval-20261008`）。主线后来恢复了轻量 `internal/feishu/approval`，提供单条 `preview-approval` 与显式 `push-approval` 单向提单；不接收审批结果回调，不恢复旧复杂编排，也不自动推进财务流程。当前配置在 `[feishu.approval]`，旧 `approval` JSON 及旧批次命令不适用于主线。
 - **历史记录索引**：
   - 各历史阶段的详细演化脉络、联调日志与验收数据完整归档于 `docs/progress/` 目录，主规则不再保留逐日流水账。
 

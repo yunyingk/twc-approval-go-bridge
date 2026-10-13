@@ -1,4 +1,35 @@
-# 人工审批配置与只读预检
+# 原生审批配置与单向提单
+
+核对日期：2026-10-13；代码基线 `9000713`。当前主线是 `internal/feishu/approval` 的轻量单向创建模块，旧的分组、冻结、附件准备、批次恢复及结果监听已归档，不能套用文末旧流程。
+
+## 当前配置
+
+使用同一份 `configs/config.toml` 的 `[feishu]` 应用身份凭证和以下模板设置：
+
+```toml
+[feishu.approval]
+approval_code = "<已核对的审批模板Code>"
+default_approver_open_id = "<该应用下的审批人OpenID>"
+default_initiator_open_id = "<该应用下的发起人OpenID>"
+```
+
+字段定义见[脱敏示例](../configs/config.example.toml)，事实映射见[当前 mapper](../internal/feishu/approval/mapper.go)。模板 Code、控件及人员属于实际目标应用，不能套用历史示例中的身份和字段。
+
+`push_enabled` 当前仅在配置结构中声明，`push-approval` 调用链没有用它拦截创建请求。不要把设为 `false` 当作阻止手动提单的保护；本次仅如实补充文档，没有改变该代码行为。常驻服务未装配自动原生审批创建，修改配置本身不会创建实例。
+
+## 当前命令与副作用
+
+```bash
+./bin/twc-approval-go-bridge preview-approval <明细记录ID>
+```
+
+预览读取 Base 事实和可用的本地审核结果，构造当前模板表单，不调用审批创建接口。它可能有只读网络访问和本地审计／状态初始化，不应描述为完全无网络或无本地副作用。当前轻量预览没有旧复杂审批的整批分组、预约恢复或事实版本门禁保证。
+
+审阅表单、目标模板和人员后，显式 `push-approval <明细记录ID>` 会调用飞书实例创建接口。服务不监听该实例的后续审批结果，不自动回写人工结论或推进结算。当前单条 CLI 不接受旧批次 preparation ID，也没有 `prepare-approval`、`submit-approval`、`retry-approval` 或 `subscribe-approval-events` 等旧入口。
+
+## 旧复杂审批配置与预检记录（已归档）
+
+以下是 2026-10-05 至 2026-10-08 的历史原文，对应分支 `archive/feishu-native-approval`、标签 `archive/native-approval-20261008`。其中 `approval` JSON、旧配置片段和命令均不适用于当前主线，不作为新的操作授权。归档经过见[过程记录](progress/2026-10-08-archive-native-approval.md)。
 
 2026-10-08 更新：配置已收敛到唯一私有 `config.json`，旧环境变量和分文件示例不再生效；下文保留历史阶段说明。当前入口、迁移和验证以[单文件配置记录](progress/2026-10-08-single-config.md)为准。
 
@@ -8,11 +39,11 @@
 "approval": { "mode": "disabled" }
 ```
 
-[完整配置示例（现已统一）](../configs/config.example.json)是配置片段，不是完整业务文件。`disabled` 允许保留不完整草稿；未知 JSON 属性仍拒绝。`manual` 表示显式人工选择的配置口径，**本阶段没有建单命令或自动建单装配**，不会仅因改此值创建审批。
+`configs/config.example.json`（归档分支中的历史配置示例）是配置片段，不是完整业务文件。`disabled` 允许保留不完整草稿；未知 JSON 属性仍拒绝。`manual` 表示显式人工选择的配置口径，**本阶段没有建单命令或自动建单装配**，不会仅因改此值创建审批。
 
 上述“没有建单命令”保留初版预检阶段范围。后续已新增显式 `submit-approval` 与状态/恢复命令，见[建单与恢复](#显式建单与恢复)。仍无自动建单，仅配置 manual 不触发实例创建；当前企业配置未启用 approval。
 
-## 显式契约
+### 显式契约
 
 | 字段 | 口径 |
 | --- | --- |
@@ -34,7 +65,7 @@
 
 人员映射校验格式及完整性，不代替目标企业的人员/发起权限核验。附件列解析真实 Base 引用，再匹配当前审核核对过的原件与已存上传结果；未准备时报告 approval_upload_required，不能将 Base token 当审批 file code。显式上传及恢复见下方，配置存在不代表完整表单可用。时区数据编入程序以支持静态镜像，未配置日期规则时不默认月份或时区。
 
-## 预检命令与结果
+### 预检命令与结果
 
 ```bash
 # 需注入当前项目应用凭证、业务文件及已有 STATE_DIR。
@@ -55,7 +86,7 @@ go run ./cmd/server preview-approval <记录ID[,记录ID...]>
 
 使用本阶段构建或 `go run`；本机运行包装器仍使用先前监督二进制，需后续受控更新后才具备此命令。AI 三行预检见[预检记录](progress/2026-10-05-approval-preflight.md)，独立来源读取及计划校验见[来源记录](progress/2026-10-05-approval-source.md)。
 
-## 审批附件准备
+### 审批附件准备
 
 ```bash
 # 使用完整 manual 配置和原有 STATE_DIR；不会创建审批实例。
@@ -82,7 +113,7 @@ go run ./cmd/server retry-approval-files <记录ID[,记录ID...]>
 
 状态元数据包含敏感来源标识和文件名，保存到 0600 文件及独立 native_approval_upload_version 命名空间，不能公开或提交 Git；原件二进制不入状态。预览缺少凭据时只读返回阻塞，不创建状态或锁文件。本阶段未启用企业 approval 配置、未更新监督服务、未真实上传或建单。验证与下一步见[附件准备记录](progress/2026-10-05-approval-files.md)。
 
-## 完整请求准备
+### 完整请求准备
 
 ```bash
 # 使用完整 manual 配置；先按上面的命令准备所需审批附件。
@@ -107,7 +138,7 @@ go run ./cmd/server prepare-approval <记录ID[,记录ID...]>
 
 底层 `AuditedGateway` 已在隔离测试中将已保存的具体请求接到共用 Submit，用同一原生 body 构建器逐字节核对后发送，仍执行来源重核、成员预约及原 UUID 恢复。本阶段没有真实建单命令，尚未将批次 ID 关联进实际建单尝试或接人工结果交付；完整请求准备不能代替这部分验收。验证及下一步见[请求审计记录](progress/2026-10-05-approval-requests.md)。
 
-## 显式建单与恢复
+### 显式建单与恢复
 
 ```bash
 # 先 review prepare-approval 给出的私有文件；参数是整批 SHA-256，不是记录 ID。
@@ -144,7 +175,7 @@ go run ./cmd/server abandon-approval <preparation_id>
 
 当前企业未配置原生审批，也没有可用的完整当前 AI 样本。本阶段仅隔离建单/恢复联测及真实只读验证，没有真实上传、实例创建或通知，监督服务未更新。人工事件、Base/Seal 结果交付、正式财务动作与真实验收继续后续实施，见[建单过程记录](progress/2026-10-05-approval-submit.md)。
 
-## 显式重试原请求
+### 显式重试原请求
 
 上述“专门重试协议仍待实现”保留首次建单阶段范围。后续已补：
 
@@ -161,7 +192,7 @@ go run ./cmd/server retry-approval <preparation_id>
 
 隔离 SDK、并发、旧轮次迟到和保存失败验证见[重试过程记录](progress/2026-10-05-approval-retry.md)。原请求、来源或模板发生实际变化时本命令停止；部分成功后的批次拆分/审计重关联仍待独立实现。当前企业未启用 approval，监督服务未更新，没有真实建单或人工结果交付。
 
-## 原生审批结果监听
+### 原生审批结果监听
 
 可选的 `approval.observation` 与创建开关独立。监听已建实例可以关闭创建，不需要当前表单、人员映射或 AI 配置：
 
@@ -173,7 +204,7 @@ go run ./cmd/server retry-approval <preparation_id>
 }
 ```
 
-[完整配置示例（现已统一）](../configs/config.example.json)必须合并进完整业务来源文件；不是可直接选中的 BUSINESS_CONFIG_FILE。省略 observation 或 enabled=false 不装配监听 worker。poll_interval 默认 5m，启用时范围 1m～24h；target_identity 必须明确选择 bridge/approval，所选原应用须有完整且唯一的凭证组，不能回退。每个进程只观察当前来源 Base/Table 下该应用的历史计划；切换来源/应用不会自动观察其他 registry，原批次仍可 check-approval 对账。
+`configs/config.example.json`（归档分支中的历史配置示例）必须合并进完整业务来源文件；不是可直接选中的 BUSINESS_CONFIG_FILE。省略 observation 或 enabled=false 不装配监听 worker。poll_interval 默认 5m，启用时范围 1m～24h；target_identity 必须明确选择 bridge/approval，所选原应用须有完整且唯一的凭证组，不能回退。每个进程只观察当前来源 Base/Table 下该应用的历史计划；切换来源/应用不会自动观察其他 registry，原批次仍可 check-approval 对账。
 
 同一应用的 Base 与审批事件共用一条 SDK 长连接，独立审批应用另建连接。Base 仅轮询时也可以启用审批长连接。共用传输位于 `internal/feishu/events`，Base 附件与来源筛选留在 `internal/feishu/base/events`。审批事件不经过 Base 原始载荷日志，即使 FEISHU_LOG_RAW_EVENTS=true；没有新增公网 HTTP 接收端点。
 
@@ -195,7 +226,7 @@ go run ./cmd/server subscribe-approval-events <与配置一致的审批Code>
 
 `approval-status <preparation_id>` 可以查看最新原实例状态及 verified/last_observed_at，仍不能当作 Base 或 Seal 交付成功。当前只持久化已核对状态，没有审批人/评论完整快照、Base 人工结果列、Seal manual-result 交付或结算释放。企业测试文件未启用此配置，监督服务未更新，未真实订阅或验收审批事件；实现与测试见[监听过程记录](progress/2026-10-05-approval-observation.md)。
 
-## 人工结果证据快照
+### 人工结果证据快照
 
 监听阶段之后已补 `ResultSnapshot v1`：同一次原 UUID GET 保存实例、任务、原应用 open ID、开始/完成毫秒时间、评论、时间线、抄送/转交等关联和修改/撤销原实例 Code。评论附件只存名称/类别/实际大小，临时访问 URL 不保存；姓名和邮箱仍需原应用下的真实身份解析。缺失时间/人员/大小保留缺失，未完成时间 0 保留 0；不从 event、user_id、发起人或当前时钟补值。这里是流程结果证据，原生表单与提交审计的值对比仍需另外完成。
 
