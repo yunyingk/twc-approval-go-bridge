@@ -47,6 +47,7 @@
   - 配置层支持 `[feishu.approval]` 集中管理模板 Code 与默认审批人。
 
 ### 变更 (Changed)
+- **历史资料与实验仓库清理 (`docs/historical-reference.md`, `docs/progress/2026-10-13-workspace-cleanup.md`)**：按用户确认的范围备份并移除外层两个实验仓库，清理被取代或未采用的方案，保留两份业务草案；将接口排查结论收敛到本仓库，外层样本改为实际文件索引并按 SHA-256 去重。
 - **彻底剥离个人测试域名硬编码 (`internal/config`, `internal/feishu/bot`)**：
   - 移除代码中对个人域名 `ying-qing.cn` 的隐式兜底赋值，管理看板与回调公网基准域名完全由配置文件 `runtime.public_base_url` 驱动；若未配置，飞书 Bot 提供清晰的配置指引卡片，避免线上跳转错误。
 - **SealAI 提审字段映射全面对齐《飞书表单推送Sealai字段映射方案》规范 (`internal/seal`)**：
@@ -57,6 +58,7 @@
   - 购买方补全规则：当 OCR 未识别购买方时，支持安全回退至唯一报销人姓名。
 
 ### 修复 (Fixed)
+- **文档入口与版本说明 (`README.md`)**：移除对外层 Anyreceipt 摘要的依赖，直接引用仓库内供应商 OpenAPI 备份；快速开始中的版本基线与 `0.3.3` 对齐。
 - **容器镜像默认构建版本对齐 (`deploy/Dockerfile`)**：对齐 Dockerfile 中默认版本参数 `ARG VERSION=0.3.3`，消除构建镜像时未显式指定 `--build-arg` 导致的版本元数据倒退。
 
 ---

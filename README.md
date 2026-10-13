@@ -10,6 +10,8 @@ Anyreceipt、SealAI 与飞书审批的接口原文保存在仓库顶层的 [`ext
 
 后续扩展参考：[架构评审：外部能力主线与自有能力替换](docs/architecture-review.md)及[迁移任务与验收](docs/architecture-tasks.md)。两份文件保留实施前评审；当前代码、配置、命令与剩余业务边界见[运行与交接说明](docs/runtime-and-handoff.md)。识别与审核独立切换，Seal 规则继续在 SealAI 系统维护。
 
+早期字段捷径、审批脚本与接口排查中的有效结论已收敛到[历史研究结论与适用边界](docs/historical-reference.md)。旧方案不作为继续扩展业务的授权；本轮资料清理与恢复方式见[清理记录](docs/progress/2026-10-13-workspace-cleanup.md)。
+
 2026-10-08 按用户 review 调整：主配置改为带注释的私有 `config.toml`，提供方选择放在最前面；飞书模板和自有审核规则各自独立保存。旧环境变量叠加和 `submit-seal` 已移除。配置改动与 Gemini 交接见[本次记录](docs/progress/2026-10-08-config-toml.md)；已有监督服务尚未切换这一阶段。
 
 ## 快速开始
@@ -23,7 +25,7 @@ make test
 make vet
 make build
 
-# 0. 查看版本与构建元数据（当前基线 v0.3.1）
+# 0. 查看版本与构建元数据（当前基线 v0.3.3）
 ./bin/twc-approval-go-bridge version
 ./bin/twc-approval-go-bridge version -json
 
@@ -125,7 +127,7 @@ go run ./cmd/server submit-review <个人报销明细记录ID>
 
 Anyreceipt 始终编入，启用识别时使用 `recognition.provider=anyreceipt` 和 `anyreceipt.api_key`，可识别图片和 PDF。自有模型是可选能力：默认构建包含 Anthropic Go SDK；`go build -tags no_anthropic ./cmd/server` 可在编译时排除模型适配器及 SDK。模型模式配置 `recognition.provider=model`、`recognition.model.api_key`、`recognition.model.base_url`、`recognition.model.name`；当前只接受图片，PDF/DOCX 转换留给后续独立模块。DeepSeek 测试模型实际返回过 Markdown 围栏 JSON，当前适配器已兼容纯 JSON 与单个 JSON 围栏，并拒绝被 token 上限截断的响应。附件下载还要求飞书应用身份具备 `docs:document.media:download` 或等价权限，并有目标 Base 的资源授权。当前任务按来源、配置范围、记录 ID 和附件 token 持久化；已识别结果可用于跨重启补交付。进程在外部成功与本地保存之间崩溃仍可能重复识别。
 
-以下保留 2026-09-29 的旧环境排查记录；当前企业测试环境的成功投递证据见[飞书事件联调](docs/feishu-event-verification.md)。旧测试 Base 已用项目应用身份订阅云文档事件；开放平台已添加「多维表格记录变更」事件并选用长连接。2026-09-29 在独立测试行 `reczz28HJVvAm8NM`（`明细ID=OCR-TEST-20260929-175848`）修改记录后，开发者后台事件日志暂无投递记录；应用发布新版本后再次通过 API 修改并恢复测试行，长连接已就绪但监听器仍未收到事件，仍需排查投递链路。该测试行保留了一张样本 JPEG 附件；同日已用真实 Anyreceipt 识别 21 个输出字段，并通过正式服务的轮询入口完成台账回写与双向关联验证。Anyreceipt 的完整输出键及接口见[业务资料](../doc/Anyreceipt-API与完整返回结构.md)。
+以下保留 2026-09-29 的旧环境排查记录；当前企业测试环境的成功投递证据见[飞书事件联调](docs/feishu-event-verification.md)。旧测试 Base 已用项目应用身份订阅云文档事件；开放平台已添加「多维表格记录变更」事件并选用长连接。2026-09-29 在独立测试行 `reczz28HJVvAm8NM`（`明细ID=OCR-TEST-20260929-175848`）修改记录后，开发者后台事件日志暂无投递记录；应用发布新版本后再次通过 API 修改并恢复测试行，长连接已就绪但监听器仍未收到事件，仍需排查投递链路。该测试行保留了一张样本 JPEG 附件；同日已用真实 Anyreceipt 识别 21 个输出字段，并通过正式服务的轮询入口完成台账回写与双向关联验证。Anyreceipt 的完整输出键及接口见[供应商 OpenAPI 备份](external-api/anyreceipt/anyreceipt-openapi-v1.0.7.yaml)。
 
 ## 飞书原生审批状态（已归档）
 
