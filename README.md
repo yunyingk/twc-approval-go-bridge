@@ -84,6 +84,21 @@ docker build --file deploy/Dockerfile --tag twc-approval-go-bridge:local .
 
 镜像使用多阶段构建，运行时只包含静态 Go 二进制。
 
+### 将本机实例迁移到 Windows 的 Ubuntu WSL Docker
+
+Windows 宿主机上的 WSL 实例作为长期 Linux/Docker 演练环境。用户登录后由现有 WSL 保活任务启动；Docker 服务使用 `restart: unless-stopped`。首次迁移先在 Mac 构建并验证候选镜像，再将私有配置通过 SSH 单独同步、停止 Mac 上的识别与 FRP 工作进程、校验 140 个状态文件 SHA-256，并启动新的 Linux 实例和专用 FRP 客户端。迁移不向共享 FRP 容器添加代理，不会启动两个业务 worker。
+
+首次迁移及后续维护命令：
+
+```bash
+make remote-migrate   # 首次迁移本机配置、状态和公网入口
+make remote-status    # 检查远端镜像、容器、飞书长连接及公网版本
+make remote-update    # 本机全量检查，在 WSL 构建、验证并原子切换镜像
+make remote-rollback  # 恢复上一个已验证的不可变镜像
+```
+
+首次迁移只在远端候选镜像通过 Linux 双构建测试、健康检查、应用身份下的多维表格只读核验后停止 Mac 服务。失败时拉回 WSL 最新状态、重新启用两个 Mac 专用 LaunchAgent 并恢复服务；成功后禁用两个 Mac LaunchAgent。`.dockerignore` 和 WSL Compose 不把私有 TOML 注入镜像；容器以远端非 root UID 运行并将业务状态保存在 `/home/dev/apps/twc-approval-go-bridge/data/`。此流程用于本机配置和既有测试 Base 的 Linux迁移演练，完成此演练不等于已部署到公司服务器。
+
 ## Feishu 长连接适配器
 
 项目已加入 `github.com/larksuite/oapi-sdk-go/v3 v3.12.0`，并提供可选的长连接监听器。只有同时配置 `feishu.app_id` 和 `feishu.app_secret` 时才会启动；未配置时服务仍可作为普通 HTTP 服务运行。

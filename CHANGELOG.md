@@ -31,6 +31,7 @@
 ## [Unreleased]
 
 ### 新增 (Added)
+- **Linux/WSL Docker 迁移与远端版本管理 (`deploy/Dockerfile`, `deploy/docker-compose.wsl.yml`, `scripts/remote-service.py`)**：为 TWC 增加隔离 Compose 服务与专用 FRP 客户端、镜像标签和不可变 ID 验收、只读业务配置检查、同源持久状态迁移，以及 `remote-migrate`／`remote-update`／`remote-status`／`remote-rollback`。同时在 Docker build context 排除私有配置，Linux 镜像构建执行双构建测试和 `go vet`。
 - **Mac 后台服务图标与快捷更新 (`deploy/macos`, `scripts/local-service.py`, `Makefile`)**：新增 ChatGPT 内置 imagegen 生成的原创极简飓风图标及后台 `.app` 包装；通过同 PID 启动适配保留现有 Go 业务服务，提供 `make local-update`、`make local-status` 和 `make local-rollback`。更新执行完整检查、独立候选构建、本机签名验证、版本备份、单实例优雅切换以及健康／飞书连接／构建元数据／图标验收，失败时尝试恢复已保存版本；配置与业务状态不参与程序回滚。
 - **全局版本同步与跨文件一致性守卫体系 (`scripts/bump-version.sh`, `internal/version/consistency_test.go`)**：
   - 新增一键同步脚本 `scripts/bump-version.sh` 与 Makefile 命令（`make bump VERSION=x.y.z`、`make check-version`），实现 `version.go`、`Makefile`、`Dockerfile`、K8s 清单与准上线基线的原子联动更新；

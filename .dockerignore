@@ -12,3 +12,10 @@ tmp
 .env.*
 !.env.example
 .DS_Store
+
+# Private runtime configuration must never enter build contexts or image layers.
+/configs/config.toml
+/configs/tables/*.json
+!/configs/tables/*.example.json
+/configs/rules/*.json
+!/configs/rules/*.example.json

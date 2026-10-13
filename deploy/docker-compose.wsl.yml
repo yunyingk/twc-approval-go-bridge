@@ -1,0 +1,36 @@
+name: twc-approval-bridge
+services:
+  server:
+    image: ${TWC_IMAGE:?select a verified immutable release image}
+    user: "${TWC_UID:?}:${TWC_GID:?}"
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      CONFIG_FILE: /configs/config.toml
+    ports:
+      - "127.0.0.1::8080"
+    volumes:
+      - ${TWC_ROOT:?}/configs:/configs:ro
+      - ${TWC_ROOT:?}/data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  frpc:
+    image: docker.m.daocloud.io/snowdreamtech/frpc@sha256:35142a90724b86f693eb38127f5a6d794e1fc5b2847c5b8497f7800889e15caf
+    profiles: [public-frp]
+    user: "${TWC_UID:?}:${TWC_GID:?}"
+    entrypoint: [/usr/bin/frpc]
+    command: [-c, /etc/frp/frpc.toml]
+    restart: unless-stopped
+    stop_grace_period: 20s
+    depends_on: [server]
+    volumes:
+      - ${TWC_ROOT:?}/configs/frpc.toml:/etc/frp/frpc.toml:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

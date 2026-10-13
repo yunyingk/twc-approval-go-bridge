@@ -1,9 +1,13 @@
-FROM golang:1.24.13-alpine3.22@sha256:3641e0d9b931dc4f2f185dcd669c4679670e9277c8166a838ddb98a2d4389cb5 AS build
+ARG GO_IMAGE=golang:1.24.13-alpine3.22@sha256:3641e0d9b931dc4f2f185dcd669c4679670e9277c8166a838ddb98a2d4389cb5
+ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+FROM ${GO_IMAGE} AS build
 
 ARG TARGETARCH
 ARG VERSION=0.3.3
 ARG GIT_COMMIT=""
 ARG BUILD_DATE=""
+ARG GOPROXY=https://proxy.golang.org
+ENV GOPROXY=${GOPROXY} CGO_ENABLED=0
 WORKDIR /src
 
 COPY go.mod go.sum ./
@@ -19,10 +23,13 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} \
 
 RUN mkdir -p /out/data && chmod 700 /out/data
 
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+FROM build AS verified
+RUN go test ./... && go test -tags no_anthropic ./... && go vet ./...
 
-COPY --from=build /out/server /server
-COPY --from=build --chown=65532:65532 /out/data /data
+FROM ${RUNTIME_IMAGE}
+
+COPY --from=verified /out/server /server
+COPY --from=verified --chown=65532:65532 /out/data /data
 ENV CONFIG_FILE=/configs/config.toml
 EXPOSE 8080
 ENTRYPOINT ["/server"]

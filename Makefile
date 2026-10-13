@@ -8,7 +8,7 @@ LDFLAGS := -s -w \
 	-X $(VERSION_PKG).GitCommit=$(GIT_COMMIT) \
 	-X $(VERSION_PKG).BuildDate=$(BUILD_DATE)
 
-.PHONY: fmt test vet build run clean docker-build compose-up version check-version bump local-update local-status local-rollback
+.PHONY: fmt test vet build run clean docker-build compose-up version check-version bump local-update local-status local-rollback remote-migrate remote-update remote-status remote-rollback
 
 fmt:
 	gofmt -w cmd internal
@@ -54,3 +54,16 @@ local-status:
 
 local-rollback:
 	python3 scripts/local-service.py rollback
+
+# Remote operational settings are CLI arguments, not business environment overrides.
+remote-migrate:
+	python3 scripts/remote-service.py migrate
+
+remote-update:
+	python3 scripts/remote-service.py update
+
+remote-status:
+	python3 scripts/remote-service.py status
+
+remote-rollback:
+	python3 scripts/remote-service.py rollback

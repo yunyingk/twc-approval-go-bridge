@@ -28,7 +28,29 @@ make build
 
 `check-business-config` 以应用身份只读核对配置的表结构；读取通过不等于写入或事件链路已验收。`deploy/run-local-debug.py` 将 `CONFIG_FILE` 默认设为仓库内 `configs/config.toml` 并执行 `bin/twc-approval-go-bridge`；已设置该环境变量时保留调用者选择。包装器定位正确不证明监督进程已经重启或使用了最新二进制。
 
-当前 Docker/K8s 约定为 `CONFIG_FILE=/configs/config.toml`，配置目录在 `/configs`，持久状态卷在 `/data`；应同步选择 `runtime.state_dir` 并保证运行 UID 可读取配置。文件状态库使用单活实例，K8s 清单固定 `replicas: 1` 和 `Recreate`。本轮仅更新 Mac 常驻服务，未部署 Docker/K8s。
+当前 Docker/K8s 约定为 `CONFIG_FILE=/configs/config.toml`，配置目录在 `/configs`，持久状态卷在 `/data`；应同步选择 `runtime.state_dir` 并保证运行 UID 可读取配置。文件状态库使用单活实例，K8s 清单固定 `replicas: 1` 和 `Recreate`。WSL Linux 演练与远端更新命令见下一节。
+
+### Windows WSL Docker：首次迁移、更新与回滚
+
+本地仓库位于可信 Git 提交中；只允许从 clean commit 构建远端发布。项目目录为 `/home/dev/apps/twc-approval-go-bridge`，运行 UID/GID 从远端 `dev` 账户动态获取。首次命令为：
+
+```bash
+make remote-migrate
+```
+
+该命令先执行 23 项运维测试、Go 双构建全量测试和 `go vet ./...`，随后通过 SSH 传输已提交源码与私有配置。WSL 使用国内 Go module proxy 和已验证摘要的 Go/runtime 镜像；应用及 FRP 镜像包校验通过后，使用隔离临时配置启动只读演练容器，确认 Linux 二进制、HTTP 服务和应用图标不适用的 Linux 进程状态，并以真实 Feishu 应用身份只读核验配置的字段及关联表。
+
+候选镜像通过后，迁移器优雅停止并确认 Mac 业务 worker 完全退出，停止本机专属 FRP，再复制 `/data` 前的 Mac 状态目录逐文件 SHA-256。远端状态完成哈希比对后，启动一个 Go 服务容器及一个使用私有 `configs/frpc.toml` 的专属 FRP 容器。内网服务端口随机分配并仅绑定 WSL localhost；frpc 在 Docker 专用 bridge 网络通过 `server:8080` 找服务，沿用当前 `runtime.public_base_url`。
+
+迁移完成要求 `/healthz`、`/readyz`、运行版本、真实飞书长连接和公网 `/version` 均能通过核验。确认公网确实指向新提交后，才禁用 Mac 的 `com.yingqing.twc-approval-debug` 与 `com.yingqing.twc-approval-frpc`。这两个进程分别承担业务和公网转发。
+
+```bash
+make remote-status
+make remote-update
+make remote-rollback
+```
+
+每个远端 Docker 镜像均按 image ID 运行，另有按 commit 标记的可读 tag；更新前重新执行 Linux 双构建和静态检查，`docker compose up --detach --pull never` 只使用已预取、已验证的候选。更新时仅重建本 Compose 项目，FRP 容器在公网健康核验期间同步重连；旧镜像与 `/data` 均留存。失败时停止候选容器、恢复上一镜像并验收；首次迁移失败则关闭 WSL worker、把最新数据传回 Mac、重新启用专属 Mac LaunchAgent 并验收。业务事实、配置表、审核结论和 `runtime.public_base_url` 不参与代码回滚。这里的 WSL 运行环境与容器化更新流程用于 Linux 服务器演练，不能代替公司生产环境的权限、网络及持久化环境验收。
 
 ### Mac 本机快捷更新
 
