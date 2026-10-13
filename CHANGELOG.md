@@ -47,6 +47,7 @@
   - 配置层支持 `[feishu.approval]` 集中管理模板 Code 与默认审批人。
 
 ### 变更 (Changed)
+- **外层资料最终清理 (`docs/progress/2026-10-13-outer-final-cleanup.md`)**：按用户追加确认，补备份外层最新提交后移除剩余草案、样本、资料索引、书签与外层 Git；外层仅保留主仓库及私有恢复备份，更新相关文档的当前状态并标记第一阶段记录为历史快照。
 - **历史资料与实验仓库清理 (`docs/historical-reference.md`, `docs/progress/2026-10-13-workspace-cleanup.md`)**：按用户确认的范围备份并移除外层两个实验仓库，清理被取代或未采用的方案，保留两份业务草案；将接口排查结论收敛到本仓库，外层样本改为实际文件索引并按 SHA-256 去重。
 - **彻底剥离个人测试域名硬编码 (`internal/config`, `internal/feishu/bot`)**：
   - 移除代码中对个人域名 `ying-qing.cn` 的隐式兜底赋值，管理看板与回调公网基准域名完全由配置文件 `runtime.public_base_url` 驱动；若未配置，飞书 Bot 提供清晰的配置指引卡片，避免线上跳转错误。

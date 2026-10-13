@@ -10,7 +10,7 @@ Anyreceipt、SealAI 与飞书审批的接口原文保存在仓库顶层的 [`ext
 
 后续扩展参考：[架构评审：外部能力主线与自有能力替换](docs/architecture-review.md)及[迁移任务与验收](docs/architecture-tasks.md)。两份文件保留实施前评审；当前代码、配置、命令与剩余业务边界见[运行与交接说明](docs/runtime-and-handoff.md)。识别与审核独立切换，Seal 规则继续在 SealAI 系统维护。
 
-早期字段捷径、审批脚本与接口排查中的有效结论已收敛到[历史研究结论与适用边界](docs/historical-reference.md)。旧方案不作为继续扩展业务的授权；本轮资料清理与恢复方式见[清理记录](docs/progress/2026-10-13-workspace-cleanup.md)。
+早期字段捷径、审批脚本与接口排查中的有效结论已收敛到[历史研究结论与适用边界](docs/historical-reference.md)。旧方案不作为继续扩展业务的授权；资料清理经过[第一阶段](docs/progress/2026-10-13-workspace-cleanup.md)与[外层最终清理](docs/progress/2026-10-13-outer-final-cleanup.md)，外层现只保留本仓库和私有恢复备份。
 
 2026-10-08 按用户 review 调整：主配置改为带注释的私有 `config.toml`，提供方选择放在最前面；飞书模板和自有审核规则各自独立保存。旧环境变量叠加和 `submit-seal` 已移除。配置改动与 Gemini 交接见[本次记录](docs/progress/2026-10-08-config-toml.md)；已有监督服务尚未切换这一阶段。
 
