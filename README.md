@@ -86,6 +86,8 @@ docker build --file deploy/Dockerfile --tag twc-approval-go-bridge:local .
 
 ### 将本机实例迁移到 Windows 的 Ubuntu WSL Docker
 
+当前 WSL 实例已改为复用全局 `frpc-wsl-gateway`，业务固定绑定 `127.0.0.1:18088`，专用 frpc 已移除；后续更新／回滚保留共享入口策略。下文保留首次迁移流程，当前入口及验收见[共享网关调整记录](docs/progress/2026-10-14-wsl-shared-frpc.md)。
+
 Windows 宿主机上的 WSL 实例作为长期 Linux/Docker 演练环境。用户登录后由现有 WSL 保活任务启动；Docker 服务使用 `restart: unless-stopped`。首次迁移先在 Mac 构建并验证候选镜像，再将私有配置通过 SSH 单独同步、停止 Mac 上的识别与 FRP 工作进程、校验 140 个状态文件 SHA-256，并启动新的 Linux 实例和专用 FRP 客户端。迁移不向共享 FRP 容器添加代理，不会启动两个业务 worker。
 
 首次迁移及后续维护命令：
