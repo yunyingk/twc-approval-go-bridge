@@ -90,6 +90,16 @@ class RemoteServiceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(host.run.call_args.kwargs["env"]["TWC_IMAGE"], after["tag"])
 
+    def test_shared_ingress_survives_old_release_and_omits_dedicated_profile(self):
+        host, before, after = self.host_with_fake_release()
+        before["tag"] = "twc-approval-go-bridge:old"
+        remote.write_json(host.operations / "ingress.json", {"mode": "shared-frpc"})
+        host.run = Mock()
+        remote.Host.compose(host, before, ["up", "--detach"])
+        command = host.run.call_args.args[0]
+        self.assertNotIn("--profile", command)
+        self.assertIn(str(host.operations / "shared-ingress.compose.yml"), command)
+
     def test_release_manifest_requires_immutable_id_and_human_tag(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -116,7 +126,7 @@ class RemoteServiceTests(unittest.TestCase):
         self.assertEqual(json.loads(host.active_path.read_text()), after)
         self.assertEqual(json.loads(host.previous_path.read_text()), before)
         self.assertEqual(state.read_bytes(), b'{"processed":"existing"}')
-        self.assertEqual((host.root / "manager.py").read_bytes(), b"# manager")
+        self.assertEqual((host.root / "manager.py").read_bytes(), Path(remote.__file__).read_bytes())
 
     def test_candidate_abort_works_before_first_manager_is_installed(self):
         host, before, after = self.host_with_fake_release()

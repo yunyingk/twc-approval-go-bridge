@@ -149,7 +149,12 @@ class Host:
                    TWC_UID=str(os.getuid()), TWC_GID=str(os.getgid()))
         command = ["docker", "compose", "--env-file", "/dev/null", "-p", PROJECT,
                    "-f", str(source / "deploy/docker-compose.wsl.yml")]
-        if public:
+        ingress_path = self.operations / "ingress.json"
+        ingress = json.loads(ingress_path.read_text()) if ingress_path.exists() else {}
+        if ingress.get("mode") == "shared-frpc":
+            # Host ingress policy survives application image rollback.
+            command += ["-f", str(self.operations / "shared-ingress.compose.yml")]
+        elif public:
             command += ["--profile", "public-frp"]
         return self.run(command + args, capture=capture, check=check, env=env)
 
@@ -250,6 +255,12 @@ class Host:
             return release
 
     def verify_frpc(self, release):
+        ingress_path = self.operations / "ingress.json"
+        if ingress_path.exists() and json.loads(ingress_path.read_text()).get("mode") == "shared-frpc":
+            running = self.run(["docker", "inspect", "--format", "{{.State.Running}}", "frpc-wsl-gateway"]).stdout.strip()
+            if running != "true":
+                raise RuntimeError("shared WSL FRP gateway is not running")
+            return
         path = self.root / "configs/frpc.toml"
         config = tomllib.loads(path.read_text())
         host = self.config["runtime"]["public_base_url"].split("//", 1)[-1].split("/", 1)[0]
@@ -319,8 +330,8 @@ class Host:
         if previous:
             write_json(self.previous_path, previous)
         write_json(self.active_path, selected)
-        source = self.root / "releases" / selected["commit"] / "source/scripts/remote-service.py"
-        atomic(self.root / "manager.py", source.read_bytes(), 0o700)
+        # Keep the executing manager when rolling back older application images.
+        atomic(self.root / "manager.py", Path(__file__).read_bytes(), 0o700)
         write_json(self.operations / "last-operation.json", {
             "verified_at": datetime.now(timezone.utc).isoformat(), "result": result,
             "image": selected["image"], "rollback_commit": previous["commit"] if previous else None})

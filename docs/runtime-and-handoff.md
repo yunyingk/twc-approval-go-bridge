@@ -52,6 +52,12 @@ make remote-rollback
 
 每个远端 Docker 镜像均按 image ID 运行，另有按 commit 标记的可读 tag；更新前重新执行 Linux 双构建和静态检查，`docker compose up --detach --pull never` 只使用已预取、已验证的候选。更新时仅重建本 Compose 项目，FRP 容器在公网健康核验期间同步重连；旧镜像与 `/data` 均留存。失败时停止候选容器、恢复上一镜像并验收；首次迁移失败则关闭 WSL worker、把最新数据传回 Mac、重新启用专属 Mac LaunchAgent 并验收。业务事实、配置表、审核结论和 `runtime.public_base_url` 不参与代码回滚。这里的 WSL 运行环境与容器化更新流程用于 Linux 服务器演练，不能代替公司生产环境的权限、网络及持久化环境验收。
 
+### WSL 共享公网网关（2026-10-14 调整）
+
+TWC 使用全局 `frpc-wsl-gateway`，路由为 `twc-approval.ying-qing.cn → 127.0.0.1:18088 → server:8080`。专用 frpc 停用。部署主机 `operations/ingress.json` 标记 `shared-frpc`，`operations/shared-ingress.compose.yml` 通过 Compose `!override` 固定 localhost 端口；共享策略在镜像更新与回滚之间保留。没有该主机策略时仍支持此前专用 frpc 迁移方式。
+
+运维命令沿用 `make remote-status`、`make remote-update`、`make remote-rollback`。回滚保留当前运维管理器，避免旧版管理器重新启用专用 frpc；共享网关配置由宿主机维护，应用更新不修改或重启共享网关。前文的专用 frpc 和随机端口流程为首次迁移方式，当前 WSL 实例以本节为准。
+
 ### Mac 本机快捷更新
 
 当前仓库的 Mac LaunchAgent 使用 `com.yingqing.twc-approval-debug`。在本仓库根目录执行：
