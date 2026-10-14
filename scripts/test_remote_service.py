@@ -289,6 +289,21 @@ class RemoteServiceTests(unittest.TestCase):
         self.assertFalse(host.previous_path.exists())
         self.assertEqual(host.ready.call_args.args, (before,))
 
+    def test_import_cannot_retarget_active_or_rollback_alias(self):
+        directory, data = self.artifact_fixture()
+        host, before, after = self.host_with_fake_release()
+        incoming = host.operations / "incoming"
+        import shutil
+        shutil.copytree(directory, incoming)
+        before["tag"] = data["tag"]
+        remote.write_json(host.active_path, before)
+        host.commit = data["commit"]
+        host.config = {"runtime": {"http_addr": ":8080"}}
+        host.run = Mock(return_value=subprocess.CompletedProcess([], 0, "amd64", ""))
+        with self.assertRaisesRegex(RuntimeError, "tag conflicts"):
+            host.import_artifact(incoming, remote.file_sha(incoming / "artifact.json"))
+        self.assertFalse(any("load" in call.args[0] for call in host.run.call_args_list))
+
     def test_ssh_host_options_and_nonproject_roots_are_rejected(self):
         for host, root in [("-oProxyCommand=bad", remote.DEFAULT_ROOT), ("wsl-dev", "/home/dev/apps")]:
             with self.assertRaises(RuntimeError):

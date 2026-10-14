@@ -335,7 +335,7 @@ class Host:
             release = self.build_image()
             self.smoke(release)
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-            tag = "twc-approval-go-bridge:artifact-" + self.commit[:12]
+            tag = "twc-approval-go-bridge:artifact-" + self.commit[:12] + "-" + release["image"].split(":", 1)[1][:12]
             self.run(["docker", "tag", release["tag"], tag])
             image_path = directory / "image.tar"
             with image_path.open("wb") as output:
@@ -367,6 +367,13 @@ class Host:
             architecture = {"x86_64": "amd64", "aarch64": "arm64"}.get(architecture, architecture)
             if manifest["platform"] != "linux/" + architecture:
                 raise RuntimeError("artifact platform differs from the runtime host")
+            protected = [self.active()]
+            if self.previous_path.exists():
+                protected.append(json.loads(self.previous_path.read_text()))
+            for existing in protected:
+                if (existing and existing["tag"] == manifest["tag"] and
+                        existing["image"] not in {manifest["platform_manifest_digest"], manifest["config_digest"]}):
+                    raise RuntimeError("artifact tag conflicts with a retained release; current worker retained")
             self.run(["docker", "load", "--input", str(directory / "image.tar")], capture=False)
             inspected = json.loads(self.run(["docker", "image", "inspect", manifest["tag"]]).stdout)[0]
             if (inspected["Id"] not in {manifest["platform_manifest_digest"], manifest["config_digest"]} or
@@ -754,6 +761,8 @@ def main():
                 raise RuntimeError("invalid host operation")
             host = Host(args.remote_root, args.commit, args.initial_migration)
             result = host.import_artifact(args.artifact, args.manifest_sha) if args.command == "import" else getattr(host, args.command)()
+            if args.command == "build":
+                result = {key: result[key] for key in ("commit", "platform", "tag", "archive_bytes", "archive_sha256", "platform_manifest_digest")}
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
             client = Client(args.host, args.remote_root)
