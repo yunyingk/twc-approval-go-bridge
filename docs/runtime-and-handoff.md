@@ -58,6 +58,33 @@ TWC 使用全局 `frpc-wsl-gateway`，路由为 `twc-approval.ying-qing.cn → 1
 
 运维命令沿用 `make remote-status`、`make remote-update`、`make remote-rollback`。回滚保留当前运维管理器，避免旧版管理器重新启用专用 frpc；共享网关配置由宿主机维护，应用更新不修改或重启共享网关。前文的专用 frpc 和随机端口流程为首次迁移方式，当前 WSL 实例以本节为准。
 
+### 成品镜像发布（2026-10-14）
+
+当前更新采用独立构建与运行步骤；上文源码在运行端构建的流程仅保留给历史首次 Mac 迁移。Mac 使用 Python、Git 和 SSH 发指令，无需启动 Docker Desktop。默认构建主机为 `wsl-dev`，独立目录 `/home/dev/apps/twc-builder/twc-approval-go-bridge`；默认运行主机仍为 `wsl-dev` 的现有服务目录。
+
+```bash
+make remote-build
+make remote-deploy
+make remote-update
+make remote-status
+make remote-rollback
+```
+
+`remote-build` 只向构建主机传已提交源码，在该机执行 Linux 双构建测试和 `go vet`，启动关闭业务触发的临时容器，然后输出已校验成品。构建账户不需要业务凭据；平台采用构建机原生 Linux 架构，运行端遇到不同架构会拒绝导入。构建缓存按完整提交号留存，不强制每次重新编译。
+
+成品保存在本机忽略目录 `data/remote-releases/<commit>/`，包括 `image.tar`、`artifact.json`、`deployment.tar.gz`。最后一个包只含 Compose 清单和管理脚本，没有完整源码、私有配置或业务数据。`artifact.json` 记录传输 SHA-256、目标平台、平台 manifest 摘要、配置摘要、镜像层及构建版本。通过可信 SSH 分发；当前没有引入镜像仓库或镜像签名体系。单平台导出不携带原构建证明。
+
+`remote-deploy` 默认使用本机最近构建成品，也可用 `ARTIFACT=/绝对路径 make remote-deploy` 选择旧成品；不需要干净源码、不调用 Go 或 Docker build。运行端在停止旧服务前验证传输、完整平台内容、启动配置、架构、隔离启动、应用身份表结构及入口，然后保存导入后的镜像引用并切换。校验错误不停止现有服务；启动或验收失败则恢复上一镜像与部署引用。代码回滚保留当前管理器、主机入口策略与业务状态。
+
+```bash
+make remote-build BUILD_HOST=wsl-dev
+make remote-deploy REMOTE_HOST=company-server REMOTE_ROOT=/home/deploy/apps/twc-approval-go-bridge
+# 或串联构建与部署：
+make remote-update BUILD_HOST=wsl-dev REMOTE_HOST=company-server REMOTE_ROOT=/home/deploy/apps/twc-approval-go-bridge
+```
+
+上述公司主机名仅为示例，需由用户提供真实 SSH 别名。公司运行端须先配置 Docker/Compose、非 root 账户、受保护的 `configs/config.toml` 及引用文件、`/data` 对应持久目录、域名与 HTTPS 网关；配置的容器路径为 `/configs`、`/data`。没有 frpc 的公司网关模式可在 `operations/ingress.json` 设置 `{"mode":"gateway"}`，并提供 `operations/shared-ingress.compose.yml` 固定合适的 localhost 端口（使用 Compose `ports: !override`）。该模式不启动或校验 frpc，但仍验收 `runtime.public_base_url` 的公网版本。首次启动必须先完成原实例停机和状态搬迁，再显式运行 `python3 scripts/remote-service.py deploy --host company-server --remote-root /home/deploy/apps/twc-approval-go-bridge --initial-deploy`。普通更新不会自动启动第一个业务 worker；此工具不会替用户停止另一台服务器或迁移业务数据。
+
 ### Mac 本机快捷更新
 
 当前仓库的 Mac LaunchAgent 使用 `com.yingqing.twc-approval-debug`。在本仓库根目录执行：

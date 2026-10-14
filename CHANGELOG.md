@@ -30,6 +30,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- 成品镜像发布：新增 `remote-build` / `remote-deploy`，`remote-update` 改为独立 WSL 构建后分发部署；运行端不编译，校验传输包、平台 manifest、启动配置与镜像层，记录导入端引用并保留回滚镜像；支持公司 HTTPS 网关入口。
+
 ### Changed
 
 - WSL TWC 公网入口合并至全局 `frpc-wsl-gateway`，通过主机级 Compose 覆盖固定 localhost 18088；共享入口策略与运维管理器在业务镜像回滚时保留，不再重启专用 frpc。

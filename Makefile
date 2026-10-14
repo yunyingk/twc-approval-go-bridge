@@ -8,7 +8,7 @@ LDFLAGS := -s -w \
 	-X $(VERSION_PKG).GitCommit=$(GIT_COMMIT) \
 	-X $(VERSION_PKG).BuildDate=$(BUILD_DATE)
 
-.PHONY: fmt test vet build run clean docker-build compose-up version check-version bump local-update local-status local-rollback remote-migrate remote-update remote-status remote-rollback
+.PHONY: fmt test vet build run clean docker-build compose-up version check-version bump local-update local-status local-rollback remote-migrate remote-build remote-deploy remote-update remote-status remote-rollback
 
 fmt:
 	gofmt -w cmd internal
@@ -56,14 +56,27 @@ local-rollback:
 	python3 scripts/local-service.py rollback
 
 # Remote operational settings are CLI arguments, not business environment overrides.
+REMOTE_HOST ?= wsl-dev
+REMOTE_ROOT ?= /home/dev/apps/twc-approval-go-bridge
+BUILD_HOST ?= wsl-dev
+BUILD_ROOT ?= /home/dev/apps/twc-builder/twc-approval-go-bridge
+ARTIFACT ?=
+REMOTE_ARGS = --host "$(REMOTE_HOST)" --remote-root "$(REMOTE_ROOT)"
+BUILD_ARGS = --build-host "$(BUILD_HOST)" --build-root "$(BUILD_ROOT)"
+
+remote-build:
+	python3 scripts/remote-service.py build $(BUILD_ARGS)
+
+remote-deploy:
+	python3 scripts/remote-service.py deploy $(REMOTE_ARGS) $(if $(ARTIFACT),--artifact "$(ARTIFACT)",)
 remote-migrate:
 	python3 scripts/remote-service.py migrate
 
 remote-update:
-	python3 scripts/remote-service.py update
+	python3 scripts/remote-service.py update $(REMOTE_ARGS) $(BUILD_ARGS)
 
 remote-status:
-	python3 scripts/remote-service.py status
+	python3 scripts/remote-service.py status $(REMOTE_ARGS)
 
 remote-rollback:
-	python3 scripts/remote-service.py rollback
+	python3 scripts/remote-service.py rollback $(REMOTE_ARGS)

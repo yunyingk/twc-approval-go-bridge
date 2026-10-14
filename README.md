@@ -90,6 +90,8 @@ docker build --file deploy/Dockerfile --tag twc-approval-go-bridge:local .
 
 Windows 宿主机上的 WSL 实例作为长期 Linux/Docker 演练环境。用户登录后由现有 WSL 保活任务启动；Docker 服务使用 `restart: unless-stopped`。首次迁移先在 Mac 构建并验证候选镜像，再将私有配置通过 SSH 单独同步、停止 Mac 上的识别与 FRP 工作进程、校验 140 个状态文件 SHA-256，并启动新的 Linux 实例和专用 FRP 客户端。迁移不向共享 FRP 容器添加代理，不会启动两个业务 worker。
 
+当前更新已拆分为 `make remote-build`（独立 WSL 构建）、`make remote-deploy`（接收成品部署），`make remote-update` 串联两步。Mac 无需 Docker Desktop；构建与运行主机通过 `BUILD_HOST` / `REMOTE_HOST` 指定，详细步骤见[运行与交接](docs/runtime-and-handoff.md)。
+
 首次迁移及后续维护命令：
 
 ```bash

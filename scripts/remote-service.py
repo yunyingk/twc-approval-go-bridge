@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import fcntl
 import hashlib
+import gzip
 import importlib.util
 import io
 import json
@@ -100,6 +101,88 @@ def hashes(directory):
     return result
 
 
+def file_sha(path):
+    with Path(path).open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def image_contents(path):
+    """Validate a single-platform OCI Docker-save archive without extracting it."""
+    with tarfile.open(path) as archive:
+        members = archive.getmembers()
+        names = [item.name for item in members]
+        if len(names) != len(set(names)) or any(
+                Path(item.name).is_absolute() or ".." in Path(item.name).parts or
+                not (item.isfile() or item.isdir()) for item in members):
+            raise RuntimeError("unsafe or duplicate image archive member")
+        def read(name, limit=16 * 1024 * 1024):
+            item = archive.getmember(name)
+            if not item.isfile() or item.size > limit:
+                raise RuntimeError("invalid image metadata size")
+            return archive.extractfile(item).read()
+        entries = json.loads(read("manifest.json"))
+        if len(entries) != 1 or len(entries[0].get("RepoTags", [])) != 1:
+            raise RuntimeError("expected one tagged platform image")
+        entry = entries[0]
+        config_raw = read(entry["Config"])
+        config = json.loads(config_raw)
+        config_digest = "sha256:" + hashlib.sha256(config_raw).hexdigest()
+        manifests = []
+        for item in members:
+            if item.isfile() and item.name.startswith("blobs/sha256/") and item.size <= 65536:
+                try:
+                    value = json.loads(read(item.name))
+                except (ValueError, UnicodeDecodeError):
+                    continue
+                if isinstance(value, dict) and value.get("config", {}).get("digest") == config_digest and "layers" in value:
+                    manifests.append((item.name, value))
+        if len(manifests) != 1:
+            raise RuntimeError("expected one OCI platform manifest")
+        name, manifest = manifests[0]
+        digest = "sha256:" + hashlib.sha256(read(name)).hexdigest()
+        if name != "blobs/" + digest.replace(":", "/"):
+            raise RuntimeError("platform manifest digest mismatch")
+        layers, diffs = manifest["layers"], config["rootfs"]["diff_ids"]
+        if len(layers) != len(diffs) or len(layers) != len(entry["Layers"]):
+            raise RuntimeError("image layer list mismatch")
+        for layer, diff, layer_name in zip(layers, diffs, entry["Layers"], strict=True):
+            if layer_name != "blobs/" + layer["digest"].replace(":", "/"):
+                raise RuntimeError("layer descriptor mismatch")
+            raw = archive.extractfile(layer_name)
+            if hashlib.file_digest(raw, "sha256").hexdigest() != layer["digest"].split(":", 1)[1]:
+                raise RuntimeError("compressed layer digest mismatch")
+            raw = archive.extractfile(layer_name)
+            stream = gzip.GzipFile(fileobj=raw) if layer["mediaType"].endswith("+gzip") else raw
+            if hashlib.file_digest(stream, "sha256").hexdigest() != diff.split(":", 1)[1]:
+                raise RuntimeError("uncompressed layer digest mismatch")
+        return {"platform": config["os"] + "/" + config["architecture"],
+                "platform_manifest_digest": digest, "config_digest": config_digest,
+                "diff_ids": diffs, "runtime_config": config["config"], "tag": entry["RepoTags"][0]}
+
+
+def validate_artifact(directory):
+    directory = Path(directory)
+    manifest = json.loads((directory / "artifact.json").read_text())
+    if manifest.get("schema") != 1 or not re.fullmatch(r"[a-f0-9]{40}", manifest.get("commit", "")):
+        raise RuntimeError("invalid artifact release manifest")
+    for name, key in [("image.tar", "archive_sha256"), ("deployment.tar.gz", "deployment_sha256")]:
+        if file_sha(directory / name) != manifest.get(key):
+            raise RuntimeError(name + " transport checksum mismatch")
+    contents = image_contents(directory / "image.tar")
+    if any(contents[key] != manifest.get(key) for key in contents):
+        raise RuntimeError("image contents differ from release manifest")
+    if (manifest["version"].get("git_commit") != manifest["commit"][:12] or
+            manifest["version"].get("platform") != manifest["platform"] or
+            not manifest["tag"].startswith("twc-approval-go-bridge:artifact-")):
+        raise RuntimeError("artifact version or platform mismatch")
+    with tarfile.open(directory / "deployment.tar.gz") as archive:
+        members = archive.getmembers()
+        if sorted(item.name for item in members) != ["compose.yml", "manager.py"] or any(
+                not item.isfile() or item.size > 1024 * 1024 for item in members):
+            raise RuntimeError("invalid minimal deployment bundle")
+    return manifest
+
+
 class Host:
     def __init__(self, root, commit=None, initial=False):
         self.root = Path(root).resolve()
@@ -114,7 +197,8 @@ class Host:
         self.previous_path = self.operations / "previous.json"
         self.operations.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.operations.chmod(0o700)
-        self.config = tomllib.loads((self.root / "configs/config.toml").read_text())
+        config_path = self.root / "configs/config.toml"
+        self.config = tomllib.loads(config_path.read_text()) if config_path.exists() else {}
         self.password = self.config.get("runtime", {}).get("dashboard_password", "")
 
     def run(self, args, capture=True, check=True, **kwargs):
@@ -145,13 +229,15 @@ class Host:
         if not re.fullmatch(r"[a-f0-9]{40}", release["commit"]):
             raise RuntimeError("invalid Compose release reference")
         source = self.root / "releases" / release["commit"] / "source"
+        compose_path = self.root / "releases" / release["commit"] / "bundle/compose.yml" if release.get("artifact") else source / "deploy/docker-compose.wsl.yml"
         env = dict(os.environ, TWC_IMAGE=release["tag"], TWC_ROOT=str(self.root),
                    TWC_UID=str(os.getuid()), TWC_GID=str(os.getgid()))
         command = ["docker", "compose", "--env-file", "/dev/null", "-p", PROJECT,
-                   "-f", str(source / "deploy/docker-compose.wsl.yml")]
+                   "-f", str(compose_path)]
+        env.pop("COMPOSE_PROFILES", None)
         ingress_path = self.operations / "ingress.json"
         ingress = json.loads(ingress_path.read_text()) if ingress_path.exists() else {}
-        if ingress.get("mode") == "shared-frpc":
+        if ingress.get("mode") in {"shared-frpc", "gateway"}:
             # Host ingress policy survives application image rollback.
             command += ["-f", str(self.operations / "shared-ingress.compose.yml")]
         elif public:
@@ -208,51 +294,123 @@ class Host:
                 time.sleep(1)
         raise RuntimeError("remote health/connection/ingress checks timed out: " + reason)
 
-    def prepare(self):
-        with self.lock():
-            directory = self.root / "releases" / self.commit
-            source = directory / "source"
-            if (directory / "release.json").exists():
-                release = self.release(self.commit)
-                existing = self.run(["docker", "image", "inspect", "--format", "{{.Id}}", release["tag"]]).stdout.strip()
-                if existing != release["image"]:
-                    raise RuntimeError("the immutable release tag no longer identifies its recorded image")
-                return release
-            version = re.search(r'Version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"',
-                                (source / "internal/version/version.go").read_text()).group(1)
-            architecture = self.run(["docker", "info", "--format", "{{.Architecture}}"]).stdout.strip()
-            architecture = {"x86_64": "amd64", "aarch64": "arm64", "amd64": "amd64", "arm64": "arm64"}.get(architecture)
-            if not architecture:
-                raise RuntimeError("unsupported remote build architecture")
-            tag = f"twc-approval-go-bridge:{version}-{self.commit[:12]}"
-            date = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            command = ["docker", "build", "--network", "host", "--file", str(source / "deploy/Dockerfile"), "--tag", tag]
-            for key, value in {"GO_IMAGE": GO_IMAGE, "RUNTIME_IMAGE": RUNTIME_IMAGE,
-                               "GOPROXY": "https://goproxy.cn", "VERSION": version,
-                               "TARGETARCH": architecture,
-                               "GIT_COMMIT": self.commit[:12], "BUILD_DATE": date}.items():
-                command += ["--build-arg", key + "=" + value]
-            self.run(command + [str(source)], capture=False)
-            image = self.run(["docker", "image", "inspect", "--format", "{{.Id}}", tag]).stdout.strip()
-            built_version = json.loads(self.run(["docker", "run", "--rm", image, "version", "-json"]).stdout)
-            if built_version.get("git_commit") != self.commit[:12] or built_version.get("platform") != "linux/" + architecture:
-                raise RuntimeError("candidate build metadata or platform differs from this host")
-            release = {"commit": self.commit, "image": image, "tag": tag, "version": built_version}
-            self.compose(release, ["config", "--quiet"])
-            self.smoke(release)
-            self.verify_frpc(release)
-            check_state = self.operations / "check-state"
-            check_state.mkdir(exist_ok=True, mode=0o700)
-            check = self.run(["docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
-                              "-v", str(self.root / "configs") + ":/configs:ro",
-                              "-v", str(check_state) + ":/data", image, "check-business-config"], check=False)
-            atomic(directory / "business-check.stdout", check.stdout.encode())
-            atomic(directory / "business-check.stderr", check.stderr.encode())
-            if check.returncode:
-                raise RuntimeError("application-identity business configuration check failed; inspect private release diagnostics")
-            write_json(directory / "release.json", release)
-            print("candidate_checks=passed", flush=True)
+    def build_image(self):
+        directory = self.root / "releases" / self.commit
+        source = directory / "source"
+        if (directory / "release.json").exists():
+            release = self.release(self.commit)
+            existing = self.run(["docker", "image", "inspect", "--format", "{{.Id}}", release["tag"]]).stdout.strip()
+            if existing != release["image"]:
+                raise RuntimeError("the immutable release tag no longer identifies its recorded image")
             return release
+        version = re.search(r'Version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"',
+                            (source / "internal/version/version.go").read_text()).group(1)
+        architecture = self.run(["docker", "info", "--format", "{{.Architecture}}"]).stdout.strip()
+        architecture = {"x86_64": "amd64", "aarch64": "arm64", "amd64": "amd64", "arm64": "arm64"}.get(architecture)
+        if not architecture:
+            raise RuntimeError("unsupported remote build architecture")
+        tag = f"twc-approval-go-bridge:{version}-{self.commit[:12]}"
+        date = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        command = ["docker", "build", "--network", "host", "--file", str(source / "deploy/Dockerfile"), "--tag", tag]
+        for key, value in {"GO_IMAGE": GO_IMAGE, "RUNTIME_IMAGE": RUNTIME_IMAGE,
+                           "GOPROXY": "https://goproxy.cn", "VERSION": version,
+                           "TARGETARCH": architecture,
+                           "GIT_COMMIT": self.commit[:12], "BUILD_DATE": date}.items():
+            command += ["--build-arg", key + "=" + value]
+        self.run(command + [str(source)], capture=False)
+        image = self.run(["docker", "image", "inspect", "--format", "{{.Id}}", tag]).stdout.strip()
+        built_version = json.loads(self.run(["docker", "run", "--rm", image, "version", "-json"]).stdout)
+        if built_version.get("git_commit") != self.commit[:12] or built_version.get("platform") != "linux/" + architecture:
+            raise RuntimeError("candidate build metadata or platform differs from this host")
+        release = {"commit": self.commit, "image": image, "tag": tag, "version": built_version}
+        write_json(directory / "release.json", release)
+        return release
+
+    def build(self):
+        """Builder-only: no runtime credentials, ingress or active worker required."""
+        with self.lock():
+            directory = self.root / "artifacts" / self.commit
+            if (directory / "artifact.json").exists():
+                return validate_artifact(directory)
+            release = self.build_image()
+            self.smoke(release)
+            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            tag = "twc-approval-go-bridge:artifact-" + self.commit[:12]
+            self.run(["docker", "tag", release["tag"], tag])
+            image_path = directory / "image.tar"
+            with image_path.open("wb") as output:
+                os.chmod(image_path, 0o600)
+                self.run(["docker", "image", "save", "--platform", release["version"]["platform"], tag],
+                         stdout=output, capture=False)
+            contents = image_contents(image_path)
+            source = self.root / "releases" / self.commit / "source"
+            atomic(directory / "deployment.tar.gz", archive_files({
+                "manager.py": (source / "scripts/remote-service.py").read_bytes(),
+                "compose.yml": (source / "deploy/docker-compose.wsl.yml").read_bytes()}))
+            manifest = dict(contents, schema=1, commit=self.commit, version=release["version"],
+                            archive_sha256=file_sha(image_path), archive_bytes=image_path.stat().st_size,
+                            deployment_sha256=file_sha(directory / "deployment.tar.gz"),
+                            builder_image=release["image"])
+            write_json(directory / "artifact.json", manifest)
+            return validate_artifact(directory)
+
+    def import_artifact(self, directory, expected_sha):
+        """Runtime-only: verify and load finished bytes; never compile sources."""
+        with self.lock():
+            directory = Path(directory).resolve()
+            if not directory.is_relative_to(self.operations) or file_sha(directory / "artifact.json") != expected_sha:
+                raise RuntimeError("artifact manifest differs from the trusted SSH sender")
+            manifest = validate_artifact(directory)
+            if manifest["commit"] != self.commit or not self.config:
+                raise RuntimeError("target commit or private runtime configuration missing")
+            architecture = self.run(["docker", "info", "--format", "{{.Architecture}}"]).stdout.strip()
+            architecture = {"x86_64": "amd64", "aarch64": "arm64"}.get(architecture, architecture)
+            if manifest["platform"] != "linux/" + architecture:
+                raise RuntimeError("artifact platform differs from the runtime host")
+            self.run(["docker", "load", "--input", str(directory / "image.tar")], capture=False)
+            inspected = json.loads(self.run(["docker", "image", "inspect", manifest["tag"]]).stdout)[0]
+            if (inspected["Id"] not in {manifest["platform_manifest_digest"], manifest["config_digest"]} or
+                    inspected["RootFS"]["Layers"] != manifest["diff_ids"] or
+                    any(inspected["Config"].get(key) != value for key, value in manifest["runtime_config"].items())):
+                raise RuntimeError("imported image/configuration differs from the verified artifact")
+            version = json.loads(self.run(["docker", "run", "--rm", inspected["Id"], "version", "-json"]).stdout)
+            if version != manifest["version"]:
+                raise RuntimeError("imported binary version differs from artifact")
+            release = {"commit": self.commit, "image": inspected["Id"], "tag": manifest["tag"],
+                       "version": version, "artifact": expected_sha,
+                       "platform_manifest_digest": manifest["platform_manifest_digest"]}
+            bundle = self.root / "releases" / self.commit / "bundle"
+            bundle.mkdir(parents=True, exist_ok=True, mode=0o700)
+            with tarfile.open(directory / "deployment.tar.gz") as archive:
+                for item in archive:
+                    atomic(bundle / item.name, archive.extractfile(item).read())
+            self.candidate_checks(release)
+            write_json(bundle.parent / "release.json", release)
+            write_json(bundle.parent / "artifact.json", manifest)
+            return release
+
+    def prepare(self):
+        """Legacy first Mac handoff; normal deployments import an artifact."""
+        with self.lock():
+            release = self.build_image()
+            self.candidate_checks(release)
+            return release
+
+    def candidate_checks(self, release):
+        directory = self.root / "releases" / release["commit"]
+        self.compose(release, ["config", "--quiet"])
+        self.smoke(release)
+        self.verify_frpc(release)
+        check_state = self.operations / "check-state"
+        check_state.mkdir(exist_ok=True, mode=0o700)
+        check = self.run(["docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
+                          "-v", str(self.root / "configs") + ":/configs:ro",
+                          "-v", str(check_state) + ":/data", release["image"], "check-business-config"], check=False)
+        atomic(directory / "business-check.stdout", check.stdout.encode())
+        atomic(directory / "business-check.stderr", check.stderr.encode())
+        if check.returncode:
+            raise RuntimeError("application-identity business configuration check failed; inspect private release diagnostics")
+        print("candidate_checks=passed", flush=True)
 
     def verify_frpc(self, release):
         ingress_path = self.operations / "ingress.json"
@@ -260,6 +418,8 @@ class Host:
             running = self.run(["docker", "inspect", "--format", "{{.State.Running}}", "frpc-wsl-gateway"]).stdout.strip()
             if running != "true":
                 raise RuntimeError("shared WSL FRP gateway is not running")
+            return
+        if ingress_path.exists() and json.loads(ingress_path.read_text()).get("mode") == "gateway":
             return
         path = self.root / "configs/frpc.toml"
         config = tomllib.loads(path.read_text())
@@ -315,27 +475,41 @@ class Host:
 
     def switch(self, selected):
         previous = self.active()
+        for release in [selected] + ([previous] if previous else []):
+            actual = self.run(["docker", "image", "inspect", "--format", "{{.Id}}", release["tag"]]).stdout.strip()
+            if actual != release["image"]:
+                raise RuntimeError("release tag changed or rollback image is unavailable; current worker retained")
+        if previous and previous["image"] == selected["image"] and previous["commit"] == selected["commit"]:
+            return self.ready(previous)
+        paths = [self.active_path, self.previous_path, self.root / "manager.py", self.operations / "last-operation.json"]
+        saved = {path: path.read_bytes() if path.exists() else None for path in paths}
         try:
             if previous:
                 self.compose(previous, ["down"], capture=False)
             self.compose(selected, ["up", "--detach", "--pull", "never"], capture=False)
             result = self.ready(selected)
+            if previous:
+                write_json(self.previous_path, previous)
+            write_json(self.active_path, selected)
+            # Keep the executing manager when rolling back older application images.
+            atomic(self.root / "manager.py", Path(__file__).read_bytes(), 0o700)
+            write_json(self.operations / "last-operation.json", {
+                "verified_at": datetime.now(timezone.utc).isoformat(), "result": result,
+                "image": selected["image"], "rollback_commit": previous["commit"] if previous else None})
+            return result
         except Exception as failure:
             self.compose(selected, ["down"], capture=False, check=False)
             if previous:
                 self.compose(previous, ["up", "--detach", "--pull", "never"], capture=False)
                 self.ready(previous)
+            for path, contents in saved.items():
+                if contents is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    atomic(path, contents, 0o700 if path.name == "manager.py" else 0o600)
+            if previous:
                 print("previous_remote_release_restored=true", flush=True)
             raise failure
-        if previous:
-            write_json(self.previous_path, previous)
-        write_json(self.active_path, selected)
-        # Keep the executing manager when rolling back older application images.
-        atomic(self.root / "manager.py", Path(__file__).read_bytes(), 0o700)
-        write_json(self.operations / "last-operation.json", {
-            "verified_at": datetime.now(timezone.utc).isoformat(), "result": result,
-            "image": selected["image"], "rollback_commit": previous["commit"] if previous else None})
-        return result
 
     def activate(self):
         with self.lock():
@@ -457,12 +631,53 @@ class Client:
             raise RuntimeError("migration state directory must belong to this checkout")
         return files, state
 
-    def update(self):
+    def download(self, remote_path, local_path):
+        local_path = Path(local_path)
+        with local_path.open("wb") as output:
+            os.chmod(local_path, 0o600)
+            self.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", self.host,
+                      "cat " + shlex.quote(remote_path)], stdout=output)
+
+    def build(self):
         commit = self.clean_commit()
-        self.checks()
         self.source(commit)
-        self.agent("prepare", commit)
-        self.agent("activate", commit)
+        self.agent("build", commit)
+        directory = self.root / "data/remote-releases" / commit
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        for name in ["artifact.json", "image.tar", "deployment.tar.gz"]:
+            self.download(self.remote_root + "/artifacts/" + commit + "/" + name, directory / name)
+        validate_artifact(directory)
+        write_json(directory.parent / "latest.json", {"path": str(directory)})
+        print("local_artifact=" + str(directory), flush=True)
+        return directory
+
+    def deploy(self, directory, initial=False):
+        directory = Path(directory).resolve()
+        manifest = validate_artifact(directory)
+        commit = manifest["commit"]
+        trusted_sha = file_sha(directory / "artifact.json")
+        incoming = self.remote_root + "/operations/incoming/" + trusted_sha
+        self.upload(incoming, {name: (directory / name).read_bytes() for name in
+                              ["artifact.json", "image.tar", "deployment.tar.gz"]})
+        # Verify the minimal executable bundle before expanding or executing it.
+        bootstrap = ("import pathlib,json,hashlib,tarfile; p=pathlib.Path(" + repr(incoming) + "); "
+                     "assert hashlib.sha256((p/'artifact.json').read_bytes()).hexdigest()==" + repr(trusted_sha) + "; "
+                     "m=json.loads((p/'artifact.json').read_text()); "
+                     "assert hashlib.sha256((p/'deployment.tar.gz').read_bytes()).hexdigest()==m['deployment_sha256']; "
+                     "a=tarfile.open(p/'deployment.tar.gz'); items=a.getmembers(); "
+                     "assert sorted(x.name for x in items)==['compose.yml','manager.py']; "
+                     "assert all(x.isfile() and x.size<=1048576 for x in items); "
+                     "[(p/x.name).write_bytes(a.extractfile(x).read()) for x in items]")
+        self.ssh(shlex.join(["python3", "-c", bootstrap]))
+        script = incoming + "/manager.py"
+        base = ["python3", "-B", script, "--on-host", "--remote-root", self.remote_root, "--commit", commit]
+        self.ssh(shlex.join(base + ["import", "--artifact", incoming, "--manifest-sha", trusted_sha]))
+        self.ssh(shlex.join(base + ["activate"] + (["--initial-migration"] if initial else [])))
+
+    def update(self, builder=None):
+        # Validate before any upload so an uncommitted checkout never publishes.
+        self.clean_commit()
+        self.deploy((builder or self).build())
 
     def migrate(self):
         commit = self.clean_commit()
@@ -521,29 +736,43 @@ class Client:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["migrate", "update", "status", "rollback", "prepare", "activate", "stop"])
-    parser.add_argument("--host", default="wsl-dev")
+    parser.add_argument("command", choices=["migrate", "build", "deploy", "update", "status", "rollback", "prepare", "import", "activate", "stop"])
+    parser.add_argument("--host", default="wsl-dev", help="runtime SSH host")
     parser.add_argument("--remote-root", default=DEFAULT_ROOT)
+    parser.add_argument("--build-host", default="wsl-dev")
+    parser.add_argument("--build-root", default="/home/dev/apps/twc-builder/twc-approval-go-bridge")
+    parser.add_argument("--artifact", help="finished local artifact directory (or host incoming directory)")
+    parser.add_argument("--manifest-sha")
+    parser.add_argument("--initial-deploy", action="store_true", help="explicit first worker start after external handoff")
     parser.add_argument("--on-host", action="store_true")
     parser.add_argument("--commit")
     parser.add_argument("--initial-migration", action="store_true")
     args = parser.parse_args()
     try:
         if args.on_host:
-            if args.command not in {"prepare", "activate", "status", "rollback", "stop"}:
+            if args.command not in {"build", "import", "prepare", "activate", "status", "rollback", "stop"}:
                 raise RuntimeError("invalid host operation")
             host = Host(args.remote_root, args.commit, args.initial_migration)
-            result = getattr(host, args.command)()
+            result = host.import_artifact(args.artifact, args.manifest_sha) if args.command == "import" else getattr(host, args.command)()
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
             client = Client(args.host, args.remote_root)
-            if args.command in {"migrate", "update"}:
-                getattr(client, args.command)()
+            if args.command in {"build", "update"}:
+                builder = Client(args.build_host, args.build_root)
+                if args.command == "build":
+                    builder.build()
+                else:
+                    client.update(builder)
+            elif args.command == "deploy":
+                path = args.artifact or json.loads((client.root / "data/remote-releases/latest.json").read_text())["path"]
+                client.deploy(path, args.initial_deploy)
+            elif args.command == "migrate":
+                client.migrate()
             elif args.command in {"status", "rollback"}:
                 client.agent(args.command, manager=True)
             else:
-                raise RuntimeError("prepare/activate/stop are host-only operations")
-    except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
+                raise RuntimeError("prepare/import/activate/stop are host-only operations")
+    except (OSError, ValueError, KeyError, RuntimeError, tarfile.TarError, subprocess.CalledProcessError) as error:
         print("remote service operation failed: " + str(error), file=sys.stderr)
         return 1
     return 0
