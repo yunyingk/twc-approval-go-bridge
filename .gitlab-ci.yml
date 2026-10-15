@@ -1,4 +1,4 @@
-# Template for a company-managed Linux Shell Runner with Python 3.11+ and Docker.
+# Template for a company-managed Linux Shell Runner with Python 3.11+ and Docker 29+ using the containerd image store.
 # No SSH to the personal WSL host is required. Set BUILD_RUNNER_TAG to your runner.
 stages: [build, publish]
 variables:

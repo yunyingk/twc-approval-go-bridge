@@ -17,6 +17,8 @@ make k8s-lab-stop        # 停止测试节点，保留测试数据
 
 选择另一成品：`make k8s-lab-deploy ARTIFACT=/绝对路径/成品目录`。成品由现有 `make remote-build` 生成，或由下述通用构建入口产生。测试选择保存在忽略目录 `data/k8s-lab/latest.json`，不改 Docker 发布工具的默认成品选择。
 
+暂停恢复会等待控制面和应用均恢复，可能需要一至两分钟。`LAB_HOST` 默认 `wsl-dev`，与生产部署的 `REMOTE_HOST` 分开。
+
 WSL 私有目录 `/home/dev/apps/twc-k8s-lab`；工具为 kind v0.33.0、kubectl/Kubernetes v1.34.11，下载校验值固定在管理脚本中，节点镜像按官方摘要固定。节点 CPU 上限 2、内存及 memory+swap 上限 4 GiB，并非预占全部资源。只操作 `kind-twc-lab` 上下文和 `twc-lab` 项目空间，集群 API 和 HTTP 都只发布到 WSL localhost 随机端口；状态显示的 URL 不能直接当作 Mac localhost 使用。
 
 ## 验证内容
@@ -40,6 +42,6 @@ python3 -B scripts/publish-image.py data/ci-artifacts/<commit> <镜像仓库/项
 
 发布命令读取已验证成品，需事先通过公司规定方式登录镜像仓库；不会在发布时重新构建。每次输出固定提交／构建摘要的标签及 `registry.json` 中的不可变拉取引用。Mac 仅通过 SSH 管理 WSL；不要在 Mac 本机执行要求 Docker 的 `make image-build`。
 
-根目录 `.gitlab-ci.yml` 是需要公司参数接入的模板，假定专用非 root Linux Shell Runner 已配置 Python 3.11+、Git、Docker 权限及网络；`BUILD_RUNNER_TAG` 是选择 Runner 的参数，不是程序安全规则。构建任务保存镜像成品。发布任务仅默认分支且仓库变量齐备时允许手工触发；凭据通过 masked/protected CI variables 提供，不写入镜像或 artifacts。公司若使用 Docker/Kubernetes executor，需要按运维允许的构建方式适配，不能宣称任意 Runner 都可直接运行。
+根目录 `.gitlab-ci.yml` 是需要公司参数接入的模板，假定专用非 root Linux Shell Runner 已配置 Python 3.11+、Git、Docker 权限及网络；构建端本轮实测 Docker 29.5.3 的 containerd 镜像存储，要求支持单平台 OCI 导出，旧 classic 镜像存储尚未适配；`BUILD_RUNNER_TAG` 是选择 Runner 的参数，不是程序安全规则。构建任务保存镜像成品。发布任务仅默认分支且仓库变量齐备时允许手工触发；凭据通过 masked/protected CI variables 提供，不写入镜像或 artifacts。公司若使用 Docker/Kubernetes executor，需要按运维允许的构建方式适配，不能宣称任意 Runner 都可直接运行。
 
 本地演练和 Shell Runner 入口验证不等于公司 GitLab、ACR 或 ACK 实际验收。生产侧还需指定镜像仓库／权限、Namespace、IngressClass（ACK 可能采用 ALB）、域名／证书、StorageClass、Secret 和资源配额。本轮不接入公司环境、不安装公网入口，也不搬迁现有 WSL 服务。

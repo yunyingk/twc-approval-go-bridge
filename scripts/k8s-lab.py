@@ -135,6 +135,15 @@ class Lab:
             config = self.run([str(ROOT / 'bin/kind'), 'get', 'kubeconfig', '--name', CLUSTER]).stdout
             self.helper.atomic(ROOT / 'kubeconfig', config.encode(), 0o600)
             self.guard()
+            deadline = time.monotonic() + 90
+            while time.monotonic() < deadline:
+                ready = self.k(['get', '--raw=/readyz', '--request-timeout=3s'], check=False)
+                permission = self.k(['get', 'nodes', '--request-timeout=3s', '-o', 'name'], check=False)
+                if ready.returncode == 0 and permission.returncode == 0:
+                    break
+                time.sleep(1)
+            else:
+                raise RuntimeError('lab API did not recover after node start')
             self.k(['wait', '--for=condition=Ready', 'nodes', '--all', '--timeout=180s'], capture=False)
             return self.status()
 
@@ -157,7 +166,8 @@ class Lab:
 
     def wait(self, manifest):
         self.k(['-n', NAMESPACE, 'rollout', 'status', 'deployment/twc-approval-bridge', '--timeout=180s'], capture=False)
-        for _ in range(20):
+        deadline = time.monotonic() + 120
+        while time.monotonic() < deadline:
             try:
                 version = self.http('/version')
                 if version != manifest['version']:

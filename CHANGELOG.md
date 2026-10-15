@@ -32,7 +32,7 @@
 
 ### Added
 
-- 独立 WSL kind 演练：固定并校验工具／节点镜像，显式测试上下文、离线合成配置、Secret/PVC/权限配额、更新回滚及持久化验证；迁移旧 K8s 模板到共享 base 与 lab overlay，保留单活约束，使用非 root Pod。新增共用构建核心的 Linux/GitLab Shell Runner 入口及手动镜像发布模板，现有 Compose 业务不切换。
+- 独立 WSL kind 演练：固定并校验工具／节点镜像，显式测试上下文、离线合成配置、Secret/PVC/权限配额、更新回滚及持久化验证，暂停恢复等待控制面与应用分别就绪；迁移旧 K8s 模板到共享 base 与 lab overlay，保留单活约束，使用非 root Pod。新增共用构建核心的 Linux/GitLab Shell Runner 入口及手动镜像发布模板，现有 Compose 业务不切换。
 
 ### Added
 

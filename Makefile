@@ -82,19 +82,20 @@ remote-rollback:
 	python3 scripts/remote-service.py rollback $(REMOTE_ARGS)
 
 # Isolated kind lab in WSL; never uses an implicit kubectl context.
+LAB_HOST ?= wsl-dev
 .PHONY: k8s-lab-up k8s-lab-deploy k8s-lab-status k8s-lab-verify k8s-lab-rollback k8s-lab-stop image-build image-publish
 k8s-lab-up:
-	python3 -B scripts/k8s-lab.py up --host "$(REMOTE_HOST)"
+	python3 -B scripts/k8s-lab.py up --host "$(LAB_HOST)"
 k8s-lab-deploy:
-	python3 -B scripts/k8s-lab.py deploy --host "$(REMOTE_HOST)" $(if $(ARTIFACT),--artifact "$(ARTIFACT)",)
+	python3 -B scripts/k8s-lab.py deploy --host "$(LAB_HOST)" $(if $(ARTIFACT),--artifact "$(ARTIFACT)",)
 k8s-lab-status:
-	python3 -B scripts/k8s-lab.py status --host "$(REMOTE_HOST)"
+	python3 -B scripts/k8s-lab.py status --host "$(LAB_HOST)"
 k8s-lab-verify:
-	python3 -B scripts/k8s-lab.py verify --host "$(REMOTE_HOST)"
+	python3 -B scripts/k8s-lab.py verify --host "$(LAB_HOST)"
 k8s-lab-rollback:
-	python3 -B scripts/k8s-lab.py rollback --host "$(REMOTE_HOST)"
+	python3 -B scripts/k8s-lab.py rollback --host "$(LAB_HOST)"
 k8s-lab-stop:
-	python3 -B scripts/k8s-lab.py stop --host "$(REMOTE_HOST)"
+	python3 -B scripts/k8s-lab.py stop --host "$(LAB_HOST)"
 image-build:
 	python3 -B scripts/build-image.py
 image-publish:
