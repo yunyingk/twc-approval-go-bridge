@@ -1,0 +1,31 @@
+# Template for a company-managed Linux Shell Runner with Python 3.11+ and Docker.
+# No SSH to the personal WSL host is required. Set BUILD_RUNNER_TAG to your runner.
+stages: [build, publish]
+variables:
+  BUILD_RUNNER_TAG: container-build
+image_artifact:
+  stage: build
+  tags: [$BUILD_RUNNER_TAG]
+  script:
+    - python3 -B scripts/build-image.py --commit "$CI_COMMIT_SHA"
+  artifacts:
+    paths:
+      - data/ci-artifacts/
+    expire_in: 7 days
+publish_image:
+  stage: publish
+  tags: [$BUILD_RUNNER_TAG]
+  needs: [image_artifact]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $REGISTRY_IMAGE && $REGISTRY_SERVER && $REGISTRY_USER && $REGISTRY_PASSWORD'
+      when: manual
+  script:
+    # Use masked/protected CI variables; keep registry credentials out of artifacts.
+    - export DOCKER_CONFIG="$(mktemp -d)"
+    - trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+    - printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_SERVER" --username "$REGISTRY_USER" --password-stdin
+    - python3 -B scripts/publish-image.py "data/ci-artifacts/$CI_COMMIT_SHA" "$REGISTRY_IMAGE"
+  artifacts:
+    paths:
+      - data/ci-artifacts/*/registry.json
+    expire_in: 7 days

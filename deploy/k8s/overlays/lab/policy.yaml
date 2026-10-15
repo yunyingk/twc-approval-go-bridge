@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: twc-lab
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.34
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: lab-budget
+spec:
+  hard:
+    pods: '6'
+    requests.cpu: '2'
+    requests.memory: 2Gi
+    limits.cpu: '3'
+    limits.memory: 3Gi
+    requests.storage: 2Gi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: viewer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: viewer
+rules:
+  - apiGroups: ['']
+    resources: [pods, pods/log, services]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: viewer
+subjects:
+  - kind: ServiceAccount
+    name: viewer
+    namespace: twc-lab
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: viewer

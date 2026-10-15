@@ -32,6 +32,10 @@
 
 ### Added
 
+- 独立 WSL kind 演练：固定并校验工具／节点镜像，显式测试上下文、离线合成配置、Secret/PVC/权限配额、更新回滚及持久化验证；迁移旧 K8s 模板到共享 base 与 lab overlay，保留单活约束，使用非 root Pod。新增共用构建核心的 Linux/GitLab Shell Runner 入口及手动镜像发布模板，现有 Compose 业务不切换。
+
+### Added
+
 - 成品镜像发布：新增 `remote-build` / `remote-deploy`，`remote-update` 改为独立 WSL 构建后分发部署；运行端不编译，校验传输包、平台 manifest、启动配置与镜像层，记录导入端引用并保留回滚镜像，导入前拒绝覆盖当前或回滚标签，元数据保存失败也恢复上一版本；支持公司 HTTPS 网关入口。
 
 ### Changed

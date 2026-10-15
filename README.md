@@ -84,6 +84,10 @@ docker build --file deploy/Dockerfile --tag twc-approval-go-bridge:local .
 
 镜像使用多阶段构建，运行时只包含静态 Go 二进制。
 
+### 独立 Kubernetes 测试环境
+
+WSL 可运行独立的 kind 演练集群，现有业务仍使用 Docker。入口为 `make k8s-lab-up`、`k8s-lab-deploy`、`k8s-lab-status`、`k8s-lab-verify`，详见 [K8s 演练与 GitLab 构建说明](deploy/k8s/README.md)。
+
 ### 将本机实例迁移到 Windows 的 Ubuntu WSL Docker
 
 当前 WSL 实例已改为复用全局 `frpc-wsl-gateway`，业务固定绑定 `127.0.0.1:18088`，专用 frpc 已移除；后续更新／回滚保留共享入口策略。下文保留首次迁移流程，当前入口及验收见[共享网关调整记录](docs/progress/2026-10-14-wsl-shared-frpc.md)。

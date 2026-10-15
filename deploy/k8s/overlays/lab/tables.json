@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "name": "offline-k8s-lab",
+  "tables": {
+    "transactions": {
+      "name": "transactions",
+      "source": "webhook",
+      "access": "read_only",
+      "base_token": "offline",
+      "table_id": "test-transactions",
+      "fields": {
+        "transaction_id": "fld_tid"
+      }
+    },
+    "reimbursement_details": {
+      "name": "reimbursement_details",
+      "source": "employee",
+      "access": "read_write",
+      "base_token": "offline",
+      "table_id": "test-reimbursement_details",
+      "fields": {
+        "attachment": "fld_att"
+      }
+    },
+    "invoice_ledger": {
+      "name": "invoice_ledger",
+      "source": "bridge",
+      "access": "read_write",
+      "base_token": "offline",
+      "table_id": "test-invoice_ledger",
+      "fields": {
+        "source_key": "fld_sk",
+        "raw_json": "fld_raw"
+      }
+    }
+  }
+}

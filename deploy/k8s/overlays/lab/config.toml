@@ -1,0 +1,15 @@
+# Synthetic, offline lab configuration. No production credentials or tables.
+tables_file = "/configs/tables/enterprise.json"
+[recognition]
+provider = "disabled"
+trigger_mode = "both"
+[review]
+provider = "seal"
+trigger_mode = "manual"
+[transactions]
+auto_notify = false
+[notification]
+enabled = false
+[runtime]
+http_addr = ":8080"
+state_dir = "/data"

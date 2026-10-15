@@ -1,5 +1,5 @@
 # ==============================================================================
-# TWC Approval Go Bridge - Kubernetes 生产级标准部署清单 (Production Template)
+# TWC Approval Go Bridge - Kubernetes 基础清单（生产环境仍需接入验收）
 # ==============================================================================
 # 关键约束与说明：
 # 1. 单活 Pod 架构约束（强制锁定 replicas: 1）：
@@ -10,7 +10,7 @@
 #    - /data 目录承载发票去重 Checkpoint、任务绑定及运行时审计文件；
 #    - 生产环境建议通过下方声明的 PersistentVolumeClaim（twc-approval-data-pvc）挂载。
 # 3. 域名与配置替换：
-#    - 镜像地址：将 <IMAGE_REGISTRY_URL> 替换为数科私有仓库实际路径与版本 tag。
+#    - 镜像地址：通过环境 overlay 替换 twc-approval-go-bridge:unconfigured。
 #    - 二级域名：将 <YOUR_SECONDARY_DOMAIN> 替换为数科分配的公网二级域名（SealAI 回调依赖公网解析）。
 # ==============================================================================
 
@@ -51,10 +51,24 @@ spec:
       labels:
         app: twc-approval-bridge
     spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
       containers:
         - name: server
-          image: <IMAGE_REGISTRY_URL>/twc-approval-go-bridge:v0.3.3
+          image: twc-approval-go-bridge:unconfigured
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
           env:
             - name: CONFIG_FILE
               value: /configs/config.toml
@@ -94,10 +108,16 @@ spec:
             - name: data-volume
               mountPath: /data
       volumes:
-        # 主配置文件（由 ConfigMap 或 Secret 挂载）
+        # 主配置含凭据，必须使用 Secret；仅向本 Pod 的运行组开放读取。
         - name: config-volume
-          configMap:
-            name: twc-approval-config
+          secret:
+            secretName: twc-approval-config
+            defaultMode: 0440
+            items:
+              - key: config.toml
+                path: config.toml
+              - key: tables.json
+                path: tables/enterprise.json
         # 生产持久化存储（绑定上方声明的 PVC）
         - name: data-volume
           persistentVolumeClaim:
