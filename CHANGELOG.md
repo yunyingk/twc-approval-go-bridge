@@ -45,6 +45,11 @@
   - 统一增强 HTTP 鉴权：支持标准 `Authorization: Bearer <token>` 请求头；
   - 新增使用手册 [`docs/agent-diagnostics-guide.md`](docs/agent-diagnostics-guide.md) 指导无 SSH 权限场景下的 Agent 调查与自愈运维。
 
+- **多维表格建库命令安全防护与 Agent 适配 (`cmd/server/init_bitable.go`)**：
+  - 新增 `-switch` 安全开关（默认 `false`）：建库默认不改写当前主配置 `config.toml`，避免对生产/运行中测试库造成意外切换破坏；仅在显式指定 `-switch` 时才原子更新配置；
+  - 新增 `-json` 结构化输出开关：支持低 Token、机器可读的 JSON 格式直接返回建表结果（`base_token`, `base_url`, `tables`, `config_file`, `self_check_passed`），适配自动化脚本与 AI Agent；
+  - 新增管理员协作者自动兜底回退：若未显式指定 `-admin-user`，自动回退读取配置中的 `notification.admin_open_ids` 或 `default_approver_open_id`。
+
 - 独立 WSL kind 演练：固定并校验工具／节点镜像，显式测试上下文、离线合成配置、Secret/PVC/权限配额、更新回滚及持久化验证，暂停恢复等待控制面与应用分别就绪；迁移旧 K8s 模板到共享 base 与 lab overlay，保留单活约束，使用非 root Pod。新增共用构建核心的 Linux/GitLab Shell Runner 入口及手动镜像发布模板，现有 Compose 业务不切换。
 
 ### Added

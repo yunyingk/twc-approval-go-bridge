@@ -41,6 +41,12 @@ func TestRunInitBitable_HelpFlag(t *testing.T) {
 	if !strings.Contains(out.String(), "Usage of init-bitable:") {
 		t.Errorf("expected usage output, got %s", out.String())
 	}
+	if !strings.Contains(out.String(), "-switch") {
+		t.Errorf("expected -switch flag in help, got %s", out.String())
+	}
+	if !strings.Contains(out.String(), "-json") {
+		t.Errorf("expected -json flag in help, got %s", out.String())
+	}
 }
 
 func TestRunAddAdmin_RequiresArgs(t *testing.T) {
