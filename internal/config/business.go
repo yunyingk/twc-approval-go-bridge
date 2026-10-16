@@ -174,8 +174,18 @@ type ReviewSettings struct {
 	IncludeTransactions    bool              `json:"include_transactions,omitempty" toml:"include_transactions,omitempty"`
 	Provider               string            `json:"provider" toml:"provider"`
 	TriggerMode            string            `json:"trigger_mode" toml:"trigger_mode"`
+	Writeback              *bool             `json:"writeback,omitempty" toml:"writeback,omitempty"`
 	ContextFields          map[string]string `json:"context_fields,omitempty" toml:"-"`
 	ResultFields           map[string]string `json:"result_fields,omitempty" toml:"-"`
+}
+
+// WritebackEnabled returns whether writing review results back to Feishu Bitable is allowed.
+// Defaults to true when unspecified. Setting to false enables read-only shadow testing mode.
+func (r ReviewSettings) WritebackEnabled() bool {
+	if r.Writeback != nil {
+		return *r.Writeback
+	}
+	return true
 }
 
 // LoadTablesFile loads and validates a business tables schema from a JSON file.

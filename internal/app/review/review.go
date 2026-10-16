@@ -66,6 +66,11 @@ func NewDelivery(source Source, store Store, writer Writer) (*Service, error) {
 	return &Service{source: source, options: Options{Store: store, Writer: writer}}, nil
 }
 
+// WriterConfigured reports whether a result writer is configured on the service.
+func (s *Service) WriterConfigured() bool {
+	return s.options.Writer != nil
+}
+
 // Prepare reads every attachment and its written ledger result before any
 // external submission. One reimbursement has one snapshot with many invoices.
 func (s *Service) Prepare(ctx context.Context, recordID string) (core.Request, error) {

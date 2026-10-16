@@ -50,6 +50,11 @@
   - 新增 `-json` 结构化输出开关：支持低 Token、机器可读的 JSON 格式直接返回建表结果（`base_token`, `base_url`, `tables`, `config_file`, `self_check_passed`），适配自动化脚本与 AI Agent；
   - 新增管理员协作者自动兜底回退：若未显式指定 `-admin-user`，自动回退读取配置中的 `notification.admin_open_ids` 或 `default_approver_open_id`。
 
+- **生产数据只读影子测试与回写防护机制 (`internal/config`, `cmd/server`, `docs`)**：
+  - 新增 `[review] writeback` 全局配置开关（布尔值，默认 `true`）：设为 `false` 时启动影子测试模式，底层将回写器物理置为 `nil`，绝对拦截向飞书多维表格的任何回写操作；
+  - 增强 `submit-review` CLI 命令：支持 `--no-writeback` 单次测试参数（如 `submit-review --no-writeback <record-id>`），支持在不修改任何配置文件的同时安全对真实生产单据进行只读验证；
+  - 在 [`docs/business-configuration.md`](docs/business-configuration.md) 沉淀完整的生产数据只读影子测试标准作业规范。
+
 - 独立 WSL kind 演练：固定并校验工具／节点镜像，显式测试上下文、离线合成配置、Secret/PVC/权限配额、更新回滚及持久化验证，暂停恢复等待控制面与应用分别就绪；迁移旧 K8s 模板到共享 base 与 lab overlay，保留单活约束，使用非 root Pod。新增共用构建核心的 Linux/GitLab Shell Runner 入口及手动镜像发布模板，现有 Compose 业务不切换。
 
 ### Added

@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -799,6 +800,89 @@ user_whitelist = [
 		t.Errorf("unexpected second whitelist user: %#v", cfg.Transactions.UserWhitelist[1])
 	}
 }
+
+func TestLoadFile_ReviewWriteback(t *testing.T) {
+	dir := t.TempDir()
+	tablesPath := filepath.Join(dir, "tables.json")
+	p := testProfile()
+	tp := TablesProfile{
+		Version: 1,
+		Name:    p.Name,
+		Tables: TablesSchema{
+			Transactions: p.Tables.Transactions,
+			ReimbursementDetails: ReimbursementDetailsBinding{
+				Name:          p.Tables.ReimbursementDetails.Name,
+				Source:        p.Tables.ReimbursementDetails.Source,
+				Access:        p.Tables.ReimbursementDetails.Access,
+				BaseToken:     p.Tables.ReimbursementDetails.BaseToken,
+				TableID:       p.Tables.ReimbursementDetails.TableID,
+				Fields:        p.Tables.ReimbursementDetails.Fields,
+				ContextFields: p.Review.ContextFields,
+				ResultFields:  p.Review.ResultFields,
+			},
+			InvoiceLedger: p.Tables.InvoiceLedger,
+		},
+	}
+	raw, err := json.Marshal(tp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tablesPath, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Explicitly writeback = false (shadow testing mode)
+	tomlShadow := fmt.Sprintf(`
+tables_file = %q
+[feishu]
+app_id = "cli_123"
+app_secret = "sec_123"
+[recognition]
+provider = "disabled"
+trigger_mode = "both"
+[review]
+provider = "seal"
+trigger_mode = "manual"
+writeback = false
+`, tablesPath)
+	shadowPath := filepath.Join(dir, "shadow.toml")
+	if err := os.WriteFile(shadowPath, []byte(tomlShadow), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfgShadow, err := LoadFile(shadowPath)
+	if err != nil {
+		t.Fatalf("LoadFile shadow failed: %v", err)
+	}
+	if cfgShadow.Business.Review.WritebackEnabled() {
+		t.Errorf("expected WritebackEnabled to be false in shadow mode")
+	}
+
+	// 2. Default when omitted should be true
+	tomlDefault := fmt.Sprintf(`
+tables_file = %q
+[feishu]
+app_id = "cli_123"
+app_secret = "sec_123"
+[recognition]
+provider = "disabled"
+trigger_mode = "both"
+[review]
+provider = "seal"
+trigger_mode = "manual"
+`, tablesPath)
+	defaultPath := filepath.Join(dir, "default.toml")
+	if err := os.WriteFile(defaultPath, []byte(tomlDefault), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfgDefault, err := LoadFile(defaultPath)
+	if err != nil {
+		t.Fatalf("LoadFile default failed: %v", err)
+	}
+	if !cfgDefault.Business.Review.WritebackEnabled() {
+		t.Errorf("expected WritebackEnabled to be true by default")
+	}
+}
+
 
 
 

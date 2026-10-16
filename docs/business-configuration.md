@@ -107,6 +107,30 @@ change_debounce = "10s"
 
 开关关闭期间不补建事件；停机丢失的事件仍需补扫。人工发票事实修正可能触发 Seal 稳定 `sourceInvoiceId` 的核心字段冲突，桥接保留 `failed`，不改发票 ID 绕过原有占用/查重；该外部异常处理仍需业务对账。多次读取、来源变更、人工显式提交与回写之间仍有并发窗口，来源联动不是业务冻结事务。过程和验收范围见[来源联动记录](progress/2026-10-05-source-review-changes.md)。
 
+## 生产数据只读影子测试与回写防护（Shadow Testing）
+
+在生产环境正常运行期间，如果开发团队需要用生产真实、复杂的小票和流水样本测试新的机审规则或模型效果，但**绝对不能修改/污染生产多维表格**，系统提供了完整的只读影子测试机制：
+
+### 1. 核心防护机制
+1. **配置级全局防护 (`[review] writeback = false`)**：
+   在 TOML 主配置中设置 `writeback = false`，系统底层会将结果回写器（`Writer`）强制置为 `nil`。无论是异步 Seal 回调、自建模型同步审核还是手动重试回写，底层均会自动拦截并跳过飞书更新，仅在本地日志和审计留痕，绝不向多维表格发起任何修改请求。
+2. **CLI 命令级按需防护 (`submit-review --no-writeback <record-id>`)**：
+   在终端执行单条送审命令时，可追加 `--no-writeback` 参数，零配置修改成本，单次精准锁定只读送审。
+3. **数据表拓扑只读模式（`result_fields = {}`）**：
+   若表配置中未定义回写列映射，系统同样默认保持只读模式。
+
+### 2. 标准操作流程
+```bash
+# 步骤 1：零成本只读预览事实与流水组装（Dry-Run，不调用 Seal/模型）
+./bin/twc-approval-go-bridge preview-review <生产明细ID>
+
+# 步骤 2：使用影子模式向审核引擎送审（只读送审，绝不修改生产表）
+./bin/twc-approval-go-bridge submit-review --no-writeback <生产明细ID>
+
+# 步骤 3：查看审核结论留痕（从本地状态或 SealAI 网页后台查看）
+./bin/twc-approval-go-bridge review-status <生产明细ID>
+```
+
 ## 换企业或文档副本
 
 当前轻量原生审批设置在主 TOML 的 `[feishu.approval]`，用于单条 `preview-approval` 与显式 `push-approval`，见[当前审批配置](approval-configuration.md)。旧的 `approval` JSON、分组、日期绑定与批次版本门禁属于归档实现，不适用于主线；配置变更本身不自动创建审批，也不替 Seal 维护规则。
@@ -117,3 +141,4 @@ change_debounce = "10s"
 4. 核验通过后重启服务，实际验证事件与回写。当前 Docker 与 K8s 配置使用 `CONFIG_FILE=/configs/config.toml`，配置目录挂载至 `/configs`（K8s 挂载为只读），`runtime.state_dir` 应按部署环境使用 `/data`；配置文件须可被容器运行 UID 读取，私有配置不进入镜像。
 
 配置名称和路径不参与识别去重或审核版本；迁移配置格式不会重建基线或任务。更换实际 Base/Table/Field 会进入新的业务范围，首次扫描按 recognition.poll_startup 执行；保留 runtime.state_dir 及已有状态，不为切换配置删除历史证据。
+

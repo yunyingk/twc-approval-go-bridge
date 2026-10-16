@@ -78,3 +78,69 @@ func stateContents(t *testing.T, root string) map[string]string {
 	}
 	return files
 }
+
+func TestNewReviewService_WritebackControl(t *testing.T) {
+	root := t.TempDir()
+	boolFalse := false
+	boolTrue := true
+
+	baseCfg := func(wb *bool) config.Config {
+		return config.Config{
+			Runtime: config.RuntimeConfig{StateDir: root},
+			Feishu: config.FeishuSettings{
+				AppCredentials: config.AppCredentials{AppID: "cli_test", AppSecret: "sec_test"},
+			},
+			Seal: config.SealSettings{
+				DocumentURL: "https://test.sealai.cc/api/v1/integrations/webhook/wh_test/document",
+				BearerToken: "test_token",
+			},
+			Business: &config.BusinessProfile{
+				Tables: config.BusinessTables{
+					ReimbursementDetails: config.TableBinding{
+						BaseToken: "base1",
+						TableID:   "tbl_det",
+						Fields:    map[string]string{"attachment": "fld_att", "detail_id": "fld_id"},
+					},
+					InvoiceLedger: config.TableBinding{
+						BaseToken: "base1",
+						TableID:   "tbl_lg",
+						Fields:    map[string]string{"source_key": "fld_sk", "raw_json": "fld_raw", "invoice_number": "fld_inv_num"},
+					},
+				},
+				Review: config.ReviewSettings{
+					Provider:     "seal",
+					Writeback:    wb,
+					ResultFields: map[string]string{"decision": "fld_dec", "document_id": "fld_doc", "revision": "fld_rev"},
+				},
+			},
+		}
+	}
+
+	// 1. Explicitly disabled via config (writeback = false)
+	svc1, err := newReviewService(baseCfg(&boolFalse), false)
+	if err != nil {
+		t.Fatalf("newReviewService failed: %v", err)
+	}
+	if svc1.WriterConfigured() {
+		t.Errorf("expected WriterConfigured to be false when config writeback=false")
+	}
+
+	// 2. Disabled via flag (disableWriteback = true)
+	svc2, err := newReviewService(baseCfg(&boolTrue), true)
+	if err != nil {
+		t.Fatalf("newReviewService failed: %v", err)
+	}
+	if svc2.WriterConfigured() {
+		t.Errorf("expected WriterConfigured to be false when disableWriteback=true flag is passed")
+	}
+
+	// 3. Enabled by default
+	svc3, err := newReviewService(baseCfg(nil), false)
+	if err != nil {
+		t.Fatalf("newReviewService failed: %v", err)
+	}
+	if !svc3.WriterConfigured() {
+		t.Errorf("expected WriterConfigured to be true by default when ResultFields are configured")
+	}
+}
+

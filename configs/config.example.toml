@@ -21,6 +21,7 @@ include_transactions = true         # 是否联动读取已绑定的交易流水
 resubmit_on_detail_change = false   # 报销明细修改后是否自动重审
 resubmit_on_source_change = false   # 票据台账/流水修改后是否自动重审
 change_debounce = "10s"             # 修改事件防抖等待时间
+# writeback = true                  # 是否将机审结果回写飞书多维表格（默认 true；设为 false 时启用影子测试模式：读取真实生产事实送审，但物理拦截向飞书的任何回写操作）
 # rules_file = "configs/rules/review.example.json" # 自建模型 (provider="model") 时的审核规则文件（支持绝对路径或相对路径，默认双通道优先找工作目录，兜底拼主配置所在目录）
 
 # ==========================================

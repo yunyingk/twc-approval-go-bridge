@@ -38,7 +38,7 @@ func newReviewSource(cfg config.Config) (*base.ReviewSource, error) {
 	return source, nil
 }
 
-func newReviewService(cfg config.Config) (*appreview.Service, error) {
+func newReviewService(cfg config.Config, disableWriteback bool) (*appreview.Service, error) {
 	source, err := newReviewSource(cfg)
 	if err != nil {
 		return nil, err
@@ -70,7 +70,8 @@ func newReviewService(cfg config.Config) (*appreview.Service, error) {
 		return nil, err
 	}
 	options.Store = store
-	if cfg.Business != nil && len(cfg.Business.Review.ResultFields) > 0 {
+	writebackAllowed := !disableWriteback && (cfg.Business == nil || cfg.Business.Review.WritebackEnabled())
+	if writebackAllowed && cfg.Business != nil && len(cfg.Business.Review.ResultFields) > 0 {
 		writer, err := base.NewReviewWriter(base.NewLedgerClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret), cfg.Business.Tables.ReimbursementDetails.BaseToken, cfg.Business.Tables.ReimbursementDetails.TableID, cfg.Business.Review.ResultFields)
 		if err != nil {
 			return nil, err
@@ -90,7 +91,8 @@ func newReviewDeliveryService(cfg config.Config) (*appreview.Service, error) {
 		return nil, err
 	}
 	var writer appreview.Writer
-	if cfg.Business != nil && len(cfg.Business.Review.ResultFields) > 0 {
+	writebackAllowed := cfg.Business == nil || cfg.Business.Review.WritebackEnabled()
+	if writebackAllowed && cfg.Business != nil && len(cfg.Business.Review.ResultFields) > 0 {
 		writer, err = base.NewReviewWriter(base.NewLedgerClient(cfg.Feishu.AppID, cfg.Feishu.AppSecret), cfg.Business.Tables.ReimbursementDetails.BaseToken, cfg.Business.Tables.ReimbursementDetails.TableID, cfg.Business.Review.ResultFields)
 		if err != nil {
 			return nil, err
@@ -98,16 +100,20 @@ func newReviewDeliveryService(cfg config.Config) (*appreview.Service, error) {
 	}
 	return appreview.NewDelivery(source, store, writer)
 }
-func runReviewSubmit(ctx context.Context, cfg config.Config, recordID string, logger *slog.Logger) error {
-	service, err := newReviewService(cfg)
+func runReviewSubmit(ctx context.Context, cfg config.Config, recordID string, disableWriteback bool, logger *slog.Logger) error {
+	service, err := newReviewService(cfg, disableWriteback)
 	if err != nil {
 		return err
+	}
+	writebackActive := !disableWriteback && (cfg.Business == nil || cfg.Business.Review.WritebackEnabled()) && (cfg.Business != nil && len(cfg.Business.Review.ResultFields) > 0)
+	if !writebackActive {
+		logger.InfoContext(ctx, "review writeback disabled (shadow mode: results will NOT be written to Feishu Bitable)")
 	}
 	result, err := service.Submit(ctx, recordID)
 	if err != nil {
 		return err
 	}
-	logger.InfoContext(ctx, "review submitted", "provider", cfg.ReviewProvider(), "document_id", result.DocumentID, "status", result.Status, "attachment_count", result.AttachmentCount, "structured_invoices", result.StructuredInvoices, "duplicate_candidates", result.DuplicateCandidates)
+	logger.InfoContext(ctx, "review submitted", "provider", cfg.ReviewProvider(), "document_id", result.DocumentID, "status", result.Status, "attachment_count", result.AttachmentCount, "structured_invoices", result.StructuredInvoices, "duplicate_candidates", result.DuplicateCandidates, "writeback_enabled", writebackActive)
 	return json.NewEncoder(os.Stdout).Encode(result)
 }
 
