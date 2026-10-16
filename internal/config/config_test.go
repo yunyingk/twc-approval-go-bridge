@@ -734,6 +734,72 @@ notify_on_dead_letter = true
 	}
 }
 
+func TestLoadFile_UserWhitelist(t *testing.T) {
+	dir := t.TempDir()
+	tablesPath := filepath.Join(dir, "tables.json")
+	validJSON := `{
+		"version": 1,
+		"name": "enterprise-test",
+		"tables": {
+			"transactions": {"name": "流水", "source": "webhook", "access": "read_only", "base_token": "b1", "table_id": "t1", "fields": {"transaction_id": "f1"}},
+			"reimbursement_details": {
+				"name": "明细", "source": "employee", "access": "read_write", "base_token": "b1", "table_id": "t2", 
+				"fields": {"attachment": "f2"}, "context_fields": {"r": "f3"}, "result_fields": {"decision": "f4"}
+			},
+			"invoice_ledger": {"name": "台账", "source": "bridge", "access": "read_write", "base_token": "b1", "table_id": "t3", "fields": {"source_key": "f5", "raw_json": "f6"}}
+		}
+	}`
+	if err := os.WriteFile(tablesPath, []byte(validJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	tomlContent := `
+tables_file = "tables.json"
+[runtime]
+http_addr = ":8080"
+[feishu]
+app_id = "cli_123"
+app_secret = "sec_123"
+[recognition]
+provider = "disabled"
+trigger_mode = "both"
+[review]
+provider = "seal"
+trigger_mode = "manual"
+[transactions]
+auto_notify = true
+poll_interval = "3m"
+debounce = "2s"
+user_whitelist = [
+  { open_id = " ou_holder_1 ", name = " 谢子豪 " },
+  { open_id = "ou_holder_2" },
+  { open_id = "   " } # invalid empty open_id should be pruned
+]
+`
+	tomlPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(tomlPath, []byte(tomlContent), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadFile(tomlPath)
+	if err != nil {
+		t.Fatalf("LoadFile failed: %v", err)
+	}
+
+	if !cfg.Transactions.AutoNotify {
+		t.Errorf("expected AutoNotify true")
+	}
+	if len(cfg.Transactions.UserWhitelist) != 2 {
+		t.Fatalf("expected 2 cleaned whitelist users, got %d", len(cfg.Transactions.UserWhitelist))
+	}
+	if cfg.Transactions.UserWhitelist[0].OpenID != "ou_holder_1" || cfg.Transactions.UserWhitelist[0].Name != "谢子豪" {
+		t.Errorf("unexpected first whitelist user: %#v", cfg.Transactions.UserWhitelist[0])
+	}
+	if cfg.Transactions.UserWhitelist[1].OpenID != "ou_holder_2" || cfg.Transactions.UserWhitelist[1].Name != "" {
+		t.Errorf("unexpected second whitelist user: %#v", cfg.Transactions.UserWhitelist[1])
+	}
+}
+
 
 
 

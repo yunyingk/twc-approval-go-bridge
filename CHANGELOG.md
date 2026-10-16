@@ -32,6 +32,19 @@
 
 ### Added
 
+- **员工推送安全白名单机制 (`internal/config`, `internal/feishu/card`, `cmd/server`)**：
+  - 新增 `[transactions] user_whitelist` 对象数组配置（以 `open_id` 为唯一准绳，`name` 作为双重校验与人类可读备注，支持大小写不敏感与空白字符清理）；
+  - 实施「策略 A（绝对安全模式）」：白名单未配置或为空时，默认全员安全拦截，跳过卡片私信、待办任务（Task v2）创建及明细表预填记录；
+  - 支持配置全员通配符 `{ open_id = "*" }` 用于后续全量放开；
+  - 在全量扫描 `scan-transactions` 与实时长连接 `event_sink` 中统一接入过滤，记录 `skipped_not_in_whitelist` 状态与 Audit 审计日志，并在扫描报告中单独汇总 `SkippedNotWhitelisted` 统计。
+
+- **AI Agent 远端公网认知调查与系统日志升级 (`internal/httpserver`, `docs`)**：
+  - 新增 `GET /api/agent/diagnose` 一键全景体检端点：单次请求聚合系统运行健康状态、Anyreceipt 额度雷达、异常日志（WARN/ERROR）与近期业务审计，支持 `format=markdown`（面向 LLM Context 优化）与结构化 JSON；
+  - 新增 `GET /api/agent/inspect` 单据深度穿透端点：支持传入 `record_id` 自动穿透审计时间线、关联日志与诊断分析，支持 Markdown 与 JSON；
+  - 升级 `GET /api/system-logs`：支持 `order=desc`（最新优先）、`q` 关键词过滤、`level` 级别过滤与 `format=text` 紧凑文本输出；
+  - 统一增强 HTTP 鉴权：支持标准 `Authorization: Bearer <token>` 请求头；
+  - 新增使用手册 [`docs/agent-diagnostics-guide.md`](docs/agent-diagnostics-guide.md) 指导无 SSH 权限场景下的 Agent 调查与自愈运维。
+
 - 独立 WSL kind 演练：固定并校验工具／节点镜像，显式测试上下文、离线合成配置、Secret/PVC/权限配额、更新回滚及持久化验证，暂停恢复等待控制面与应用分别就绪；迁移旧 K8s 模板到共享 base 与 lab overlay，保留单活约束，使用非 root Pod。新增共用构建核心的 Linux/GitLab Shell Runner 入口及手动镜像发布模板，现有 Compose 业务不切换。
 
 ### Added

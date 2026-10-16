@@ -3,6 +3,7 @@ package httpserver
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/yunyingk/twc-approval-go-bridge/internal/audit"
 )
 
 func TestHealthEndpoint(t *testing.T) {
@@ -313,6 +316,169 @@ func TestReadyEndpointWithChecker(t *testing.T) {
 	s.httpServer.Handler.ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", res.Code)
+	}
+}
+
+func TestAgentDiagnoseAPI_JSONAndMarkdown(t *testing.T) {
+	s := New(":0", slog.Default(), "0.3.3")
+	s.SetPassword("secret123")
+
+	buffer := NewLogBuffer(100)
+	buffer.Add(time.Now(), slog.LevelWarn, "something feels slow", map[string]any{"component": "ocr"})
+	s.SetLogBuffer(buffer)
+
+	// 1. Unauthorized request
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/diagnose", nil)
+	res := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized, got %d", res.Code)
+	}
+
+	// 2. Authorized JSON request via Bearer token
+	req = httptest.NewRequest(http.MethodGet, "/api/agent/diagnose", nil)
+	req.Header.Set("Authorization", "Bearer secret123")
+	res = httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", res.Code, res.Body.String())
+	}
+	var report AgentDiagnosticReport
+	if err := json.Unmarshal(res.Body.Bytes(), &report); err != nil {
+		t.Fatalf("failed to decode JSON report: %v", err)
+	}
+	if report.OverallHealth != "HEALTHY" {
+		t.Errorf("expected HEALTHY, got %s", report.OverallHealth)
+	}
+	if len(report.RecentErrors) != 1 || report.RecentErrors[0].Message != "something feels slow" {
+		t.Errorf("unexpected recent errors: %#v", report.RecentErrors)
+	}
+
+	// 3. Authorized Markdown request via Bearer token
+	req = httptest.NewRequest(http.MethodGet, "/api/agent/diagnose?format=markdown", nil)
+	req.Header.Set("Authorization", "Bearer secret123")
+	res = httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", res.Code)
+	}
+	md := res.Body.String()
+	if !strings.Contains(md, "# TWC Approval Bridge - AI Agent 诊断快照") {
+		t.Errorf("expected markdown header, got: %s", md)
+	}
+	if !strings.Contains(md, "something feels slow") {
+		t.Errorf("expected warn log in markdown, got: %s", md)
+	}
+}
+
+func TestAgentInspectAPI_JSONAndMarkdown(t *testing.T) {
+	s := New(":0", slog.Default(), "0.3.3")
+	s.SetPassword("secret123")
+
+	buffer := NewLogBuffer(100)
+	buffer.Add(time.Now(), slog.LevelInfo, "downloading receipt attachment", map[string]any{"record_id": "rec_inspect_001"})
+	s.SetLogBuffer(buffer)
+
+	// Record an audit entry
+	audit.Log(audit.Entry{
+		Timestamp: time.Now(),
+		Type:      audit.TypeOCRCompleted,
+		RecordID:  "rec_inspect_001",
+		Action:    "发票台账回写成功",
+	})
+
+	// 1. Missing record_id returns 400
+	req := httptest.NewRequest(http.MethodGet, "/api/agent/inspect", nil)
+	req.Header.Set("Authorization", "Bearer secret123")
+	res := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d", res.Code)
+	}
+
+	// 2. Query JSON inspect
+	req = httptest.NewRequest(http.MethodGet, "/api/agent/inspect?record_id=rec_inspect_001", nil)
+	req.Header.Set("Authorization", "Bearer secret123")
+	res = httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", res.Code)
+	}
+	var data map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &data); err != nil {
+		t.Fatalf("decode inspect json: %v", err)
+	}
+	if data["record_id"] != "rec_inspect_001" {
+		t.Errorf("unexpected record_id: %v", data["record_id"])
+	}
+	logs, ok := data["related_logs"].([]any)
+	if !ok || len(logs) == 0 {
+		t.Errorf("expected related logs in inspect data")
+	}
+
+	// 3. Query Markdown inspect
+	req = httptest.NewRequest(http.MethodGet, "/api/agent/inspect?record_id=rec_inspect_001&format=markdown", nil)
+	req.Header.Set("Authorization", "Bearer secret123")
+	res = httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK for markdown inspect, got %d", res.Code)
+	}
+	md := res.Body.String()
+	if !strings.Contains(md, "# 单据调查快照: rec_inspect_001") {
+		t.Errorf("unexpected inspect markdown header: %s", md)
+	}
+	if !strings.Contains(md, "downloading receipt attachment") {
+		t.Errorf("expected correlated log in markdown: %s", md)
+	}
+}
+
+func TestSystemLogsAPI_ExtendedFiltering(t *testing.T) {
+	s := New(":0", slog.Default(), "0.3.3")
+	buffer := NewLogBuffer(100)
+	t0 := time.Now()
+	buffer.Add(t0.Add(1*time.Second), slog.LevelInfo, "starting service", nil)
+	buffer.Add(t0.Add(2*time.Second), slog.LevelWarn, "token expiring soon", map[string]any{"token": "tok_1"})
+	buffer.Add(t0.Add(3*time.Second), slog.LevelError, "failed to call anyreceipt", map[string]any{"err_code": 500})
+	s.SetLogBuffer(buffer)
+
+	// 1. Keyword search
+	req := httptest.NewRequest(http.MethodGet, "/api/system-logs?q=anyreceipt", nil)
+	res := httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.Code)
+	}
+	var data map[string]any
+	_ = json.Unmarshal(res.Body.Bytes(), &data)
+	if count, ok := data["count"].(float64); !ok || count != 1 {
+		t.Errorf("expected count 1, got %v", data["count"])
+	}
+
+	// 2. Order desc (latest first)
+	req = httptest.NewRequest(http.MethodGet, "/api/system-logs?order=desc&limit=2", nil)
+	res = httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+	_ = json.Unmarshal(res.Body.Bytes(), &data)
+	logs := data["logs"].([]any)
+	if len(logs) != 2 {
+		t.Fatalf("expected 2 logs, got %d", len(logs))
+	}
+	firstLog := logs[0].(map[string]any)
+	if firstLog["message"] != "failed to call anyreceipt" {
+		t.Errorf("expected latest log first, got %s", firstLog["message"])
+	}
+
+	// 3. Format text
+	req = httptest.NewRequest(http.MethodGet, "/api/system-logs?format=text&limit=1&order=desc", nil)
+	res = httptest.NewRecorder()
+	s.httpServer.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.Code)
+	}
+	text := res.Body.String()
+	if !strings.Contains(text, "[ERROR] failed to call anyreceipt") {
+		t.Errorf("unexpected text format: %s", text)
 	}
 }
 

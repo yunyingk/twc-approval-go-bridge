@@ -2,7 +2,9 @@ package httpserver
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -62,40 +64,110 @@ func (b *LogBuffer) Add(t time.Time, level slog.Level, msg string, attrs map[str
 	}
 }
 
+// LogFilterOptions specifies filters and ordering for querying system logs.
+type LogFilterOptions struct {
+	Limit    int
+	MinLevel string
+	SinceID  int64
+	Keyword  string
+	Order    string // "asc" (default) or "desc"
+}
+
+// FormatLine returns a concise single-line representation of the log entry.
+func (e SystemLogEntry) FormatLine() string {
+	ts := e.Time.In(CSTZone).Format("2006-01-02 15:04:05.000")
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("%s [%s] %s", ts, e.Level, e.Message))
+	if len(e.Attrs) > 0 {
+		keys := make([]string, 0, len(e.Attrs))
+		for k := range e.Attrs {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			sb.WriteString(fmt.Sprintf(" %s=%v", k, e.Attrs[k]))
+		}
+	}
+	return sb.String()
+}
+
 // Query retrieves logs based on limit, minimum level, and optional sinceID for incremental polling.
 func (b *LogBuffer) Query(limit int, minLevel string, sinceID int64) []SystemLogEntry {
+	return b.QueryExtended(LogFilterOptions{
+		Limit:    limit,
+		MinLevel: minLevel,
+		SinceID:  sinceID,
+		Order:    "asc",
+	})
+}
+
+// QueryExtended provides powerful search, filtering and sorting across the circular log buffer.
+func (b *LogBuffer) QueryExtended(opt LogFilterOptions) []SystemLogEntry {
 	if b == nil {
 		return nil
 	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
+	limit := opt.Limit
 	if limit <= 0 || limit > 500 {
 		limit = 200
 	}
 
 	var parsedMinLevel slog.Level
 	hasMinLevel := false
-	if minLevel != "" {
+	if opt.MinLevel != "" {
 		var l slog.Level
-		if err := l.UnmarshalText([]byte(strings.ToUpper(minLevel))); err == nil {
+		if err := l.UnmarshalText([]byte(strings.ToUpper(opt.MinLevel))); err == nil {
 			parsedMinLevel = l
 			hasMinLevel = true
 		}
 	}
 
-	if sinceID > 0 {
+	kw := strings.ToLower(strings.TrimSpace(opt.Keyword))
+	matchesEntry := func(e SystemLogEntry) bool {
+		if opt.SinceID > 0 && e.ID <= opt.SinceID {
+			return false
+		}
+		if hasMinLevel && parseLogLevelStr(e.Level) < parsedMinLevel {
+			return false
+		}
+		if kw != "" {
+			if strings.Contains(strings.ToLower(e.Message), kw) {
+				return true
+			}
+			for k, v := range e.Attrs {
+				if strings.Contains(strings.ToLower(k), kw) || strings.Contains(strings.ToLower(fmt.Sprint(v)), kw) {
+					return true
+				}
+			}
+			return false
+		}
+		return true
+	}
+
+	if strings.EqualFold(opt.Order, "desc") {
+		var matched []SystemLogEntry
+		for i := len(b.entries) - 1; i >= 0; i-- {
+			e := b.entries[i]
+			if matchesEntry(e) {
+				matched = append(matched, e)
+				if len(matched) >= limit {
+					break
+				}
+			}
+		}
+		return matched
+	}
+
+	if opt.SinceID > 0 || kw != "" {
 		var matched []SystemLogEntry
 		for _, e := range b.entries {
-			if e.ID <= sinceID {
-				continue
-			}
-			if hasMinLevel && parseLogLevelStr(e.Level) < parsedMinLevel {
-				continue
-			}
-			matched = append(matched, e)
-			if len(matched) >= limit {
-				break
+			if matchesEntry(e) {
+				matched = append(matched, e)
+				if len(matched) >= limit {
+					break
+				}
 			}
 		}
 		return matched
@@ -108,10 +180,9 @@ func (b *LogBuffer) Query(limit int, minLevel string, sinceID int64) []SystemLog
 	var matched []SystemLogEntry
 	for i := start; i < len(b.entries); i++ {
 		e := b.entries[i]
-		if hasMinLevel && parseLogLevelStr(e.Level) < parsedMinLevel {
-			continue
+		if matchesEntry(e) {
+			matched = append(matched, e)
 		}
-		matched = append(matched, e)
 	}
 	return matched
 }

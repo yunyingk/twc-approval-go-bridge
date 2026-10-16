@@ -30,6 +30,17 @@ make build
 
 当前 Docker/K8s 约定为 `CONFIG_FILE=/configs/config.toml`，配置目录在 `/configs`，持久状态卷在 `/data`；应同步选择 `runtime.state_dir` 并保证运行 UID 可读取配置。文件状态库使用单活实例，K8s 清单固定 `replicas: 1` 和 `Recreate`。WSL Linux 演练与远端更新命令见下一节。
 
+### 远端公网认知调查与 AI Agent 运维
+
+针对云原生容器或无 SSH 直连权限的远端部署环境，系统内置了专为 AI Agent（以及自动化运维脚本）设计的低 Token、自包含诊断接口套件：
+
+- **一键全景体检**：`GET /api/agent/diagnose?format=markdown`，单次 HTTP 往返聚合健康就绪状态、Anyreceipt 额度预警、近期 WARN/ERROR 异常日志与流水审计概况；
+- **单据深度穿透**：`GET /api/agent/inspect?record_id=<ID>&format=markdown`，按流水或明细记录 ID 一键聚合全生命周期时间线及关联日志；
+- **倒序过滤日志**：`GET /api/system-logs?order=desc&q=<KEYWORD>&level=WARN&format=text`，支持单行紧凑文本输出；
+- **标准 Bearer 鉴权**：接口统一支持 `Authorization: Bearer <metrics_token>` 请求头。
+
+完整接口契约、Agent 诊断标准 Prompt 模板与安全最佳实践详见[《远端公网认知调查与 AI Agent 运维使用手册》](agent-diagnostics-guide.md)。
+
 ### Windows WSL Docker：首次迁移、更新与回滚
 
 本地仓库位于可信 Git 提交中；只允许从 clean commit 构建远端发布。项目目录为 `/home/dev/apps/twc-approval-go-bridge`，运行 UID/GID 从远端 `dev` 账户动态获取。首次命令为：

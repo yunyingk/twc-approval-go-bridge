@@ -65,6 +65,9 @@ func runScanTransactions(ctx context.Context, cfg config.Config, logger *slog.Lo
 	if report.SkippedNoUser > 0 {
 		fmt.Fprintf(output, "  - 未识别到持卡人:  %d 条 (跳过)\n", report.SkippedNoUser)
 	}
+	if report.SkippedNotWhitelisted > 0 {
+		fmt.Fprintf(output, "  - 未在员工白名单中: %d 条 (安全过滤，不打扰)\n", report.SkippedNotWhitelisted)
+	}
 	fmt.Fprintf(output, "----------------------------------------------------------------------\n")
 	fmt.Fprintf(output, "🎯 符合催交的有效候选: %d 条\n", len(report.Candidates))
 

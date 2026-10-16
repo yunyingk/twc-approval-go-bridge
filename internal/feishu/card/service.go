@@ -154,6 +154,30 @@ func (s *Service) NotifyTransaction(ctx context.Context, transactionRecordID str
 				Reason:        decision.Reason,
 			}, nil
 		}
+
+		// User whitelist guard (Strategy A: empty whitelist blocks all notifications)
+		if allowed, reason := s.IsUserWhitelisted(openID, recipientName); !allowed {
+			audit.Log(audit.Entry{
+				Timestamp:    time.Now(),
+				Type:         audit.TypeNotifyCardSent,
+				RecordID:     transactionRecordID,
+				Operator:     openID,
+				OperatorName: recipientName,
+				Action:       fmt.Sprintf("跳过向持卡人 %s 推送交易补票卡片（未在白名单）", recipientName),
+				Details: map[string]any{
+					"open_id": openID,
+					"reason":  reason,
+				},
+			})
+			return &NotifyResult{
+				Status:        "skipped_not_in_whitelist",
+				Recipient:     recipientName,
+				OpenID:        openID,
+				TransactionID: txID,
+				Merchant:      merchant,
+				Reason:        reason,
+			}, nil
+		}
 	}
 
 	bookedAmt := formatString(getFieldValue("booked_amount_cny"), record["结算金额"])
@@ -828,5 +852,41 @@ func (s *Service) InspectDetailsWithSchema(ctx context.Context) ([]TransactionRo
 		return nil, nil, detailsBinding, err
 	}
 	return result.Data.Items, fieldMap, detailsBinding, nil
+}
+
+// IsUserWhitelisted checks whether the cardholder openID (and optional name) is permitted
+// by the transactions user whitelist.
+// Strategy A: If the whitelist is unconfigured or empty, it defaults to blocking all users to prevent mass notifications.
+// Returns (allowed, reason).
+func (s *Service) IsUserWhitelisted(actualOpenID, actualName string) (bool, string) {
+	actualOpenID = strings.TrimSpace(actualOpenID)
+	actualName = strings.TrimSpace(actualName)
+
+	whitelist := s.cfg.Transactions.UserWhitelist
+	if len(whitelist) == 0 {
+		return false, "未配置员工白名单，默认全员安全拦截（杜绝群发打扰）"
+	}
+
+	for _, item := range whitelist {
+		cfgOpenID := strings.TrimSpace(item.OpenID)
+		cfgName := strings.TrimSpace(item.Name)
+
+		// 1. Wildcard match allows all users
+		if cfgOpenID == "*" {
+			return true, "命中全员通配符白名单 (*)"
+		}
+
+		// 2. OpenID match (case-insensitive)
+		if strings.EqualFold(cfgOpenID, actualOpenID) {
+			// Name serves as double-check and human-readable remark
+			if cfgName != "" && actualName != "" && !strings.EqualFold(cfgName, actualName) {
+				slog.Warn("员工白名单姓名与多维表格持卡人姓名不一致（以 open_id 为准放行）",
+					"open_id", actualOpenID, "whitelist_name", cfgName, "actual_name", actualName)
+			}
+			return true, fmt.Sprintf("命中员工白名单(open_id: %s)", actualOpenID)
+		}
+	}
+
+	return false, fmt.Sprintf("持卡人 %s (%s) 未在员工白名单中", actualName, actualOpenID)
 }
 

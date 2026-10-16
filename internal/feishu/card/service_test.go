@@ -120,6 +120,11 @@ func TestServiceNotifyTransaction_MockServer(t *testing.T) {
 				},
 			},
 		},
+		Transactions: config.TransactionConfig{
+			UserWhitelist: []config.WhitelistUser{
+				{OpenID: "ou_holder_test", Name: "张三"},
+			},
+		},
 	}
 
 	svc, err := NewService(cfg)
@@ -319,6 +324,11 @@ func TestServiceNotifyTransaction_Option1_PrefillAndTask(t *testing.T) {
 				},
 			},
 		},
+		Transactions: config.TransactionConfig{
+			UserWhitelist: []config.WhitelistUser{
+				{OpenID: "ou_xzh", Name: "谢子豪"},
+			},
+		},
 	}
 
 	svc, err := NewService(cfg)
@@ -471,6 +481,354 @@ func TestBatchCreatePrefillDetails(t *testing.T) {
 	}
 	if len(receivedRecords) != 2 {
 		t.Fatalf("expected 2 received records, got %d", len(receivedRecords))
+	}
+}
+
+func TestService_IsUserWhitelisted(t *testing.T) {
+	// 1. Strategy A: Empty whitelist blocks everyone
+	svcEmpty := &Service{
+		cfg: config.Config{
+			Transactions: config.TransactionConfig{
+				UserWhitelist: nil,
+			},
+		},
+	}
+	allowed, reason := svcEmpty.IsUserWhitelisted("ou_test123", "张三")
+	if allowed {
+		t.Errorf("expected blocked when whitelist is nil/empty, got allowed")
+	}
+	if !strings.Contains(reason, "未配置员工白名单") {
+		t.Errorf("unexpected reason: %s", reason)
+	}
+
+	// 2. Exact match with OpenID and Name
+	svc := &Service{
+		cfg: config.Config{
+			Transactions: config.TransactionConfig{
+				UserWhitelist: []config.WhitelistUser{
+					{OpenID: "ou_123", Name: "张三"},
+					{OpenID: "ou_456", Name: ""}, // name optional
+				},
+			},
+		},
+	}
+
+	// Hit with matching name
+	allowed, _ = svc.IsUserWhitelisted("ou_123", "张三")
+	if !allowed {
+		t.Errorf("expected allowed for ou_123 with matching name")
+	}
+
+	// Hit with case-insensitivity and whitespace
+	allowed, _ = svc.IsUserWhitelisted(" OU_123 ", " 张三 ")
+	if !allowed {
+		t.Errorf("expected allowed with whitespace/case-insensitivity")
+	}
+
+	// Hit with name mismatch (logs warn, but still allows by open_id as the golden standard)
+	allowed, _ = svc.IsUserWhitelisted("ou_123", "李四")
+	if !allowed {
+		t.Errorf("expected allowed by open_id even when name differs")
+	}
+
+	// Hit when name was left empty in whitelist
+	allowed, _ = svc.IsUserWhitelisted("ou_456", "王五")
+	if !allowed {
+		t.Errorf("expected allowed for ou_456 when whitelist name is empty")
+	}
+
+	// Miss: user not in whitelist
+	allowed, reason = svc.IsUserWhitelisted("ou_789", "赵六")
+	if allowed {
+		t.Errorf("expected blocked for ou_789 not in whitelist")
+	}
+	if !strings.Contains(reason, "未在员工白名单中") {
+		t.Errorf("unexpected reason: %s", reason)
+	}
+
+	// 3. Wildcard allows all
+	svcWildcard := &Service{
+		cfg: config.Config{
+			Transactions: config.TransactionConfig{
+				UserWhitelist: []config.WhitelistUser{
+					{OpenID: "*"},
+				},
+			},
+		},
+	}
+	allowed, reason = svcWildcard.IsUserWhitelisted("ou_random_user", "某路人")
+	if !allowed {
+		t.Errorf("expected allowed under wildcard whitelist")
+	}
+	if !strings.Contains(reason, "通配符") {
+		t.Errorf("unexpected reason: %s", reason)
+	}
+}
+
+func TestServiceNotifyTransaction_WhitelistBlocked(t *testing.T) {
+	messageSent := false
+	taskCreated := false
+	detailCreated := false
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if strings.HasSuffix(r.URL.Path, "/auth/v3/tenant_access_token/internal") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0, "msg": "ok", "tenant_access_token": "mock-token",
+			})
+			return
+		}
+
+		if strings.HasSuffix(r.URL.Path, "/fields") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{
+					"items": []map[string]any{
+						{"field_id": "fld_tx_id", "field_name": "交易流水号"},
+						{"field_id": "fld_cardholder", "field_name": "持卡人"},
+						{"field_id": "fld_merchant", "field_name": "商户名称"},
+						{"field_id": "fld_time", "field_name": "交易时间"},
+						{"field_id": "fld_booked_amt", "field_name": "结算金额"},
+					},
+				},
+			})
+			return
+		}
+
+		if strings.Contains(r.URL.Path, "/records/rec_blocked_tx") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0, "msg": "ok",
+				"data": map[string]any{
+					"record": map[string]any{
+						"fields": map[string]any{
+							"交易流水号": "TX_BLOCKED_001",
+							"商户名称":   "BLOCKED STORE",
+							"交易时间":   float64(1790524800000),
+							"结算金额":   "99.00",
+							"结算金额币种": "CNY",
+							"持卡人": []any{
+								map[string]any{"id": "ou_blocked_user", "name": "未授权员工"},
+							},
+						},
+					},
+				},
+			})
+			return
+		}
+
+		if strings.Contains(r.URL.Path, "/tables/tbl_detail_id/records") {
+			detailCreated = true
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/task/v2/tasks") {
+			taskCreated = true
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/im/v1/messages") {
+			messageSent = true
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	// Whitelist only allows ou_other_user
+	cfg := config.Config{
+		Feishu: config.FeishuSettings{
+			AppCredentials: config.AppCredentials{
+				AppID:     "app_test",
+				AppSecret: "secret_test",
+			},
+			Host: "https://test.feishu.cn",
+		},
+		Business: &config.BusinessProfile{
+			Tables: config.BusinessTables{
+				Transactions: config.TableBinding{
+					BaseToken: "app_base_token",
+					TableID:   "tbl_trans_id",
+					Fields: map[string]string{
+						"transaction_id":    "fld_tx_id",
+						"cardholder":        "fld_cardholder",
+						"merchant":          "fld_merchant",
+						"transaction_time":  "fld_time",
+						"booked_amount_cny": "fld_booked_amt",
+					},
+				},
+				ReimbursementDetails: config.TableBinding{
+					BaseToken: "app_base_token",
+					TableID:   "tbl_detail_id",
+				},
+			},
+		},
+		Transactions: config.TransactionConfig{
+			UserWhitelist: []config.WhitelistUser{
+				{OpenID: "ou_allowed_someone_else", Name: "已授权测试员"},
+			},
+		},
+	}
+
+	svc, err := NewService(cfg)
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
+	svc.client.baseURL = server.URL
+	if svc.taskClient != nil {
+		svc.taskClient.SetBaseURLForTest(server.URL)
+	}
+
+	res, err := svc.NotifyTransaction(context.Background(), "rec_blocked_tx")
+	if err != nil {
+		t.Fatalf("NotifyTransaction returned error: %v", err)
+	}
+
+	if res.Status != "skipped_not_in_whitelist" {
+		t.Errorf("expected status skipped_not_in_whitelist, got %s", res.Status)
+	}
+	if !strings.Contains(res.Reason, "未在员工白名单中") {
+		t.Errorf("expected reason to mention 未在员工白名单中, got: %s", res.Reason)
+	}
+	if detailCreated {
+		t.Errorf("detail record should NOT be created for non-whitelisted user")
+	}
+	if taskCreated {
+		t.Errorf("task should NOT be created for non-whitelisted user")
+	}
+	if messageSent {
+		t.Errorf("message card should NOT be sent for non-whitelisted user")
+	}
+}
+
+func TestScanner_WhitelistFiltering(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if strings.HasSuffix(r.URL.Path, "/auth/v3/tenant_access_token/internal") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0, "msg": "ok", "tenant_access_token": "mock-token",
+			})
+			return
+		}
+
+		if strings.HasSuffix(r.URL.Path, "/fields") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0,
+				"data": map[string]any{
+					"items": []map[string]any{
+						{"field_id": "fld_tx_id", "field_name": "交易流水号"},
+						{"field_id": "fld_cardholder", "field_name": "持卡人"},
+						{"field_id": "fld_merchant", "field_name": "商户名称"},
+						{"field_id": "fld_time", "field_name": "交易时间"},
+						{"field_id": "fld_booked_amt", "field_name": "结算金额"},
+						{"field_id": "fld_booked_cur", "field_name": "结算金额币种"},
+						{"field_id": "fld_orig_amt", "field_name": "交易金额"},
+						{"field_id": "fld_orig_cur", "field_name": "交易金额币种"},
+					},
+				},
+			})
+			return
+		}
+
+		if strings.Contains(r.URL.Path, "/tables/tbl_trans_id/records") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code": 0, "msg": "ok",
+				"data": map[string]any{
+					"items": []map[string]any{
+						{
+							"record_id": "rec_1",
+							"fields": map[string]any{
+								"交易流水号":   "TX_001",
+								"商户名称":     "MERCHANT A",
+								"交易时间":     float64(1790524800000),
+								"结算金额":     "100.00",
+								"结算金额币种":   "CNY",
+								"持卡人": []any{
+									map[string]any{"id": "ou_whitelisted_1", "name": "测试员A"},
+								},
+							},
+						},
+						{
+							"record_id": "rec_2",
+							"fields": map[string]any{
+								"交易流水号":   "TX_002",
+								"商户名称":     "MERCHANT B",
+								"交易时间":     float64(1790524800000),
+								"结算金额":     "200.00",
+								"结算金额币种":   "CNY",
+								"持卡人": []any{
+									map[string]any{"id": "ou_not_in_whitelist", "name": "普通员工B"},
+								},
+							},
+						},
+					},
+				},
+			})
+			return
+		}
+
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	// Whitelist only includes ou_whitelisted_1
+	cfg := config.Config{
+		Feishu: config.FeishuSettings{
+			AppCredentials: config.AppCredentials{
+				AppID:     "app_test",
+				AppSecret: "secret_test",
+			},
+			Host: "https://test.feishu.cn",
+		},
+		Business: &config.BusinessProfile{
+			Tables: config.BusinessTables{
+				Transactions: config.TableBinding{
+					BaseToken: "app_base_token",
+					TableID:   "tbl_trans_id",
+					Fields: map[string]string{
+						"transaction_id":    "fld_tx_id",
+						"cardholder":        "fld_cardholder",
+						"merchant":          "fld_merchant",
+						"transaction_time":  "fld_time",
+						"booked_amount_cny": "fld_booked_amt",
+						"booked_currency":   "fld_booked_cur",
+					},
+				},
+				ReimbursementDetails: config.TableBinding{
+					FormShareToken: "form_token_test",
+				},
+			},
+		},
+		Transactions: config.TransactionConfig{
+			UserWhitelist: []config.WhitelistUser{
+				{OpenID: "ou_whitelisted_1", Name: "测试员A"},
+			},
+		},
+	}
+
+	svc, err := NewService(cfg)
+	if err != nil {
+		t.Fatalf("NewService failed: %v", err)
+	}
+	svc.client.baseURL = server.URL
+
+	scanner := NewScanner(svc, nil)
+	report, err := scanner.Inspect(context.Background(), ScanOptions{Send: false})
+	if err != nil {
+		t.Fatalf("Inspect failed: %v", err)
+	}
+
+	if report.TotalRows != 2 {
+		t.Errorf("expected 2 total rows, got %d", report.TotalRows)
+	}
+	if report.SkippedNotWhitelisted != 1 {
+		t.Errorf("expected 1 SkippedNotWhitelisted, got %d", report.SkippedNotWhitelisted)
+	}
+	if len(report.Candidates) != 1 {
+		t.Fatalf("expected exactly 1 candidate (the whitelisted one), got %d", len(report.Candidates))
+	}
+	if report.Candidates[0].OpenID != "ou_whitelisted_1" {
+		t.Errorf("unexpected candidate: %s", report.Candidates[0].OpenID)
 	}
 }
 

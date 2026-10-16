@@ -51,10 +51,16 @@ type NotificationConfig struct {
 	NotifyOnDeadLetter bool
 }
 
+type WhitelistUser struct {
+	OpenID string `json:"open_id" toml:"open_id"`
+	Name   string `json:"name,omitempty" toml:"name,omitempty"`
+}
+
 type TransactionSettings struct {
-	AutoNotify   bool   `json:"auto_notify,omitempty" toml:"auto_notify,omitempty"`
-	PollInterval string `json:"poll_interval,omitempty" toml:"poll_interval,omitempty"`
-	Debounce     string `json:"debounce,omitempty" toml:"debounce,omitempty"`
+	AutoNotify    bool            `json:"auto_notify,omitempty" toml:"auto_notify,omitempty"`
+	PollInterval  string          `json:"poll_interval,omitempty" toml:"poll_interval,omitempty"`
+	Debounce      string          `json:"debounce,omitempty" toml:"debounce,omitempty"`
+	UserWhitelist []WhitelistUser `json:"user_whitelist,omitempty" toml:"user_whitelist,omitempty"`
 }
 
 type RuntimeSettings struct {
@@ -129,9 +135,10 @@ type RuntimeConfig struct {
 }
 
 type TransactionConfig struct {
-	AutoNotify   bool
-	PollInterval time.Duration
-	Debounce     time.Duration
+	AutoNotify    bool
+	PollInterval  time.Duration
+	Debounce      time.Duration
+	UserWhitelist []WhitelistUser
 }
 
 // Config contains runtime settings for the service shell.
@@ -288,9 +295,10 @@ func LoadFile(path string) (Config, error) {
 		Seal:                document.Seal,
 		Model:               document.Model,
 		Transactions: TransactionConfig{
-			AutoNotify:   document.Transactions.AutoNotify,
-			PollInterval: txPoll,
-			Debounce:     txDebounce,
+			AutoNotify:    document.Transactions.AutoNotify,
+			PollInterval:  txPoll,
+			Debounce:      txDebounce,
+			UserWhitelist: cleanWhitelistUsers(document.Transactions.UserWhitelist),
 		},
 		Notification: NotificationConfig{
 			Enabled:            document.Notification.Enabled,
@@ -474,6 +482,20 @@ func cleanStringSlice(items []string) []string {
 		t := strings.TrimSpace(it)
 		if t != "" {
 			cleaned = append(cleaned, t)
+		}
+	}
+	return cleaned
+}
+
+func cleanWhitelistUsers(users []WhitelistUser) []WhitelistUser {
+	var cleaned []WhitelistUser
+	for _, u := range users {
+		openID := strings.TrimSpace(u.OpenID)
+		if openID != "" {
+			cleaned = append(cleaned, WhitelistUser{
+				OpenID: openID,
+				Name:   strings.TrimSpace(u.Name),
+			})
 		}
 	}
 	return cleaned

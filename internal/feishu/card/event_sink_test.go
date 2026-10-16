@@ -117,6 +117,11 @@ func TestEventSink_DebounceAndNotify(t *testing.T) {
 				},
 			},
 		},
+		Transactions: config.TransactionConfig{
+			UserWhitelist: []config.WhitelistUser{
+				{OpenID: "ou_event_user", Name: "测试员"},
+			},
+		},
 	}
 
 	svc, err := NewService(cfg)

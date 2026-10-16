@@ -24,10 +24,11 @@ type ScanReport struct {
 	SkippedLinked     int            `json:"skipped_linked"`
 	SkippedZeroAmount int            `json:"skipped_zero_amount"`
 	SkippedStatus     int            `json:"skipped_status"`
-	SkippedClaim      int            `json:"skipped_claim"`
-	SkippedNoUser     int            `json:"skipped_no_user"`
-	SkippedIncomplete int            `json:"skipped_incomplete"` // 缺少结算金额/币种/流水号/交易时间等
-	Candidates        []CandidateRow `json:"candidates"`
+	SkippedClaim          int            `json:"skipped_claim"`
+	SkippedNoUser         int            `json:"skipped_no_user"`
+	SkippedIncomplete     int            `json:"skipped_incomplete"` // 缺少结算金额/币种/流水号/交易时间等
+	SkippedNotWhitelisted int            `json:"skipped_not_whitelisted"` // 未在员工白名单中（安全拦截）
+	Candidates            []CandidateRow `json:"candidates"`
 	NotifiedCount     int            `json:"notified_count"`
 	DryRun            bool           `json:"dry_run"`
 	Duration          time.Duration  `json:"duration"`
@@ -132,6 +133,11 @@ func (s *Scanner) Inspect(ctx context.Context, opts ...ScanOptions) (*ScanReport
 			if !strings.EqualFold(opt.User, openID) && !strings.Contains(recipientName, opt.User) {
 				continue
 			}
+		}
+
+		if allowed, _ := s.svc.IsUserWhitelisted(openID, recipientName); !allowed {
+			report.SkippedNotWhitelisted++
+			continue
 		}
 
 		txID := formatString(getFieldValue(row.Fields, "transaction_id"), row.Fields["交易流水号"])
